@@ -1,0 +1,11 @@
+# Internos del harness de orquestacion (viven solo en local)
+.harness/
+.claude/
+CLAUDE.md
+ORCHESTRATION.md
+USAGE.md
+
+# Sistema
+.DS_Store
+*.log
+node_modules/

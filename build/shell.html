@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Herzon — Prototipo</title>
+<style>
+/* ============================================================
+   HERZON — hoja de estilos única (T-002, dueño único de TODO
+   el CSS del prototipo). Ningún otro módulo escribe <style>.
+   ============================================================ */
+
+/* ---------- 1. Tokens: modo claro (default) ---------- */
+:root {
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --delta-good: #006300;
+  --delta-bad: #d03b3b;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+  --heat-1: #6da7ec;
+  --heat-2: #3987e5;
+  --heat-3: #2a78d6;
+  --heat-4: #1c5cab;
+  --heat-5: #104281;
+  --shadow-card: 0 1px 3px rgba(11, 11, 11, 0.10);
+}
+
+/* ---------- 2. Tokens: preferencia de sistema oscura ---------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --delta-good: #0ca30c;
+    --delta-bad: #d03b3b;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-serious: #ec835a;
+    --status-critical: #d03b3b;
+    --heat-1: #9ec5f4;
+    --heat-2: #6da7ec;
+    --heat-3: #3987e5;
+    --heat-4: #2a78d6;
+    --heat-5: #1c5cab;
+    --shadow-card: none;
+  }
+}
+
+/* ---------- 3. Tokens: el toggle del prototipo (gana en ambas direcciones) ---------- */
+:root[data-theme="dark"] {
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --delta-good: #0ca30c;
+  --delta-bad: #d03b3b;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+  --heat-1: #9ec5f4;
+  --heat-2: #6da7ec;
+  --heat-3: #3987e5;
+  --heat-4: #2a78d6;
+  --heat-5: #1c5cab;
+  --shadow-card: none;
+}
+
+:root[data-theme="light"] {
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --delta-good: #006300;
+  --delta-bad: #d03b3b;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+  --heat-1: #6da7ec;
+  --heat-2: #3987e5;
+  --heat-3: #2a78d6;
+  --heat-4: #1c5cab;
+  --heat-5: #104281;
+  --shadow-card: 0 1px 3px rgba(11, 11, 11, 0.10);
+}
+
+/* ---------- 4. Reset y base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { color-scheme: light dark; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+img, svg { max-width: 100%; height: auto; display: block; }
+
+button, input, select { font-family: inherit; }
+
+/* ---------- 5. Layout de chrome (header, tabs, filtros, main) ---------- */
+.hz-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px clamp(12px, 4vw, 32px);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+}
+.hz-header-brand { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hz-header-nombre { font-size: 1.2rem; font-weight: 700; letter-spacing: 0.01em; color: var(--text-primary); }
+.hz-header-meta { display: flex; flex-wrap: wrap; gap: 16px; color: var(--text-secondary); font-size: 0.85rem; }
+.hz-toggle-tema {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.hz-toggle-tema:hover { background: var(--page); }
+.hz-toggle-tema:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
+.hz-tablist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 clamp(12px, 4vw, 32px);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+}
+.hz-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+}
+.hz-tab:hover { color: var(--text-primary); }
+.hz-tab:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
+.hz-tab[aria-selected="true"] { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--series-1); }
+
+.hz-main { padding: 20px clamp(12px, 4vw, 32px) 48px; max-width: 100%; }
+
+.hz-vista { display: flex; flex-direction: column; gap: 20px; }
+.hz-vista[hidden] { display: none; }
+
+.hz-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0 20px;
+}
+.hz-filtros[hidden] { display: none; }
+.hz-filtros-label { color: var(--text-secondary); font-size: 0.85rem; }
+.hz-filtro-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.hz-filtro-btn:hover { color: var(--text-primary); }
+.hz-filtro-btn:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.hz-filtro-btn[aria-pressed="true"] {
+  background: var(--series-1);
+  border-color: var(--series-1);
+  color: var(--surface-1);
+  font-weight: 600;
+}
+
+.hz-footer { padding: 20px clamp(12px, 4vw, 32px) 32px; border-top: 1px solid var(--border); }
+
+/* ---------- 6. Componentes congelados (plan.md 3.G) ---------- */
+.hz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 16px;
+}
+
+.hz-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+  min-width: 0;
+}
+.hz-card-title { margin: 0 0 12px; font-size: 1rem; font-weight: 600; color: var(--text-primary); }
+
+.hz-hero { display: flex; flex-direction: column; gap: 4px; }
+.hz-hero-num { font-size: clamp(2rem, 6vw, 3rem); font-weight: 700; line-height: 1; color: var(--text-primary); }
+.hz-hero-label { font-size: 0.85rem; color: var(--text-secondary); }
+
+.hz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-1);
+}
+.hz-stat-label { font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em; }
+.hz-stat-num { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
+.hz-stat-delta { font-size: 0.85rem; font-weight: 600; }
+.hz-delta-good { color: var(--delta-good); }
+.hz-delta-bad { color: var(--delta-bad); }
+
+.hz-spark { display: block; width: 100%; height: auto; }
+
+.hz-chart { position: relative; width: 100%; }
+.hz-chart-title { margin: 0 0 8px; font-size: 0.95rem; font-weight: 600; color: var(--text-primary); }
+
+.hz-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.hz-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-secondary); }
+.hz-legend-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+.hz-table-toggle {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  margin-top: 8px;
+}
+.hz-table-toggle:hover { color: var(--text-primary); }
+.hz-table-toggle:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.hz-table-toggle[aria-expanded="true"] { color: var(--text-primary); font-weight: 600; }
+
+.hz-table-wrap { overflow-x: auto; margin-top: 8px; }
+.hz-table { border-collapse: collapse; width: 100%; min-width: max-content; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.hz-table th, .hz-table td { padding: 8px 10px; border-bottom: 1px solid var(--grid); text-align: left; color: var(--text-primary); white-space: nowrap; }
+.hz-table th { color: var(--text-secondary); font-weight: 600; }
+
+.hz-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  z-index: 20;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+.hz-tooltip[data-visible="true"] { opacity: 1; }
+
+.hz-crosshair {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--axis);
+  pointer-events: none;
+  opacity: 0;
+}
+.hz-crosshair[data-visible="true"] { opacity: 1; }
+
+.hz-status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.hz-status-dot[data-status="good"] { background: var(--status-good); }
+.hz-status-dot[data-status="warning"] { background: var(--status-warning); }
+.hz-status-dot[data-status="serious"] { background: var(--status-serious); }
+.hz-status-dot[data-status="critical"] { background: var(--status-critical); }
+.hz-status-label { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
+
+.hz-nota { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; max-width: 70ch; }
+
+.hz-form { display: flex; flex-direction: column; gap: 14px; max-width: 480px; }
+.hz-form-campo { display: flex; flex-direction: column; gap: 6px; }
+.hz-form-campo label { font-size: 0.85rem; color: var(--text-secondary); }
+.hz-form-campo select,
+.hz-form-campo input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+.hz-form-campo select:focus-visible,
+.hz-form-campo input:focus-visible { outline: 2px solid var(--series-1); outline-offset: 1px; }
+
+.hz-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  background: var(--page);
+  border: 1px solid var(--border);
+}
+
+/* Ticks de eje de gráfica: única otra regla, además de .hz-table, con tabular-nums */
+.hz-axis-tick { font-variant-numeric: tabular-nums; fill: var(--axis); font-size: 0.72rem; }
+
+/* ---------- 7. Adendum R4 (T-017): menú del día en Plan de dieta ----------
+   Clases nuevas SOLO con prefijo hz-menu- (plan.md Adendum R4, punto 2).
+   El "Detalle del día" deja de ser tabla y pasa a fila de ancho completo:
+   una card por comida, nombre del platillo COMPLETO (envuelve, no hereda
+   el white-space:nowrap de .hz-table) y una mini barra apilada de macros
+   por comida con gap de 2px color superficie (regla 5 del contrato).
+   Corrección R4 (intento 2, rechazo del verifier por hueco muerto): la card
+   del menú ya NO vive dentro de .hz-grid (evita que auto-fit deje columnas
+   sin colapsar en otras filas del grid superior); vive como hermana de
+   .hz-grid dentro de .hz-vista (flex column, gap:20px, congelado 3.G) y
+   solo necesita declarar su propio ancho completo. */
+.hz-menu-fila { width: 100%; }
+
+.hz-menu-lista { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+
+.hz-menu-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--page);
+}
+
+.hz-menu-hora { flex: 0 0 auto; min-width: 52px; color: var(--text-secondary); font-size: 0.82rem; }
+
+.hz-menu-nombre {
+  flex: 1 1 240px;
+  min-width: 160px;
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.hz-menu-momento { color: var(--text-secondary); font-weight: 600; }
+.hz-menu-platillo { color: var(--text-primary); }
+
+.hz-menu-kcal { flex: 0 0 auto; min-width: 76px; text-align: right; font-weight: 600; color: var(--text-primary); font-size: 0.92rem; }
+
+.hz-menu-macros {
+  flex: 0 0 140px;
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-1);
+}
+.hz-menu-macro-seg { height: 100%; }
+
+.hz-menu-total {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-top: 6px;
+  border-top: 2px solid var(--border);
+}
+.hz-menu-total-label { font-weight: 700; color: var(--text-primary); }
+.hz-menu-total-macros { font-weight: 400; color: var(--text-secondary); font-size: 0.85rem; }
+.hz-menu-total-kcal { font-weight: 700; color: var(--text-primary); }
+
+/* ---------- 8. Adendum R5 (T-021): recomendador (hz-reco-*) ----------
+   Clases nuevas SOLO con prefijo hz-reco- (plan.md Adendum R5 punto 5).
+   #reco-plan vive dentro de #vista-plan, hermano de .hz-grid (mismo
+   patrón ya usado por .hz-menu-fila en el Adendum R4): flex column con
+   gap:20px heredado de .hz-vista, declara su propio ancho completo. El
+   contenido (formulario precargado, resumen TMB/GET/kcal objetivo/
+   macros, ranking de plantillas con razones y controles de ajuste) lo
+   genera T-022 en build/vista_dieta_supl.js contra estas clases, ya
+   que T-022 NO posee build/shell.html (regla F1): este es el set
+   congelado de estilos disponible para esa vista. */
+.hz-reco-panel { width: 100%; }
+
+.hz-reco-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.hz-reco-resumen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.hz-reco-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.hz-reco-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid transparent;
+  border-radius: 10px;
+  background: var(--page);
+}
+.hz-reco-item[data-mejor="true"] {
+  border-left-color: var(--series-1);
+  background: var(--surface-1);
+}
+
+.hz-reco-rank {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.hz-reco-nombre { flex: 1 1 200px; min-width: 140px; font-weight: 600; color: var(--text-primary); font-size: 0.95rem; }
+
+.hz-reco-score { flex: 0 0 auto; min-width: 64px; text-align: right; font-weight: 700; color: var(--text-primary); font-size: 0.92rem; }
+
+.hz-reco-score-barra {
+  flex: 0 0 120px;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+}
+.hz-reco-score-fill { height: 100%; background: var(--series-1); }
+
+.hz-reco-razones {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.hz-reco-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.hz-reco-slider { flex: 1 1 200px; min-width: 160px; accent-color: var(--series-1); }
+
+/* ---------- 9. Adendum R5 (T-021): herramientas de documentos y
+   documento imprimible (hz-doc-*) ----------
+   Clases nuevas SOLO con prefijo hz-doc- (plan.md Adendum R5 punto 5).
+   #doc-herramientas vive dentro de #vista-seguimiento, primer hijo
+   estático (T-005 hace rootEl.appendChild de sus propias cards DESPUÉS,
+   nunca las reemplaza) -- por eso la fila queda arriba de las cards,
+   igual que #filtro-rango queda arriba de lo que filtra. Los botones
+   son estáticos con id fijo; T-023 (build/documentos.js) les cablea el
+   evento -- T-023 NO posee build/shell.html, así que la estructura y el
+   estilo de esta fila quedan congelados aquí. */
+.hz-doc-herramientas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hz-doc-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.hz-doc-btn:hover { color: var(--text-primary); }
+.hz-doc-btn:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
+.hz-doc-import { display: inline-flex; align-items: center; }
+.hz-doc-import input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.hz-doc-import:focus-within .hz-doc-import-label {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+}
+
+.hz-doc-import-label {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hz-doc-import-label:hover { color: var(--text-primary); }
+
+/* #documento-plan: oculto en pantalla (display:none aquí abajo), visible
+   SOLO dentro de @media print (sección 10). Genera su contenido T-023
+   con Herzon.planActivo() (fallback al plan por defecto). */
+.hz-doc-documento { display: none; }
+.hz-doc-titulo { margin: 0 0 4px; font-size: 1.4rem; font-weight: 700; color: var(--text-primary); }
+.hz-doc-meta { display: flex; flex-wrap: wrap; gap: 16px; margin: 0 0 20px; color: var(--text-secondary); font-size: 0.85rem; }
+.hz-doc-seccion { margin: 0 0 24px; }
+.hz-doc-seccion-titulo { margin: 0 0 8px; font-size: 1.05rem; font-weight: 600; color: var(--text-primary); }
+.hz-doc-pie { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--grid); font-size: 0.75rem; color: var(--text-muted); }
+
+/* ---------- 10. Adendum R5 (T-021): bloque @media print ----------
+   Regla del criterio de aceptación: SOLO #documento-plan es visible al
+   imprimir -- el resto de la app (header, tablist, main, footer y los
+   dos bloques de script, hz-runtime y hz-boot) se oculta con un solo
+   selector robusto a futuras adiciones (body > *:not(#documento-plan)).
+   El documento SIEMPRE se ve en modo claro al imprimir, sin importar el
+   tema activo en pantalla:
+   se fuerzan los tokens de color a sus valores claros con !important
+   DENTRO de este bloque únicamente. Los 4 bloques de tokens originales
+   (:root base, @media dark, [data-theme="dark"], [data-theme="light"])
+   quedan intactos -- esto no los modifica, solo los sobre-escribe en
+   tiempo de impresión (Adendum R5 punto 5: "sin tokens de tema oscuro,
+   documento siempre claro para impresión"). */
+@media print {
+  :root {
+    --page: #f9f9f7 !important;
+    --surface-1: #fcfcfb !important;
+    --text-primary: #0b0b0b !important;
+    --text-secondary: #52514e !important;
+    --text-muted: #898781 !important;
+    --grid: #e1e0d9 !important;
+    --axis: #c3c2b7 !important;
+    --border: rgba(11, 11, 11, 0.10) !important;
+    --delta-good: #006300 !important;
+    --delta-bad: #d03b3b !important;
+    --series-1: #2a78d6 !important;
+    --series-2: #eb6834 !important;
+    --series-3: #1baf7a !important;
+    --series-4: #eda100 !important;
+    --series-5: #e87ba4 !important;
+    --shadow-card: none !important;
+  }
+
+  body > *:not(#documento-plan) { display: none !important; }
+
+  .hz-doc-documento {
+    display: block;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+}
+</style>
+</head>
+<body>
+<header class="hz-header">
+  <div class="hz-header-brand">
+    <span class="hz-header-nombre">Herzon</span>
+    <span class="hz-badge" id="hz-badge-sintetico">Datos sintéticos</span>
+  </div>
+  <div class="hz-header-meta">
+    <span class="hz-header-paciente" id="hz-paciente-nombre">Paciente</span>
+    <span class="hz-header-periodo" id="hz-periodo">Período de seguimiento: 12 semanas</span>
+  </div>
+  <button type="button" id="toggle-tema" class="hz-toggle-tema" aria-pressed="false">Cambiar tema</button>
+</header>
+
+<nav class="hz-tablist" role="tablist" aria-label="Secciones de Herzon">
+  <button type="button" id="tab-resumen" class="hz-tab" role="tab" aria-selected="true" aria-controls="vista-resumen" tabindex="0">Resumen</button>
+  <button type="button" id="tab-perfil" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-perfil" tabindex="-1">Perfil</button>
+  <button type="button" id="tab-plan" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-plan" tabindex="-1">Plan de dieta</button>
+  <button type="button" id="tab-seguimiento" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-seguimiento" tabindex="-1">Seguimiento</button>
+  <button type="button" id="tab-suplementos" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-suplementos" tabindex="-1">Suplementos</button>
+</nav>
+
+<main class="hz-main">
+  <section id="vista-resumen" class="hz-vista" role="tabpanel" aria-labelledby="tab-resumen">
+  </section>
+  <section id="vista-perfil" class="hz-vista" role="tabpanel" aria-labelledby="tab-perfil" hidden>
+  </section>
+  <section id="vista-plan" class="hz-vista" role="tabpanel" aria-labelledby="tab-plan" hidden>
+    <!-- Adendum R5 (T-021): contenedor del recomendador de plan; T-022
+         lo llena vía JS (hermano de .hz-grid, mismo patrón que
+         .hz-menu-fila del Adendum R4). -->
+    <div id="reco-plan" class="hz-card hz-reco-panel"></div>
+  </section>
+  <div id="filtro-rango" class="hz-filtros" hidden>
+    <span class="hz-filtros-label">Rango de fechas:</span>
+    <button type="button" class="hz-filtro-btn" data-weeks="4">4 semanas</button>
+    <button type="button" class="hz-filtro-btn" data-weeks="8">8 semanas</button>
+    <button type="button" class="hz-filtro-btn" data-weeks="12" aria-pressed="true">12 semanas</button>
+  </div>
+  <section id="vista-seguimiento" class="hz-vista" role="tabpanel" aria-labelledby="tab-seguimiento" hidden>
+    <!-- Adendum R5 (T-021): fila de herramientas de documentos, arriba
+         de las cards, consistente con #filtro-rango; T-023 cablea los
+         eventos vía JS sobre estos ids fijos. -->
+    <div id="doc-herramientas" class="hz-doc-herramientas">
+      <button type="button" id="hz-doc-btn-imprimir" class="hz-doc-btn">Imprimir / PDF</button>
+      <button type="button" id="hz-doc-btn-descargar-plan" class="hz-doc-btn">Descargar plan (.html)</button>
+      <button type="button" id="hz-doc-btn-descargar-datos" class="hz-doc-btn">Descargar datos (.csv)</button>
+      <span class="hz-doc-import">
+        <label for="hz-doc-input-importar" class="hz-doc-import-label">Importar mediciones (.csv)</label>
+        <input type="file" id="hz-doc-input-importar" accept=".csv,text/csv">
+      </span>
+    </div>
+  </section>
+  <section id="vista-suplementos" class="hz-vista" role="tabpanel" aria-labelledby="tab-suplementos" hidden>
+  </section>
+</main>
+
+<footer class="hz-footer">
+  <p class="hz-nota" id="hz-nota-prototipo">Acerca de este prototipo: interfaz de demostración con datos sintéticos generados con fines ilustrativos; no sustituye valoración clínica ni nutriológica real.</p>
+</footer>
+
+<script id="hz-runtime">
+(function () {
+  var G = (typeof window !== 'undefined') ? window : globalThis;
+  G.Herzon = G.Herzon || {};
+  var Herzon = G.Herzon;
+
+  var TAB_ORDER = ['resumen', 'perfil', 'plan', 'seguimiento', 'suplementos'];
+  var views = {};
+  var activeTab = 'resumen';
+  var rangeWeeks = 12;
+  var rangeListeners = [];
+
+  Herzon.registerView = function (id, mountFn) {
+    if (TAB_ORDER.indexOf(id) === -1) { return; }
+    views[id] = views[id] || {};
+    views[id].mountFn = mountFn;
+  };
+
+  function mountIfNeeded(id) {
+    var entry = views[id];
+    if (!entry || typeof entry.mountFn !== 'function' || entry.mounted) { return; }
+    var root = document.getElementById('vista-' + id);
+    if (!root) { return; }
+    entry.mountFn(root);
+    entry.mounted = true;
+  }
+
+  function activateTab(id) {
+    if (TAB_ORDER.indexOf(id) === -1) { return; }
+    activeTab = id;
+    for (var i = 0; i < TAB_ORDER.length; i++) {
+      var tid = TAB_ORDER[i];
+      var selected = (tid === id);
+      var tabEl = document.getElementById('tab-' + tid);
+      var panelEl = document.getElementById('vista-' + tid);
+      if (tabEl) {
+        tabEl.setAttribute('aria-selected', selected ? 'true' : 'false');
+        tabEl.tabIndex = selected ? 0 : -1;
+      }
+      if (panelEl) {
+        if (selected) { panelEl.removeAttribute('hidden'); }
+        else { panelEl.setAttribute('hidden', ''); }
+      }
+    }
+    var filtroEl = document.getElementById('filtro-rango');
+    if (filtroEl) {
+      if (id === 'seguimiento') { filtroEl.removeAttribute('hidden'); }
+      else { filtroEl.setAttribute('hidden', ''); }
+    }
+    mountIfNeeded(id);
+  }
+
+  function focusTab(id) {
+    var el = document.getElementById('tab-' + id);
+    if (el && typeof el.focus === 'function') { el.focus(); }
+  }
+
+  function onTabClick(ev) {
+    var id = ev.currentTarget.getAttribute('data-tab-id');
+    activateTab(id);
+  }
+
+  function onTablistKeydown(ev) {
+    var idx = TAB_ORDER.indexOf(activeTab);
+    var nextId = null;
+    if (ev.key === 'ArrowRight') {
+      nextId = TAB_ORDER[(idx + 1) % TAB_ORDER.length];
+    } else if (ev.key === 'ArrowLeft') {
+      nextId = TAB_ORDER[(idx - 1 + TAB_ORDER.length) % TAB_ORDER.length];
+    } else if (ev.key === 'Home') {
+      nextId = TAB_ORDER[0];
+    } else if (ev.key === 'End') {
+      nextId = TAB_ORDER[TAB_ORDER.length - 1];
+    } else if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+      ev.preventDefault();
+      activateTab(activeTab);
+      return;
+    } else {
+      return;
+    }
+    ev.preventDefault();
+    activateTab(nextId);
+    focusTab(nextId);
+  }
+
+  function setRange(weeksRaw) {
+    var weeks = parseInt(weeksRaw, 10);
+    if (weeks !== 4 && weeks !== 8 && weeks !== 12) { return; }
+    rangeWeeks = weeks;
+    var btns = document.querySelectorAll('.hz-filtro-btn');
+    for (var i = 0; i < btns.length; i++) {
+      var w = parseInt(btns[i].getAttribute('data-weeks'), 10);
+      btns[i].setAttribute('aria-pressed', (w === weeks) ? 'true' : 'false');
+    }
+    for (var j = 0; j < rangeListeners.length; j++) {
+      rangeListeners[j](rangeWeeks);
+    }
+  }
+
+  Herzon.filters = {
+    getRange: function () { return rangeWeeks; },
+    onRangeChange: function (cb) {
+      if (typeof cb === 'function') { rangeListeners.push(cb); }
+    }
+  };
+
+  Herzon.theme = {
+    get: function () {
+      var attr = document.documentElement.getAttribute('data-theme');
+      if (attr === 'dark' || attr === 'light') { return attr; }
+      var prefersDark = (typeof window.matchMedia === 'function') &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches;
+      return prefersDark ? 'dark' : 'light';
+    },
+    set: function (t) {
+      if (t !== 'dark' && t !== 'light') { return; }
+      document.documentElement.setAttribute('data-theme', t);
+      var btn = document.getElementById('toggle-tema');
+      if (btn) { btn.setAttribute('aria-pressed', (t === 'dark') ? 'true' : 'false'); }
+    }
+  };
+
+  function onToggleTemaClick() {
+    var current = Herzon.theme.get();
+    Herzon.theme.set(current === 'dark' ? 'light' : 'dark');
+  }
+
+  function wireHeaderFromData() {
+    if (!G.HERZON_DATA) { return; }
+    var data = G.HERZON_DATA;
+    var pacienteEl = document.getElementById('hz-paciente-nombre');
+    if (pacienteEl && data.paciente && data.paciente.nombre) {
+      pacienteEl.textContent = data.paciente.nombre;
+    }
+    var periodoEl = document.getElementById('hz-periodo');
+    if (periodoEl && data.meta && data.meta.periodoSemanas) {
+      periodoEl.textContent = 'Período de seguimiento: ' + data.meta.periodoSemanas + ' semanas';
+    }
+  }
+
+  Herzon.boot = function () {
+    for (var i = 0; i < TAB_ORDER.length; i++) {
+      var id = TAB_ORDER[i];
+      var tabEl = document.getElementById('tab-' + id);
+      if (tabEl) {
+        tabEl.setAttribute('data-tab-id', id);
+        tabEl.addEventListener('click', onTabClick);
+      }
+    }
+    var tablistEl = document.querySelector('[role="tablist"]');
+    if (tablistEl) { tablistEl.addEventListener('keydown', onTablistKeydown); }
+
+    var filtroBtns = document.querySelectorAll('.hz-filtro-btn');
+    for (var k = 0; k < filtroBtns.length; k++) {
+      filtroBtns[k].addEventListener('click', function (ev) {
+        setRange(ev.currentTarget.getAttribute('data-weeks'));
+      });
+    }
+
+    var toggleBtn = document.getElementById('toggle-tema');
+    if (toggleBtn) { toggleBtn.addEventListener('click', onToggleTemaClick); }
+
+    wireHeaderFromData();
+    activateTab(activeTab);
+  };
+})();
+</script>
+
+<!-- INJECT:data -->
+<!-- INJECT:charts -->
+<!-- INJECT:vistas-a -->
+<!-- INJECT:vistas-b -->
+
+<script id="hz-boot">
+(function () {
+  var G = (typeof window !== 'undefined') ? window : globalThis;
+  if (G.Herzon && typeof G.Herzon.boot === 'function') {
+    G.Herzon.boot();
+  }
+})();
+</script>
+
+<!-- Adendum R5 (T-021): documento imprimible, oculto en pantalla y
+     visible SOLO en @media print (sección 10 del bloque <style>);
+     T-023 (build/documentos.js) genera su contenido vía JS con
+     Herzon.planActivo() (fallback al plan por defecto). -->
+<div id="documento-plan" class="hz-doc-documento"></div>
+</body>
+</html>
