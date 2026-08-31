@@ -114,7 +114,7 @@ Docs.renderDocumento(doc, contenedor, payloadRender);
 
 var titulos = contenedor.consultarTodo('.hz-doc-titulo');
 afirmar(titulos.length === 1, 'renderDocumento debe pintar exactamente un .hz-doc-titulo');
-afirmar(titulos[0].textContent.indexOf('Herzon') !== -1, 'el título del documento debe mencionar Herzon');
+afirmar(titulos[0].textContent.indexOf('Rinde') !== -1, 'el título del documento debe mencionar Rinde');
 
 var metas = contenedor.consultarTodo('.hz-doc-meta');
 afirmar(metas.length === 1, 'renderDocumento debe pintar exactamente un .hz-doc-meta');

@@ -176,7 +176,7 @@
 
     var titulo = crearHTML(doc, 'h2');
     titulo.classList.add('hz-doc-titulo');
-    titulo.textContent = 'Documento del plan de nutrición — Herzon';
+    titulo.textContent = 'Documento del plan de nutrición — Rinde';
     contenedorEl.appendChild(titulo);
 
     var meta = crearHTML(doc, 'div');
@@ -268,7 +268,7 @@
     partes.push('<html lang="es">');
     partes.push('<head>');
     partes.push('<meta charset="utf-8">');
-    partes.push('<title>Documento del plan — Herzon</title>');
+    partes.push('<title>Documento del plan — Rinde</title>');
     partes.push(
       '<style>' +
       'body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:820px;margin:32px auto;padding:0 16px;color:#0b0b0b;}' +
@@ -282,7 +282,7 @@
     );
     partes.push('</head>');
     partes.push('<body>');
-    partes.push('<h1>' + escaparHtml('Documento del plan de nutrición — Herzon') + '</h1>');
+    partes.push('<h1>' + escaparHtml('Documento del plan de nutrición — Rinde') + '</h1>');
     partes.push(
       '<p>' + [
         'Paciente: ' + escaparHtml(payload.paciente.nombre),

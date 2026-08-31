@@ -1,9 +1,13 @@
-# Herzon — CECAD
+# Rinde — CECAD
 
-Prototipo de aplicacion de nutricion del CECAD: plan de dieta, seguimiento
-nutricional con graficas, suplementos, recomendador de plantillas por calculo
-de macronutrientes (Mifflin-St Jeor) y generacion de documentos (impresion a
-PDF, descarga de plan y datos, importacion de mediciones CSV).
+Rinde: aplicacion de entrenamiento y nutricion del CECAD para poner a la gente
+saludable y ejercitada. Plan de dieta personalizado, seguimiento de metricas
+con graficas, suplementos, recomendador de plantillas por calculo de
+macronutrientes (Mifflin-St Jeor) y generacion de documentos (impresion a PDF,
+descarga de plan y datos, importacion de mediciones CSV).
+
+Nota tecnica: el namespace interno del codigo conserva el nombre historico
+(`Herzon.*`, `HERZON_DATA`, clases `hz-`) — la marca visible es Rinde.
 
 La aplicacion vive en la GitHub Page de este repositorio.
 

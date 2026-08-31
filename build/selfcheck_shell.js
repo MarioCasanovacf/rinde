@@ -82,13 +82,13 @@ var runtimeSrc = runtimeBlock ? runtimeBlock.body : '';
 // ---------------------------------------------------------------
 assert(/^<!DOCTYPE html>/i.test(html.trim()), 'el documento empieza con <!DOCTYPE html>');
 assert(/<html[^>]*\blang="es"/.test(html), '<html> declara lang="es"');
-assert(/<title>[^<]*Herzon[^<]*<\/title>/.test(html), '<title> menciona Herzon');
+assert(/<title>[^<]*Rinde[^<]*<\/title>/.test(html), '<title> menciona Rinde');
 
 // ---------------------------------------------------------------
 // 3. Header (nombre Herzon, paciente, período, etiqueta sintética)
 // ---------------------------------------------------------------
 assert(/<header class="hz-header">/.test(html), 'existe <header class="hz-header">');
-assert(/<span class="hz-header-nombre">Herzon<\/span>/.test(html), 'el header muestra el nombre Herzon');
+assert(/<span class="hz-header-nombre">Rinde<\/span>/.test(html), 'el header muestra el nombre Rinde');
 assert(/id="hz-paciente-nombre"/.test(html), 'el header tiene el contenedor del paciente activo (#hz-paciente-nombre)');
 assert(/id="hz-periodo"/.test(html) && /12 semanas/.test(html), 'el header tiene el período de 12 semanas (#hz-periodo)');
 assert(/id="hz-badge-sintetico"[^>]*>[^<]*[Ss]int[eé]tic/.test(html), 'el header tiene una etiqueta visible de datos sintéticos (acepta con o sin tilde en la "e")');
