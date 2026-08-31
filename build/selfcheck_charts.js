@@ -54,6 +54,39 @@ function clasesDe(nodo) {
   return atributo.split(/\s+/).filter(function (c) { return c.length > 0; });
 }
 
+// T-034 (R6-fix): serializador determinista whitebox (tag + atributos
+// ordenados + estilos ordenados + texto) usado SOLO para la aserción
+// "con referencia apagada, render byte-identico". No es un serializador HTML
+// general: alcanza para detectar cualquier cambio de estructura/atributos en
+// el árbol que devuelve una primitiva de Herzon.Charts.
+function serializarNodo(nodo) {
+  if (nodo.nodeType === 3) return 'T(' + (nodo._data || '') + ')';
+  var partes = ['<' + nodo.tagName];
+  Object.keys(nodo._atributos || {}).sort().forEach(function (k) {
+    partes.push(' ' + k + '=' + JSON.stringify(nodo._atributos[k]));
+  });
+  var estiloClaves = Object.keys(nodo.style || {}).sort();
+  if (estiloClaves.length) {
+    partes.push(' style={' + estiloClaves.map(function (k) { return k + ':' + nodo.style[k]; }).join(';') + '}');
+  }
+  partes.push('>');
+  (nodo.childNodes || []).forEach(function (hijo) { partes.push(serializarNodo(hijo)); });
+  partes.push('</' + nodo.tagName + '>');
+  return partes.join('');
+}
+
+// Hash FNV-1a de 32 bits + longitud (no criptográfico: solo para comparar
+// igualdad exacta de la serialización anterior sin embeber la cadena entera,
+// que en un SVG de barras() ronda los 4,000 caracteres).
+function hashCadena(cadena) {
+  var h = 0x811c9dc5;
+  for (var i = 0; i < cadena.length; i++) {
+    h ^= cadena.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16) + ':' + cadena.length;
+}
+
 // ---------------------------------------------------------------------
 // 1. Higiene de fuente (build/charts.js)
 // ---------------------------------------------------------------------
@@ -782,6 +815,317 @@ var puntosSueltos = [{ cy: 50 }, { cy: 100 }];
 Charts._debug.resolverColisionesEtiquetasPunta(puntosSueltos, 0, 280, Charts._debug.ALTURA_MINIMA_ETIQUETA_PUNTA);
 afirmar(puntosSueltos[0].yEtiqueta === 50 && puntosSueltos[1].yEtiqueta === 100,
   'resolverColisionesEtiquetasPunta: puntos ya separados >= 12px no deben moverse');
+
+// ---------------------------------------------------------------------
+// 22. R6 (Adendum R6 punto 2): opciones aditivas default-apagadas. Cada bloque
+// prueba la opción ACTIVADA y confirma que el fixture existente (sin la
+// opción) NO cambia de render (default apagado == cero cambios).
+// ---------------------------------------------------------------------
+
+// 22.1 linea: opciones.unidad — sufijo SOLO en la etiqueta de punta; los
+// ticks del eje Y quedan limpios (sin sufijo).
+var cLineaUnidad = contenedorNuevo();
+var rLineaUnidad = Charts.linea(cLineaUnidad, {
+  series: [{ nombre: 'Peso', datos: [80, 79, 78] }],
+  etiquetasX: ['S1', 'S2', 'S3'],
+  yMin: 0, yMax: 100,
+  unidad: 'kg'
+});
+var etiquetaPuntaUnidad = rLineaUnidad.consultarTodo('.hz-etiqueta-valor')[0];
+afirmar(etiquetaPuntaUnidad.textContent === '78 kg',
+  'linea: con opciones.unidad="kg", la etiqueta de punta debe llevar el sufijo (encontrado: "' + etiquetaPuntaUnidad.textContent + '")');
+var ticksYUnidad = rLineaUnidad.consultarTodo('text').filter(function (t) { return /^\d+$/.test(t.textContent); });
+afirmar(ticksYUnidad.length > 0, 'linea: debe seguir emitiendo ticks numericos limpios en el eje Y');
+ticksYUnidad.forEach(function (tick) {
+  afirmar(tick.textContent.indexOf('kg') === -1, 'linea: opciones.unidad NUNCA debe ensuciar los ticks del eje Y (encontrado: "' + tick.textContent + '")');
+});
+afirmar(rLinea.consultarTodo('.hz-etiqueta-valor')[0].textContent.indexOf(' ') === -1,
+  'linea: sin opciones.unidad (fixture original), la etiqueta de punta no debe llevar sufijo (default apagado, cero cambio de render)');
+
+// 22.2 barras: opciones.unidad en la etiqueta de valor default (vertical).
+var cBarrasUnidad = contenedorNuevo();
+var rBarrasUnidad = Charts.barras(cBarrasUnidad, {
+  categorias: ['Basal', 'Seguimiento', 'Final'],
+  series: [{ nombre: 'Glucosa', datos: [104, 96, 91] }],
+  unidad: 'mg/dL'
+});
+var etiquetaValorBarraUnidad = rBarrasUnidad.consultarTodo('.hz-etiqueta-valor')[0];
+afirmar(!!etiquetaValorBarraUnidad, 'barras (vertical): debe emitir la etiqueta de valor default');
+afirmar(etiquetaValorBarraUnidad.textContent === '91 mg/dL',
+  'barras (vertical): con opciones.unidad, la etiqueta de valor debe llevar el sufijo (encontrado: "' + etiquetaValorBarraUnidad.textContent + '")');
+afirmar(rBarras.consultarTodo('.hz-etiqueta-valor')[0].textContent.indexOf(' ') === -1,
+  'barras (vertical): sin opciones.unidad (fixture original), la etiqueta de valor no debe llevar sufijo (default apagado)');
+
+// 22.3 data-4: en barras verticales, el label directo por default va en el
+// ÚLTIMO valor, no en el máximo. Fixture con el máximo en una categoría que
+// NO es la última, para diferenciar ambos comportamientos sin ambigüedad.
+var cBarrasUltimoValor = contenedorNuevo();
+var rBarrasUltimoValor = Charts.barras(cBarrasUltimoValor, {
+  categorias: ['Basal', 'Pico', 'Final'],
+  series: [{ nombre: 'Glucosa', datos: [95, 130, 91] }]
+});
+var etiquetasValorUltimo = rBarrasUltimoValor.consultarTodo('.hz-etiqueta-valor');
+afirmar(etiquetasValorUltimo.length === 1, 'barras (vertical, data-4): debe emitir exactamente una etiqueta de valor default');
+afirmar(etiquetasValorUltimo[0].textContent === '91',
+  'barras (vertical, data-4): el label directo por default debe ir en el ÚLTIMO valor (91), no en el máximo (130) (encontrado: "' + etiquetasValorUltimo[0].textContent + '")');
+
+// 22.4 barras: opciones.referencia {min,max,etiqueta} — hairline 1px
+// var(--text-muted) + etiqueta corta, misma anatomia que la linea Meta.
+var cBarrasReferencia = contenedorNuevo();
+var rBarrasReferencia = Charts.barras(cBarrasReferencia, {
+  categorias: ['Basal', 'Seguimiento', 'Final'],
+  series: [{ nombre: 'Glucosa', datos: [104, 96, 91] }],
+  referencia: { min: 70, max: 100, etiqueta: 'Rango normal' }
+});
+var lineasReferencia = rBarrasReferencia.consultarTodo('.hz-referencia-linea');
+afirmar(lineasReferencia.length === 2, 'barras: opciones.referencia debe dibujar exactamente 2 hairlines (min y max)');
+lineasReferencia.forEach(function (l) {
+  afirmar(l.getAttribute('stroke-width') === '1', 'barras: la hairline de referencia debe ser 1px');
+  afirmar(l.style.stroke === 'var(--text-muted)', 'barras: la hairline de referencia debe usar var(--text-muted) (misma anatomia que la linea Meta de linea())');
+});
+var etiquetaReferencia = rBarrasReferencia.consultarTodo('.hz-referencia-etiqueta')[0];
+afirmar(!!etiquetaReferencia, 'barras: opciones.referencia debe emitir una etiqueta corta');
+afirmar(etiquetaReferencia.textContent === 'Rango normal', 'barras: la etiqueta de referencia debe usar el texto recibido');
+afirmar(etiquetaReferencia.style.fill === 'var(--text-muted)', 'barras: la etiqueta de referencia debe usar var(--text-muted)');
+afirmar(rBarras.consultarTodo('.hz-referencia-linea').length === 0,
+  'barras: sin opciones.referencia (fixture original), no debe dibujarse ninguna hairline de referencia (default apagado)');
+
+// 22.4b referencia en barras horizontales (mismo contrato, eje perpendicular).
+var cBarrasHReferencia = contenedorNuevo();
+var rBarrasHReferencia = Charts.barras(cBarrasHReferencia, {
+  orientacion: 'horizontal',
+  categorias: ['Suplemento A', 'Suplemento B'],
+  series: [{ nombre: 'Adherencia', datos: [92, 78] }],
+  referencia: { min: 0, max: 80, etiqueta: 'Meta' }
+});
+afirmar(rBarrasHReferencia.consultarTodo('.hz-referencia-linea').length === 2,
+  'barras (horizontal): opciones.referencia también debe dibujar 2 hairlines');
+
+// 22.4c T-034 (R6-fix): con opciones.referencia apagada, el render debe ser
+// BYTE-IDENTICO (hash pinneado como guarda de regresión). Fixture AISLADO
+// (sin tabla:true) para que el hash no dependa del contador global de
+// idUnico() ni del orden de ejecución de otros bloques del selfcheck — solo
+// de la geometría pura que calcula barras() a partir de las opciones. La
+// nueva rama de código de opciones.referencia (T-034) es un cómputo puro que
+// se descarta sin tocar el DOM cuando tieneReferencia es false, así que este
+// hash prueba mecánicamente que ese camino sigue siendo un no-op.
+var cBarrasByteIdentico = contenedorNuevo();
+var rBarrasByteIdentico = Charts.barras(cBarrasByteIdentico, {
+  categorias: ['Lun', 'Mar', 'Mie', 'Jue', 'Vie'],
+  series: [{ nombre: 'Kcal', datos: [1500, 1600, 1550, 1620, 1580] }]
+});
+afirmar(hashCadena(serializarNodo(rBarrasByteIdentico)) === 'a13db7e2:3108',
+  'barras: con opciones.referencia apagada, el render debe ser BYTE-IDENTICO (hash pinneado) — un hash distinto significa que el camino sin referencia dejo de ser un no-op');
+
+// 22.4d T-034 (R6-fix): reproduce la evidencia del coordinador (Colesterol LDL:
+// Basal/Seguimiento/Final con el ÚLTIMO valor cerca del máximo del rango
+// normal — antes "Rango normal" se leía encimado con la barra Final y con su
+// etiqueta de valor "105"). La etiqueta de referencia debe anclarse por la
+// IZQUIERDA (nunca por la derecha, esa posición es SIEMPRE del último valor,
+// R6 data-4) y las cajas estimadas (estimarAnchoTexto, mismo método que usa el
+// propio módulo) no deben solaparse.
+var cBarrasReferenciaEvidencia = contenedorNuevo();
+var rBarrasReferenciaEvidencia = Charts.barras(cBarrasReferenciaEvidencia, {
+  categorias: ['Basal', 'Seguimiento', 'Final'],
+  series: [{ nombre: 'Colesterol LDL', datos: [148, 128, 105] }],
+  referencia: { min: 0, max: 100, etiqueta: 'Rango normal' }
+});
+var etiquetaRefEvidencia = rBarrasReferenciaEvidencia.consultarTodo('.hz-referencia-etiqueta')[0];
+afirmar(etiquetaRefEvidencia.getAttribute('text-anchor') === 'start',
+  'barras (T-034): la etiqueta de referencia debe anclarse por la izquierda (text-anchor start), nunca por la derecha (encontrado: "' + etiquetaRefEvidencia.getAttribute('text-anchor') + '")');
+afirmar(parseFloat(etiquetaRefEvidencia.getAttribute('x')) === 52,
+  'barras (T-034): la etiqueta de referencia debe iniciar en el extremo izquierdo de la hairline (margen.izquierda), no en el derecho (encontrado x="' + etiquetaRefEvidencia.getAttribute('x') + '")');
+var etiquetaValorEvidencia = rBarrasReferenciaEvidencia.consultarTodo('.hz-etiqueta-valor')[0];
+afirmar(!!etiquetaValorEvidencia && etiquetaValorEvidencia.textContent === '105',
+  'barras (T-034): el fixture de evidencia debe seguir emitiendo la etiqueta de valor del último elemento (105), que SIEMPRE gana la posición derecha');
+var anchoTextoRefEvidencia = Charts._debug.estimarAnchoTexto('Rango normal', Charts._debug.TAMANO_FUENTE_EJE);
+var cajaRefEvidencia = {
+  x0: parseFloat(etiquetaRefEvidencia.getAttribute('x')),
+  x1: parseFloat(etiquetaRefEvidencia.getAttribute('x')) + anchoTextoRefEvidencia,
+  y0: parseFloat(etiquetaRefEvidencia.getAttribute('y')) - Charts._debug.TAMANO_FUENTE_EJE,
+  y1: parseFloat(etiquetaRefEvidencia.getAttribute('y'))
+};
+var anchoTextoValorEvidencia = Charts._debug.estimarAnchoTexto('105', Charts._debug.TAMANO_FUENTE_ETIQUETA);
+var xValorEvidencia = parseFloat(etiquetaValorEvidencia.getAttribute('x'));
+var cajaValorEvidencia = {
+  x0: xValorEvidencia - anchoTextoValorEvidencia / 2, x1: xValorEvidencia + anchoTextoValorEvidencia / 2,
+  y0: parseFloat(etiquetaValorEvidencia.getAttribute('y')) - Charts._debug.TAMANO_FUENTE_ETIQUETA,
+  y1: parseFloat(etiquetaValorEvidencia.getAttribute('y'))
+};
+afirmar(!Charts._debug.cajasIntersectan(cajaRefEvidencia, cajaValorEvidencia),
+  'barras (T-034, evidencia LDL): la caja estimada de "Rango normal" no debe solapar la caja de la etiqueta de valor del último elemento ("105") (regresión del defecto reportado)');
+
+// 22.4e T-034 (R6-fix, unidad pura): sin colisión, resolverPosicionEtiquetaReferencia
+// debe dejar la etiqueta a la izquierda EN LINEA con la hairline (separación
+// fija de 4px, sin desplazamiento vertical adicional).
+var posicionSinColisionRef = Charts._debug.resolverPosicionEtiquetaReferencia(52, 200, 'Rango normal', Charts._debug.TAMANO_FUENTE_EJE, 4, []);
+afirmar(posicionSinColisionRef.x === 52,
+  'resolverPosicionEtiquetaReferencia (sin colisión): x debe quedar en el extremo izquierdo recibido (encontrado: ' + posicionSinColisionRef.x + ')');
+afirmar(posicionSinColisionRef.caja.y1 === 196,
+  'resolverPosicionEtiquetaReferencia (sin colisión): la etiqueta debe quedar en línea con la hairline (yHairline - separacionMinima = 200 - 4 = 196), sin desplazamiento adicional (encontrado: ' + posicionSinColisionRef.caja.y1 + ')');
+
+// 22.4f T-034 (R6-fix, unidad pura): caso sintético con un obstáculo (barra o
+// etiqueta de valor final) CERCANO en la misma franja vertical de la posición
+// por defecto => la caja resultante NO debe intersectar al obstáculo, y debe
+// quedar por encima de él con separación >= 4px.
+var obstaculoCercanoRef = { x0: 40, x1: 140, y0: 190, y1: 230 };
+var posicionConColisionRef = Charts._debug.resolverPosicionEtiquetaReferencia(52, 200, 'Rango normal', Charts._debug.TAMANO_FUENTE_EJE, 4, [obstaculoCercanoRef]);
+afirmar(!Charts._debug.cajasIntersectan(posicionConColisionRef.caja, obstaculoCercanoRef),
+  'resolverPosicionEtiquetaReferencia (con colisión): la caja final de la etiqueta no debe intersectar la caja del obstáculo cercano');
+afirmar(posicionConColisionRef.caja.y1 <= obstaculoCercanoRef.y0 - 4,
+  'resolverPosicionEtiquetaReferencia (con colisión): debe desplazarse por encima del obstáculo con separación >= 4px (encontrado y1=' + posicionConColisionRef.caja.y1 + ', obstáculo.y0=' + obstaculoCercanoRef.y0 + ')');
+
+// 22.5 barras: opciones.valoresEnBarras (horizontal, serie única, <=6 categorías)
+// — valor al final de CADA barra, no solo la máxima.
+var cValoresEnBarras = contenedorNuevo();
+var rValoresEnBarras = Charts.barras(cValoresEnBarras, {
+  orientacion: 'horizontal',
+  categorias: ['Omega-3', 'Vitamina D3', 'Magnesio', 'Probiótico'],
+  series: [{ nombre: 'Adherencia', datos: [78, 91, 65, 82] }],
+  valoresEnBarras: true,
+  unidad: '%'
+});
+var etiquetasValoresEnBarras = rValoresEnBarras.consultarTodo('.hz-etiqueta-valor');
+afirmar(etiquetasValoresEnBarras.length === 4,
+  'barras (horizontal, valoresEnBarras): debe emitir una etiqueta de valor por CADA categoría (4), no solo la máxima');
+var textosValoresEnBarras = etiquetasValoresEnBarras.map(function (e) { return e.textContent; });
+afirmar(textosValoresEnBarras.indexOf('78 %') !== -1 && textosValoresEnBarras.indexOf('65 %') !== -1,
+  'barras (horizontal, valoresEnBarras): las etiquetas de valores NO máximos también deben aparecer, con el sufijo de unidad (encontrado: ' + textosValoresEnBarras.join(', ') + ')');
+
+// 22.6 valoresEnBarras: guard de <=6 categorías — con 7 categorías, la opción
+// se ignora silenciosamente y se conserva el comportamiento default (1 sola
+// etiqueta, la de la barra máxima), sin lanzar.
+var categorias7 = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7'];
+var cValoresEnBarras7 = contenedorNuevo();
+var rValoresEnBarras7;
+afirmar((function () {
+  try {
+    rValoresEnBarras7 = Charts.barras(cValoresEnBarras7, {
+      orientacion: 'horizontal',
+      categorias: categorias7,
+      series: [{ nombre: 'X', datos: [10, 20, 30, 40, 50, 60, 70] }],
+      valoresEnBarras: true
+    });
+    return true;
+  } catch (e) { console.error(e); return false; }
+})(), 'barras (horizontal, valoresEnBarras): con 7 categorías (> 6) no debe lanzar');
+afirmar(rValoresEnBarras7.consultarTodo('.hz-etiqueta-valor').length === 1,
+  'barras (horizontal, valoresEnBarras): con 7 categorías (> 6) debe ignorar la opción y conservar el comportamiento default (1 sola etiqueta, la máxima)');
+
+// 22.7 apilada100: opciones.etiquetasSegmento — % SOLO en segmentos con alto
+// >= 14px; segmentos angostos quedan sin etiqueta (los cubre la tabla).
+var cApiladaSegmentos = contenedorNuevo();
+var rApiladaSegmentos = Charts.apilada100(cApiladaSegmentos, {
+  categorias: ['Comida'],
+  series: [
+    { nombre: 'Proteínas', datos: [48] },
+    { nombre: 'Carbohidratos', datos: [48] },
+    { nombre: 'Grasas', datos: [4] }
+  ],
+  alto: 400,
+  etiquetasSegmento: true
+});
+var etiquetasSegmento = rApiladaSegmentos.consultarTodo('.hz-etiqueta-segmento');
+afirmar(etiquetasSegmento.length === 2,
+  'apilada100 (etiquetasSegmento): con 2 segmentos grandes (48% de 400px de alto) y 1 angosto (4%), debe etiquetar SOLO los 2 grandes (encontrado: ' + etiquetasSegmento.length + ')');
+var textosSegmento = etiquetasSegmento.map(function (e) { return e.textContent; });
+afirmar(textosSegmento.indexOf('48%') !== -1, 'apilada100 (etiquetasSegmento): el segmento grande debe mostrar su porcentaje ("48%") (encontrado: ' + textosSegmento.join(', ') + ')');
+etiquetasSegmento.forEach(function (e) {
+  afirmar(e.style.fill === 'var(--text-primary)', 'apilada100 (etiquetasSegmento): la tinta debe ser un token de texto (var(--text-primary)), jamás color de serie (regla 8)');
+});
+afirmar(rApilada.consultarTodo('.hz-etiqueta-segmento').length === 0,
+  'apilada100: sin opciones.etiquetasSegmento (fixture original), no debe dibujarse ninguna etiqueta de segmento (default apagado)');
+afirmar(rApiladaMacros.consultarTodo('.hz-etiqueta-segmento').length === 0,
+  'apilada100 (QA-R3 a, anti-regresión): el fixture de rotación de categorías tampoco pasa etiquetasSegmento, cero etiquetas de segmento');
+
+// 22.8 heatmapCalendario: opciones.encabezadosDia (iniciales L M X J V S D),
+// etiquetasFila (S1, S4, S8, S12) y leyendaRampa (5 swatches --heat-1..5).
+var VALORES_HEAT_R6 = [];
+for (var vhr = 0; vhr < 84; vhr++) VALORES_HEAT_R6.push(10 + (vhr % 90));
+var ETIQUETAS_FILA_R6 = [];
+for (var efr = 0; efr < 12; efr++) ETIQUETAS_FILA_R6.push((efr === 0 || efr === 3 || efr === 7 || efr === 11) ? 'S' + (efr + 1) : '');
+
+var cHeatR6 = contenedorNuevo();
+var rHeatR6 = Charts.heatmapCalendario(cHeatR6, {
+  valores: VALORES_HEAT_R6,
+  etiquetas: VALORES_HEAT_R6.map(function (_, idx) { return 'D' + (idx + 1); }),
+  columnas: 7,
+  min: 0, max: 100,
+  encabezadosDia: true,
+  etiquetasFila: ETIQUETAS_FILA_R6,
+  leyendaRampa: true,
+  tabla: true
+});
+
+var encabezadosDiaR6 = rHeatR6.consultarTodo('.hz-heat-encabezado-dia');
+afirmar(encabezadosDiaR6.length === 7, 'heatmapCalendario (encabezadosDia): debe emitir exactamente 7 encabezados (uno por columna)');
+var textosEncabezadosR6 = encabezadosDiaR6.map(function (e) { return e.textContent; });
+afirmar(textosEncabezadosR6.join('') === 'LMXJVSD',
+  'heatmapCalendario (encabezadosDia): con etiquetas no fechables (fallback canónico lunes-primero) debe emitir L M X J V S D en orden (encontrado: ' + textosEncabezadosR6.join(' ') + ')');
+encabezadosDiaR6.forEach(function (e) {
+  afirmar(e.style.fill === 'var(--text-muted)', 'heatmapCalendario (encabezadosDia): debe usar var(--text-muted)');
+});
+
+var etiquetasFilaR6 = rHeatR6.consultarTodo('.hz-heat-fila-etiqueta');
+afirmar(etiquetasFilaR6.length === 4,
+  'heatmapCalendario (etiquetasFila): con solo 4 entradas no vacías (S1,S4,S8,S12 de 12 filas), debe emitir exactamente 4 rótulos (encontrado: ' + etiquetasFilaR6.length + ')');
+var textosFilaR6 = etiquetasFilaR6.map(function (e) { return e.textContent; }).sort();
+afirmar(textosFilaR6.join(',') === 'S1,S12,S4,S8',
+  'heatmapCalendario (etiquetasFila): los rótulos emitidos deben ser exactamente S1, S4, S8, S12 (encontrado: ' + textosFilaR6.join(', ') + ')');
+
+var leyendaRampaR6 = rHeatR6.consultarTodo('.hz-legend')[0];
+afirmar(!!leyendaRampaR6, 'heatmapCalendario (leyendaRampa): debe emitir una .hz-legend (reutilizando construirLeyenda)');
+var itemsLeyendaRampaR6 = rHeatR6.consultarTodo('.hz-legend-item');
+afirmar(itemsLeyendaRampaR6.length === 5, 'heatmapCalendario (leyendaRampa): debe emitir exactamente 5 swatches (uno por bucket --heat-1..5)');
+var swatchesRampaR6 = rHeatR6.consultarTodo('.hz-legend-swatch');
+swatchesRampaR6.forEach(function (sw, idx) {
+  var tokenEsperado = 'var(--heat-' + (idx + 1) + ')';
+  afirmar(sw.style.backgroundColor === tokenEsperado,
+    'heatmapCalendario (leyendaRampa): el swatch ' + idx + ' debe usar ' + tokenEsperado + ' (encontrado: ' + sw.style.backgroundColor + ')');
+});
+itemsLeyendaRampaR6.forEach(function (item) {
+  afirmar(/^-?\d+(\.\d+)?-\d+(\.\d+)?$/.test(item.textContent),
+    'heatmapCalendario (leyendaRampa): cada item debe mostrar el rango numérico "desde-hasta" del bucket (encontrado: "' + item.textContent + '")');
+});
+afirmar(itemsLeyendaRampaR6[0].textContent === '0-20', 'heatmapCalendario (leyendaRampa): el primer bucket debe cubrir 0-20 (min=0, max=100, 5 pasos)');
+afirmar(itemsLeyendaRampaR6[4].textContent === '80-100', 'heatmapCalendario (leyendaRampa): el último bucket debe cubrir 80-100 (min=0, max=100, 5 pasos)');
+
+// Celdas y tabla siguen intactas con las opciones nuevas activas (aditivo, no reemplaza).
+afirmar(rHeatR6.consultarTodo('.hz-heat-celda').length === 84, 'heatmapCalendario (R6): las celdas de valor deben seguir emitiéndose igual (84)');
+
+// Anti-regresión: el fixture original (rHeat, sin ninguna opción R6) no debe
+// ganar ninguno de los elementos nuevos (default apagado, cero cambio de render).
+afirmar(rHeat.consultarTodo('.hz-heat-encabezado-dia').length === 0, 'heatmapCalendario: sin encabezadosDia (fixture original), cero encabezados (default apagado)');
+afirmar(rHeat.consultarTodo('.hz-heat-fila-etiqueta').length === 0, 'heatmapCalendario: sin etiquetasFila (fixture original), cero rótulos de fila (default apagado)');
+afirmar(rHeat.consultarTodo('.hz-legend').length === 0, 'heatmapCalendario: sin leyendaRampa (fixture original), cero .hz-legend (default apagado)');
+
+// 22.8b unidad pura: derivarInicialDiaSemana con fecha ISO real debe derivar el
+// día de la semana REAL (no el fallback canónico) — 2026-08-31 es lunes.
+afirmar(Charts._debug.derivarInicialDiaSemana('2026-08-31', 5) === 'L',
+  'derivarInicialDiaSemana: con una fecha ISO parseable debe derivar el día real (2026-08-31 es lunes), ignorando la posición de columna');
+afirmar(Charts._debug.derivarInicialDiaSemana('D42', 2) === 'X',
+  'derivarInicialDiaSemana: con una etiqueta no fechable debe caer al orden canónico lunes-primero por posición de columna (índice 2 = miércoles = X)');
+afirmar(Charts._debug.derivarInicialDiaSemana('D1', 0) === 'L' && Charts._debug.derivarInicialDiaSemana('D1', 6) === 'D',
+  'derivarInicialDiaSemana: fallback canónico debe ir L(0) ... D(6)');
+
+// 22.8c unidad pura: calcularBucketRampa / calcularRangosBucketsRampa.
+afirmar(Charts._debug.calcularBucketRampa(0, 0, 100, 5) === 0, 'calcularBucketRampa: el mínimo debe caer en el bucket 0');
+afirmar(Charts._debug.calcularBucketRampa(100, 0, 100, 5) === 4, 'calcularBucketRampa: el máximo debe caer en el último bucket (4)');
+afirmar(Charts._debug.calcularBucketRampa(50, 0, 100, 5) === 2, 'calcularBucketRampa: el punto medio debe caer en el bucket central (2)');
+var rangosPuros = Charts._debug.calcularRangosBucketsRampa(0, 100, 5);
+afirmar(rangosPuros.length === 5, 'calcularRangosBucketsRampa: debe devolver 5 rangos');
+afirmar(rangosPuros[0].desde === 0 && rangosPuros[4].hasta === 100,
+  'calcularRangosBucketsRampa: el primer rango debe empezar en minV y el último terminar en maxV');
+
+// 22.9 resp-6: crosshair de hover pasa a var(--text-muted); grid y ejes
+// conservan var(--axis)/var(--grid) (sin tocar).
+var crosshairR6 = rLinea.consultarTodo('.hz-crosshair')[0];
+afirmar(crosshairR6.style.stroke === 'var(--text-muted)',
+  'linea (resp-6): el crosshair de hover debe usar var(--text-muted) en vez de var(--axis) (encontrado: "' + crosshairR6.style.stroke + '")');
+var ejeXPrincipal = rLinea.consultarTodo('line').filter(function (l) { return l.style.stroke === 'var(--axis)'; });
+afirmar(ejeXPrincipal.length >= 1, 'linea (resp-6, anti-regresión): el eje X debe conservar var(--axis) (solo el crosshair cambió)');
+var gridPrincipal = rLinea.consultarTodo('line').filter(function (l) { return l.style.stroke === 'var(--grid)'; });
+afirmar(gridPrincipal.length >= 1, 'linea (resp-6, anti-regresión): las gridlines deben conservar var(--grid) (solo el crosshair cambió)');
 
 // ---------------------------------------------------------------------
 // Cierre

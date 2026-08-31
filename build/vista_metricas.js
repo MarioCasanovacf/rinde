@@ -10,12 +10,15 @@
 // acceso al DOM ocurre dentro de las funciones de montaje, usando
 // `rootEl.ownerDocument`.
 //
-// Color (contrato sección H): cero hexes literales en este módulo. Las gráficas ya
+// Color (contrato sección H): cero hexes literales en este módulo. Las gráficas
 // asignan su propio color vía Herzon.Charts (que internamente usa
-// el.style.fill / el.style.stroke con var(--token)); este módulo solo PASA nombres
-// de token como string en las opciones de Herzon.Charts.* y jamás escribe
-// el.style ni declara bloques de estilo propios (nada de la etiqueta de hoja de
-// estilos HTML en este archivo).
+// el.style.fill / el.style.stroke con var(--token)); este módulo solo PASA
+// nombres de token como string en las opciones de Herzon.Charts.*. El único
+// estilo puntual que este módulo escribe directo es element.style con un
+// token de color, o con un valor tipográfico sin color (font-weight,
+// font-variant-numeric) para jerarquía de texto fuera de la lista de clases
+// congeladas (contrato sección G, mismo patrón que build/vista_dieta_supl.js);
+// jamás un hex y jamás una etiqueta de hoja de estilos HTML propia.
 (function () {
   var G = (typeof window !== 'undefined') ? window : globalThis;
   G.Herzon = G.Herzon || {};
@@ -117,11 +120,24 @@
     var delta = crear(doc, 'div', ['hz-stat-delta'], conSigno(deltaPeso, 1) + ' kg desde el inicio');
     delta.classList.add(deltaPeso <= 0 ? 'hz-delta-good' : 'hz-delta-bad');
     hero.appendChild(delta);
-    if (typeof Charts.sparkline === 'function') {
-      Charts.sparkline(hero, { valores: pesoSerie, color: 'var(--series-1)' });
-    }
     heroCard.appendChild(hero);
     rootEl.appendChild(heroCard);
+
+    // jera-8/fini-6 (Adendum R6, misma causa raíz que los labs de
+    // Seguimiento): la card se monta en el documento PRIMERO; recién
+    // entonces se mide su ancho real y se dibuja el sparkline con ese
+    // ancho (opciones.ancho), para que recorra la card junto al número
+    // héroe en vez de quedarse en el ancho de respaldo fijo (120px) de
+    // Herzon.Charts.sparkline cuando el contenedor está desconectado del
+    // documento en el momento de la llamada.
+    if (typeof Charts.sparkline === 'function') {
+      var anchoSparkResumen = hero.clientWidth || heroCard.clientWidth || 0;
+      Charts.sparkline(hero, {
+        valores: pesoSerie,
+        color: 'var(--series-1)',
+        ancho: anchoSparkResumen > 0 ? anchoSparkResumen : undefined
+      });
+    }
 
     var statsGrid = crear(doc, 'div', ['hz-grid']);
     var grasaSerie = series.grasa_pct || [];
@@ -221,17 +237,31 @@
     var cortes = labs.cortes || [];
     var ultimoCorte = cortes.length ? cortes[cortes.length - 1].etiqueta : '';
     tarjetaLabs.appendChild(crear(doc, 'p', null, 'Corte más reciente: ' + ultimoCorte));
-    (labs.marcadores || []).forEach(function (m) {
+    // jera-7 (Adendum R6): jerarquía interna dentro de cada fila -- el
+    // nombre del marcador va en peso regular / --text-secondary (dato de
+    // apoyo) y el valor va en 600 / --text-primary / tabular-nums (el dato
+    // que importa), sin tocar el punto de estatus. Estilo puntual vía
+    // element.style con tokens (contrato sección G), no clases nuevas: el
+    // valor conserva la clase congelada hz-status-label (ya trae 600 +
+    // --text-primary) y solo se le suma tabular-nums; el nombre es un span
+    // aparte, sin esa clase. 6-8px de separación vertical entre filas.
+    (labs.marcadores || []).forEach(function (m, indiceMarcador) {
       var valores = m.valores || [];
       var valorFinal = valores[valores.length - 1];
       var estado = calcularEstadoMarcador(valorFinal, m.referencia, m.mejorSi);
       var fila = crear(doc, 'div');
+      if (indiceMarcador > 0) { fila.style.marginTop = '7px'; }
       var punto = crear(doc, 'span', ['hz-status-dot']);
       punto.setAttribute('data-status', estado);
-      var etiqueta = crear(doc, 'span', ['hz-status-label'],
-        m.nombre + ': ' + formatoNumero(valorFinal, 1) + ' ' + m.unidad + ' - ' + ETIQUETAS_ESTADO[estado]);
+      var nombre = crear(doc, 'span', null, m.nombre + ': ');
+      nombre.style.color = 'var(--text-secondary)';
+      nombre.style.fontWeight = '400';
+      var valor = crear(doc, 'span', ['hz-status-label'],
+        formatoNumero(valorFinal, 1) + ' ' + m.unidad + ' - ' + ETIQUETAS_ESTADO[estado]);
+      valor.style.fontVariantNumeric = 'tabular-nums';
       fila.appendChild(punto);
-      fila.appendChild(etiqueta);
+      fila.appendChild(nombre);
+      fila.appendChild(valor);
       tarjetaLabs.appendChild(fila);
     });
     rootEl.appendChild(tarjetaLabs);
@@ -259,15 +289,11 @@
     var Charts = G.Herzon.Charts || {};
     var Herzon = G.Herzon;
     var data = G.HERZON_DATA || {};
-    var series = data.series || {};
     var labs = data.labs || {};
     var plicometria = data.plicometria || {};
-    var semanas = series.semanas || [];
-    var pesoSerie = series.peso_kg || [];
-    var musculoSerie = series.musculo_kg || [];
-    var grasaSerie = series.grasa_pct || [];
-    var cinturaSerie = series.cintura_cm || [];
-    var totalSemanas = semanas.length;
+    var unidades = (data.meta && data.meta.unidades) || {};
+    var unidadPeso = unidades.peso || 'kg';
+    var unidadCintura = unidades.cintura || 'cm';
 
     var heroCard = crear(doc, 'div', ['hz-card']);
     var hero = crear(doc, 'div', ['hz-hero']);
@@ -282,9 +308,11 @@
 
     // R4: recalcula el héroe contra el primer punto del rango `n` activo
     // (no contra el inicio absoluto de las 12 semanas -- esa lectura es la
-    // de Resumen, que no tiene filtro y sigue "desde el inicio").
-    function actualizarHero(n) {
-      var recorte = ultimasN(pesoSerie, n);
+    // de Resumen, que no tiene filtro y sigue "desde el inicio"). prod-1
+    // (Adendum R6 punto 4): recibe la serie de peso YA releída en la
+    // llamada de `redibujar` que la invoca -- nunca una referencia vieja.
+    function actualizarHero(n, pesoSerieActual) {
+      var recorte = ultimasN(pesoSerieActual, n);
       var inicioPeriodo = recorte.length ? recorte[0] : 0;
       var pesoActual = recorte.length ? recorte[recorte.length - 1] : 0;
       var deltaPeriodo = redondear(pesoActual - inicioPeriodo, 1);
@@ -302,11 +330,23 @@
     cardPeso.appendChild(wrapPeso);
     rootEl.appendChild(cardPeso);
 
-    var cardComp = crear(doc, 'div', ['hz-card']);
-    cardComp.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Composición corporal'));
-    var wrapComp = crear(doc, 'div');
-    cardComp.appendChild(wrapComp);
-    rootEl.appendChild(cardComp);
+    // data-2 (Adendum R6 punto 7): Composición corporal partida en DOS
+    // gráficas de una serie y un eje cada una -- kg y % nunca comparten
+    // escala (regla "un eje" del contrato). El token de serie se conserva
+    // por entidad: masa muscular series-3, grasa corporal series-2. Con
+    // una sola serie por gráfica, Herzon.Charts.linea ya NO dibuja caja de
+    // leyenda (regla 7 del contrato): el título nombra la serie única.
+    var cardMusculo = crear(doc, 'div', ['hz-card']);
+    cardMusculo.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Masa muscular (kg)'));
+    var wrapMusculo = crear(doc, 'div');
+    cardMusculo.appendChild(wrapMusculo);
+    rootEl.appendChild(cardMusculo);
+
+    var cardGrasa = crear(doc, 'div', ['hz-card']);
+    cardGrasa.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Grasa corporal (%)'));
+    var wrapGrasa = crear(doc, 'div');
+    cardGrasa.appendChild(wrapGrasa);
+    rootEl.appendChild(cardGrasa);
 
     var cardCintura = crear(doc, 'div', ['hz-card']);
     cardCintura.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Circunferencia de cintura'));
@@ -318,12 +358,26 @@
       return semanasSlice.map(function (s) { return 'S' + s; });
     }
 
+    // prod-1 (Adendum R6 punto 4, causa raíz): `redibujar` releía arreglos
+    // capturados UNA sola vez al montar (`pesoSerie`, `musculoSerie`, ...).
+    // build/documentos.js hace merge de mediciones REASIGNANDO
+    // `HERZON_DATA.series.<clave> = arregloNuevo` (nunca in-place), así que
+    // esa referencia vieja quedaba huérfana y la vista jamás reflejaba una
+    // importación. Ahora cada llamada relee `G.HERZON_DATA.series` desde
+    // cero: no hay arreglo de serie capturado fuera de esta función.
     function redibujar(weeksRaw) {
-      var n = Math.min((weeksRaw || totalSemanas), totalSemanas);
-      var semanasSlice = ultimasN(semanas, n);
+      var seriesActual = (G.HERZON_DATA && G.HERZON_DATA.series) || {};
+      var semanasActual = seriesActual.semanas || [];
+      var pesoSerieActual = seriesActual.peso_kg || [];
+      var musculoSerieActual = seriesActual.musculo_kg || [];
+      var grasaSerieActual = seriesActual.grasa_pct || [];
+      var cinturaSerieActual = seriesActual.cintura_cm || [];
+      var totalSemanasActual = semanasActual.length;
+      var n = Math.min((weeksRaw || totalSemanasActual), totalSemanasActual);
+      var semanasSlice = ultimasN(semanasActual, n);
       var etiquetasX = etiquetasDe(semanasSlice);
 
-      actualizarHero(n);
+      actualizarHero(n, pesoSerieActual);
 
       limpiar(wrapPeso);
       if (typeof Charts.linea === 'function') {
@@ -331,26 +385,41 @@
           // D5: sin título interno (duplicaría el heading de cardPeso);
           // se conserva el título accesible para lector de pantalla.
           tituloAccesible: 'Peso corporal en kilogramos a lo largo del tiempo',
-          series: [{ nombre: 'Peso', datos: ultimasN(pesoSerie, n) }],
+          series: [{ nombre: 'Peso', datos: ultimasN(pesoSerieActual, n) }],
           etiquetasX: etiquetasX,
           yMin: 55,
           yMax: 85,
+          // data-4 (Adendum R6 punto 2/consumo): unidad de HERZON_DATA.meta
+          // en la etiqueta de punta ("70.2 kg"), ticks del eje intactos.
+          unidad: unidadPeso,
           tabla: true
         });
       }
 
-      limpiar(wrapComp);
+      limpiar(wrapMusculo);
       if (typeof Charts.linea === 'function') {
-        Charts.linea(wrapComp, {
-          // D5: sin título interno (duplicaría el heading de cardComp).
-          tituloAccesible: 'Composición corporal: masa muscular en kilogramos y grasa corporal en porcentaje',
-          series: [
-            { nombre: 'Masa muscular (kg)', datos: ultimasN(musculoSerie, n), color: 'var(--series-3)' },
-            { nombre: 'Grasa corporal (%)', datos: ultimasN(grasaSerie, n), color: 'var(--series-2)' }
-          ],
+        Charts.linea(wrapMusculo, {
+          // D5: sin título interno (duplicaría el heading de cardMusculo).
+          tituloAccesible: 'Masa muscular corporal en kilogramos a lo largo del tiempo',
+          series: [{ nombre: 'Masa muscular (kg)', datos: ultimasN(musculoSerieActual, n), color: 'var(--series-3)' }],
+          etiquetasX: etiquetasX,
+          yMin: 15,
+          yMax: 40,
+          unidad: unidadPeso,
+          tabla: true
+        });
+      }
+
+      limpiar(wrapGrasa);
+      if (typeof Charts.linea === 'function') {
+        Charts.linea(wrapGrasa, {
+          // D5: sin título interno (duplicaría el heading de cardGrasa).
+          tituloAccesible: 'Grasa corporal en porcentaje a lo largo del tiempo',
+          series: [{ nombre: 'Grasa corporal (%)', datos: ultimasN(grasaSerieActual, n), color: 'var(--series-2)' }],
           etiquetasX: etiquetasX,
           yMin: 15,
           yMax: 45,
+          unidad: '%',
           tabla: true
         });
       }
@@ -360,10 +429,11 @@
         Charts.linea(wrapCintura, {
           // D5: sin título interno (duplicaría el heading de cardCintura).
           tituloAccesible: 'Circunferencia de cintura en centímetros a lo largo del tiempo',
-          series: [{ nombre: 'Cintura', datos: ultimasN(cinturaSerie, n) }],
+          series: [{ nombre: 'Cintura', datos: ultimasN(cinturaSerieActual, n) }],
           etiquetasX: etiquetasX,
           yMin: 70,
           yMax: 100,
+          unidad: unidadCintura,
           tabla: true
         });
       }
@@ -375,27 +445,73 @@
       Herzon.filters.onRangeChange(function (weeks) { redibujar(weeks); });
     }
 
-    // Laboratorios en 3 cortes: son puntos clínicos fijos (Basal / Seguimiento /
-    // Final), no muestras semanales -- no se re-cortan con el filtro de rango
-    // (DECISION registrada en el hand-off de esta tarea).
+    // prod-1 (Adendum R6 punto 4): al importar mediciones desde
+    // build/documentos.js, esa función dispara `herzon:mediciones-importadas`
+    // en el objeto global tras hacer merge sobre HERZON_DATA.series. Esta
+    // vista escucha ese evento y vuelve a dibujar el rango actualmente
+    // activo (no el absoluto): como `redibujar` relee la serie completa en
+    // cada llamada, la semana importada aparece sin recargar la página.
+    if (typeof G.addEventListener === 'function') {
+      G.addEventListener('herzon:mediciones-importadas', function () {
+        var rangoActivo = (Herzon.filters && typeof Herzon.filters.getRange === 'function') ? Herzon.filters.getRange() : 12;
+        redibujar(rangoActivo);
+      });
+    }
+
+    // jera-2/data-1/fini-2 (Adendum R6 fix, T-033, CAUSA RAÍZ REAL): montar
+    // cardLabs/gridLabs en el documento ANTES del loop no bastaba, porque el
+    // loop anterior seguía haciendo append+render POR ITEM: en la primera
+    // vuelta, gridLabs tenía UN solo hijo (el auto-fit de la grilla le daba
+    // la fila completa, ~1130px) y Charts.barras medía `clientWidth` en ESE
+    // instante y horneaba el viewBox a ese ancho; recién en la vuelta
+    // siguiente el grid reflowaba a columnas y esa primera celda se
+    // comprimía a ~356px, quedando a escala ~0.31 (texto microscópico y una
+    // altura distinta a sus 6 hermanas). El fix real es en DOS FASES
+    // separadas: fase 1 crea y adjunta TODOS los wrapMarcador a gridLabs
+    // (el grid ya queda en su geometría final de 7 columnas); solo
+    // entonces arranca la fase 2, en un loop aparte, que llama
+    // Charts.barras sobre cada wrap ya con esa geometría estable -- las 7
+    // miden el mismo ancho de celda y salen con la misma altura. Mismo
+    // patrón ya correcto en la card de plicometría, más abajo (una sola
+    // gráfica, sin este riesgo de reflow intermedio). Laboratorios en 3
+    // cortes: son puntos clínicos fijos (Basal / Seguimiento / Final), no
+    // muestras semanales -- no se re-cortan con el filtro de rango
+    // (DECISION registrada en el hand-off de la tarea original).
     var cardLabs = crear(doc, 'div', ['hz-card']);
     cardLabs.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Laboratorios en 3 cortes'));
     var gridLabs = crear(doc, 'div', ['hz-grid']);
-    var cortesEtiquetas = (labs.cortes || []).map(function (c) { return c.etiqueta; });
-    (labs.marcadores || []).forEach(function (m) {
-      var wrapMarcador = crear(doc, 'div');
-      if (typeof Charts.barras === 'function') {
-        Charts.barras(wrapMarcador, {
-          titulo: m.nombre + ' (' + m.unidad + ')',
-          categorias: cortesEtiquetas,
-          series: [{ nombre: m.nombre, datos: m.valores }],
-          tabla: true
-        });
-      }
-      gridLabs.appendChild(wrapMarcador);
-    });
     cardLabs.appendChild(gridLabs);
     rootEl.appendChild(cardLabs);
+
+    var cortesEtiquetas = (labs.cortes || []).map(function (c) { return c.etiqueta; });
+    var marcadoresLabs = labs.marcadores || [];
+
+    // Fase 1 (T-033): crear y adjuntar TODOS los wrapMarcador a gridLabs
+    // antes de renderizar ninguno. Ningún Charts.* se invoca en este loop.
+    var wrapsLabs = marcadoresLabs.map(function (m) {
+      var wrapMarcador = crear(doc, 'div');
+      gridLabs.appendChild(wrapMarcador);
+      return wrapMarcador;
+    });
+
+    // Fase 2 (T-033): con gridLabs ya en su geometría final (7 hijos
+    // adjuntos), renderizar cada gráfica de laboratorio en un loop
+    // separado -- todas miden el mismo clientWidth de celda.
+    marcadoresLabs.forEach(function (m, indiceMarcadorLab) {
+      if (typeof Charts.barras !== 'function') { return; }
+      var opcionesBarras = {
+        titulo: m.nombre + ' (' + m.unidad + ')',
+        categorias: cortesEtiquetas,
+        series: [{ nombre: m.nombre, datos: m.valores }],
+        tabla: true
+      };
+      // data-8 (Adendum R6 punto 2/consumo): referencia clínica {min,max}
+      // SOLO para los marcadores que la traen en HERZON_DATA.
+      if (m.referencia && typeof m.referencia.min === 'number' && typeof m.referencia.max === 'number') {
+        opcionesBarras.referencia = { min: m.referencia.min, max: m.referencia.max, etiqueta: 'Rango normal' };
+      }
+      Charts.barras(wrapsLabs[indiceMarcadorLab], opcionesBarras);
+    });
 
     // -------------------------------------------------------------------
     // Card de plicometría (Adendum R4 punto 1 + esta tarea): 4 series (una

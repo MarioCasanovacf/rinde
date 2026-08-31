@@ -185,13 +185,14 @@ button, input, select { font-family: inherit; }
   background: transparent;
   color: var(--text-secondary);
   font-size: 0.95rem;
+  font-weight: 600;
   padding: 12px 16px;
   cursor: pointer;
   border-bottom: 3px solid transparent;
 }
 .hz-tab:hover { color: var(--text-primary); }
 .hz-tab:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
-.hz-tab[aria-selected="true"] { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--series-1); }
+.hz-tab[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--series-1); }
 
 .hz-main { padding: 20px clamp(12px, 4vw, 32px) 48px; max-width: 100%; }
 
@@ -231,7 +232,7 @@ button, input, select { font-family: inherit; }
 /* ---------- 6. Componentes congelados (plan.md 3.G) ---------- */
 .hz-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 16px;
 }
 
@@ -326,7 +327,7 @@ button, input, select { font-family: inherit; }
 .hz-status-dot[data-status="critical"] { background: var(--status-critical); }
 .hz-status-label { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
 
-.hz-nota { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; max-width: 70ch; }
+.hz-nota { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; max-width: 70ch; }
 
 .hz-form { display: flex; flex-direction: column; gap: 14px; max-width: 480px; }
 .hz-form-campo { display: flex; flex-direction: column; gap: 6px; }
@@ -545,7 +546,7 @@ button, input, select { font-family: inherit; }
   border: 1px solid var(--border);
   background: var(--surface-1);
   color: var(--text-secondary);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 6px 14px;
   font-size: 0.85rem;
   cursor: pointer;
@@ -575,7 +576,7 @@ button, input, select { font-family: inherit; }
   border: 1px solid var(--border);
   background: var(--surface-1);
   color: var(--text-secondary);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 6px 14px;
   font-size: 0.85rem;
   cursor: pointer;
@@ -593,7 +594,7 @@ button, input, select { font-family: inherit; }
 .hz-doc-meta { display: flex; flex-wrap: wrap; gap: 16px; margin: 0 0 20px; color: var(--text-secondary); font-size: 0.85rem; }
 .hz-doc-seccion { margin: 0 0 24px; }
 .hz-doc-seccion-titulo { margin: 0 0 8px; font-size: 1.05rem; font-weight: 600; color: var(--text-primary); }
-.hz-doc-pie { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--grid); font-size: 0.75rem; color: var(--text-muted); }
+.hz-doc-pie { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--grid); font-size: 0.75rem; color: var(--text-secondary); }
 
 /* ---------- 10. Adendum R5 (T-021): bloque @media print ----------
    Regla del criterio de aceptación: SOLO #documento-plan es visible al
@@ -641,7 +642,79 @@ button, input, select { font-family: inherit; }
     font-size: 11pt;
     line-height: 1.5;
   }
+
+  /* resp-4 (Adendum R6): un párrafo de sección no debe quedar solo al pie
+     de una página con el resto de la sección en la siguiente; una tabla no
+     debe partirse a la mitad entre páginas, y su overflow-x:auto (pensado
+     para pantalla) no aplica al imprimir -- el papel no scrollea. */
+  .hz-doc-seccion > p { break-after: avoid-page; }
+  .hz-doc-seccion .hz-table-wrap { break-inside: avoid-page; overflow-x: visible; }
 }
+
+/* ---------- 11. Adendum R6 (T-026): refinamiento Justesse (modo preserve) ----------
+   Extensiones ADITIVAS autorizadas explícitamente por el Adendum R6 del plan
+   (jerarquía, producto, finishing, responsive/dark). Los 4 bloques de
+   tokens (secciones 1-3 arriba) NO se tocan: esto solo agrega selectores
+   nuevos o ajusta valores puntuales ya autorizados explícitamente. */
+
+/* jera-3/fini-3: el slider del recomendador (.hz-reco-slider) vive dentro
+   de un .hz-form-campo (flex-direction: column) en layout vertical; sin
+   este ajuste hereda flex:1 1 200px y se estira ~200px de alto en vez de
+   ocupar el ancho del campo, rompiendo el ritmo etiqueta/control/valor. */
+.hz-form-campo .hz-reco-slider { flex: 0 0 auto; width: 100%; min-width: 0; }
+
+/* jera-4: la prosa secundaria (nota del prototipo, pie del documento
+   imprimible) sube de --text-muted a --text-secondary (contraste 4.5:1);
+   --text-muted queda reservado para ejes y labels de gráfica. Reasignación
+   aplicada IN-PLACE en las reglas base .hz-nota (sección 6) y .hz-doc-pie
+   (sección 9) -- no se duplica aquí para evitar dos declaraciones de
+   `color` para la misma clase en cascada. */
+
+/* prod-7/fini-7: gramática de botones -- las acciones one-shot pasan a
+   radius 8px (reasignación IN-PLACE en las reglas base .hz-doc-btn y
+   .hz-doc-import-label de la sección 9, no duplicada aquí); la píldora
+   999px queda reservada a .hz-badge (chip) y .hz-filtro-btn (filtro).
+   Disabled + hover/focus-visible garantizados en toda acción (incluye
+   .hz-table-toggle, ya congelada en radius 8px, que el recomendador
+   reutiliza para sus propios botones). */
+.hz-doc-btn:disabled,
+.hz-doc-btn[aria-disabled="true"],
+.hz-doc-import-label[aria-disabled="true"],
+.hz-table-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.hz-doc-import-label:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
+/* fini-5/resp-2: color-scheme sigue al toggle para que el chrome nativo
+   (track del slider, controles del navegador) cambie de tema con la app;
+   el default sin toggle conserva "light dark" (sección 4 arriba, intacta). */
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+
+/* fini-8: las tabs no se desplazan al activarse -- peso 600 constante en
+   todo estado (declarado en .hz-tab, sección 5 arriba); el acento visual
+   de "activa" vive solo en color + subrayado (border-bottom-color), nunca
+   en un salto de font-weight que cambie el ancho del texto. */
+
+/* resp-3: targets táctiles >=44px en pantallas táctiles o angostas. */
+@media (pointer: coarse), (max-width: 640px) {
+  .hz-filtro-btn,
+  .hz-doc-btn,
+  .hz-doc-import-label,
+  .hz-table-toggle {
+    min-height: 44px;
+    padding: 10px 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Adendum R6 punto 1: atributo data-ancho="completo" en hijos directos de
+   .hz-grid; las vistas lo aplican vía setAttribute (primer consumidor: la
+   card del régimen de suplementos, consumido en T-028/T-029). */
+.hz-grid > [data-ancho="completo"] { grid-column: 1 / -1; }
 </style>
 </head>
 <body>
@@ -1592,6 +1665,19 @@ button, input, select { font-family: inherit; }
   var ALTURA_MINIMA_ETIQUETA_PUNTA = 12;
   var UMBRAL_LINEA_GUIA = 4;
 
+  // R6 (Adendum 2): opciones aditivas default-apagadas del refinamiento Justesse.
+  // Umbral mínimo de alto de segmento (apilada100) para dibujar su etiqueta de
+  // porcentaje; segmentos más angostos quedan sin etiqueta (los cubre la tabla).
+  var ALTURA_MINIMA_ETIQUETA_SEGMENTO = 14;
+  // Aire entre el texto de etiquetasFila (heatmapCalendario) y el borde
+  // izquierdo del grid de celdas.
+  var PADDING_GUTTER_FILA_HEATMAP = 10;
+  // Iniciales de día en español: orden que devuelve Date.prototype.getUTCDay()
+  // (0 = domingo) y orden canónico de semana que empieza en lunes (fallback
+  // cuando la etiqueta no es una fecha ISO parseable, p.ej. fixtures sintéticos).
+  var INICIALES_DIA_POR_GETDAY = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
+  var INICIALES_DIA_CANONICA = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
   // ---------------------------------------------------------------------
   // Utilidades internas puras (sin DOM)
   // ---------------------------------------------------------------------
@@ -1650,6 +1736,51 @@ button, input, select { font-family: inherit; }
       if (typeof arr[i] === 'number' && arr[i] > arr[idx]) idx = i;
     }
     return idx;
+  }
+
+  // R6: sufijo de unidad SOLO para etiquetas de valor (nunca para ticks de eje,
+  // que siempre quedan limpios via formatearNumero directo).
+  function etiquetaConUnidad(valor, unidad) {
+    var base = formatearNumero(valor);
+    return unidad ? (base + ' ' + unidad) : base;
+  }
+
+  // R6 (heatmapCalendario): bucket ordinal 0..pasos-1 de un valor dentro del
+  // rango [minV, maxV]; mismo cómputo que antes vivía inline en el render.
+  function calcularBucketRampa(valor, minV, maxV, pasos) {
+    pasos = pasos || 5;
+    if (maxV === minV) return 0;
+    var proporcion = (valor - minV) / (maxV - minV);
+    if (proporcion < 0) proporcion = 0;
+    if (proporcion > 1) proporcion = 1;
+    return Math.min(pasos - 1, Math.floor(proporcion * pasos));
+  }
+
+  // R6 (heatmapCalendario, leyendaRampa): rango numérico [desde, hasta) de cada
+  // bucket ordinal, para rotular cada swatch de la leyenda con su cota.
+  function calcularRangosBucketsRampa(minV, maxV, pasos) {
+    pasos = pasos || 5;
+    var rangos = [];
+    for (var i = 0; i < pasos; i++) {
+      rangos.push({
+        desde: minV + (maxV - minV) * (i / pasos),
+        hasta: minV + (maxV - minV) * ((i + 1) / pasos)
+      });
+    }
+    return rangos;
+  }
+
+  // R6 (heatmapCalendario, encabezadosDia): inicial de día derivada de
+  // opciones.etiquetas cuando es una fecha ISO parseable (YYYY-MM-DD...); si no,
+  // cae al orden canónico de semana (lunes-primero) por posición de columna, para
+  // que la función nunca lance con etiquetas sintéticas no fechables.
+  function derivarInicialDiaSemana(etiquetaFecha, indiceColumna) {
+    var cadena = etiquetaFecha == null ? '' : String(etiquetaFecha);
+    if (/^\d{4}-\d{2}-\d{2}/.test(cadena)) {
+      var fecha = new Date(cadena.slice(0, 10) + 'T00:00:00Z');
+      if (!isNaN(fecha.getTime())) return INICIALES_DIA_POR_GETDAY[fecha.getUTCDay()];
+    }
+    return INICIALES_DIA_CANONICA[indiceColumna % 7];
   }
 
   function construirTablaAutomatica(etiquetas, series, etiquetaColumna) {
@@ -1797,6 +1928,44 @@ button, input, select { font-family: inherit; }
     });
 
     return puntos;
+  }
+
+  // T-034 (R6-fix): colisión rectangular estimada entre dos cajas de texto/marca.
+  // Cajas siempre en el mismo sistema de coordenadas del SVG (x0<x1, y0<y1, "y"
+  // crece hacia abajo). Reutilizada por la etiqueta de opciones.referencia de
+  // barras() para no reinventar el cómputo de intersección en cada llamador.
+  function cajasIntersectan(a, b) {
+    return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+  }
+
+  // T-034 (R6-fix, barras verticales): posiciona la etiqueta corta de
+  // opciones.referencia. Por defecto se ancla al extremo IZQUIERDO de la
+  // hairline (`xEtiqueta`, típicamente margen.izquierda): el extremo derecho es
+  // SIEMPRE de la etiqueta de valor del último elemento (R6 data-4), que nunca
+  // cede esa posición. Si la caja estimada de la etiqueta en su posición por
+  // defecto (medida con estimarAnchoTexto, igual que el resto del módulo)
+  // colisiona con alguna de `obstaculos` (cajas de barra y/o de etiqueta de
+  // valor final que el llamador ya calculó con las posiciones reales del
+  // render), se desplaza verticalmente por encima de la hairline: al menos
+  // `separacionMinima` px por encima del borde superior del obstáculo más alto
+  // que la toca (nunca menos que `separacionMinima` respecto de la propia
+  // hairline, que es la separación de la posición por defecto). Función pura
+  // (sin DOM) para que el render y el selfcheck compartan el mismo cómputo.
+  function resolverPosicionEtiquetaReferencia(xEtiqueta, yHairline, texto, tamanoFuente, separacionMinima, obstaculos) {
+    var anchoTexto = estimarAnchoTexto(texto, tamanoFuente);
+    var y = yHairline - separacionMinima;
+    var caja = { x0: xEtiqueta, x1: xEtiqueta + anchoTexto, y0: y - tamanoFuente, y1: y };
+    (obstaculos || []).forEach(function (o) {
+      if (cajasIntersectan(caja, o)) {
+        var yTecho = o.y0 - separacionMinima;
+        if (yTecho < caja.y1) {
+          var delta = caja.y1 - yTecho;
+          caja.y0 -= delta;
+          caja.y1 -= delta;
+        }
+      }
+    });
+    return { x: xEtiqueta, y: caja.y1, ancho: anchoTexto, caja: caja };
   }
 
   // ---------------------------------------------------------------------
@@ -1983,7 +2152,7 @@ button, input, select { font-family: inherit; }
     series.forEach(function (s) {
       var datos = s.datos || [];
       if (!datos.length) return;
-      var anchoTexto = estimarAnchoTexto(formatearNumero(datos[datos.length - 1]), TAMANO_FUENTE_ETIQUETA);
+      var anchoTexto = estimarAnchoTexto(etiquetaConUnidad(datos[datos.length - 1], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
       if (anchoTexto > anchoEtiquetaFinalMax) anchoEtiquetaFinalMax = anchoTexto;
     });
     var margenDerecho = Math.max(20, ESPACIO_PUNTO_ETIQUETA + anchoEtiquetaFinalMax + 6);
@@ -2106,7 +2275,7 @@ button, input, select { font-family: inherit; }
         anillo.style.stroke = 'var(--surface-1)';
         svg.appendChild(anillo);
 
-        puntosEtiquetaPunta.push({ cx: cx, cy: cy, texto: formatearNumero(datos[ultimoI]) });
+        puntosEtiquetaPunta.push({ cx: cx, cy: cy, texto: etiquetaConUnidad(datos[ultimoI], opciones.unidad) });
       }
     });
 
@@ -2149,7 +2318,9 @@ button, input, select { font-family: inherit; }
     if (n > 0) {
       var crosshair = crearSVG(doc, 'line', { x1: escalaX(0), x2: escalaX(0), y1: margen.arriba, y2: alto - margen.abajo, 'stroke-width': '1' });
       crosshair.classList.add('hz-crosshair');
-      crosshair.style.stroke = 'var(--axis)';
+      // R6 punto 5 / Adendum R6.5: el crosshair de hover pasa de var(--axis) a
+      // var(--text-muted); gridlines y ejes conservan var(--axis) (sin tocar).
+      crosshair.style.stroke = 'var(--text-muted)';
       crosshair.style.display = 'none';
       svg.appendChild(crosshair);
 
@@ -2225,13 +2396,30 @@ button, input, select { font-family: inherit; }
     // la marca (véase más abajo, "series.length === 1"); reservar margen según
     // su ancho estimado en vez de un margen fijo que lo recorta contra el borde
     // del viewBox (regla explícita del QA para barras horizontales).
+    // R6 (data-4): en vertical el label directo por default va en el ÚLTIMO
+    // valor, no en el máximo; el margen se reserva según ESE valor. R6
+    // (valoresEnBarras): en horizontal con <=6 categorías y serie única, se
+    // reserva margen según el valor MÁS ANCHO de TODAS las barras etiquetadas.
+    // Ambos casos incluyen el sufijo de unidad (opciones.unidad) si viene.
     var ESPACIO_PUNTO_ETIQUETA = 6;
     var anchoEtiquetaMaximo = 0;
     if (series.length === 1) {
       var datosUnicaPre = series[0].datos || [];
-      var idxMaxPre = indiceDelMaximo(datosUnicaPre);
-      if (idxMaxPre >= 0) {
-        anchoEtiquetaMaximo = estimarAnchoTexto(formatearNumero(datosUnicaPre[idxMaxPre]), TAMANO_FUENTE_ETIQUETA);
+      if (orientacion === 'vertical') {
+        var idxUltimoPre = datosUnicaPre.length - 1;
+        if (idxUltimoPre >= 0) {
+          anchoEtiquetaMaximo = estimarAnchoTexto(etiquetaConUnidad(datosUnicaPre[idxUltimoPre], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
+        }
+      } else if (opciones.valoresEnBarras && categorias.length <= 6) {
+        for (var ivp = 0; ivp < datosUnicaPre.length; ivp++) {
+          var wvp = estimarAnchoTexto(etiquetaConUnidad(datosUnicaPre[ivp], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
+          if (wvp > anchoEtiquetaMaximo) anchoEtiquetaMaximo = wvp;
+        }
+      } else {
+        var idxMaxPre = indiceDelMaximo(datosUnicaPre);
+        if (idxMaxPre >= 0) {
+          anchoEtiquetaMaximo = estimarAnchoTexto(etiquetaConUnidad(datosUnicaPre[idxMaxPre], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
+        }
       }
     }
     // QA-R3 (b): el gutter izquierdo de barras horizontales se dimensiona según el label de
@@ -2270,8 +2458,58 @@ button, input, select { font-family: inherit; }
       (s.datos || []).forEach(function (v) { if (typeof v === 'number' && !isNaN(v)) todosValores.push(v); });
     });
     var dataMax = todosValores.length ? Math.max.apply(null, todosValores) : 1;
+    // R6: opciones.referencia.max amplía la escala automática (solo cuando
+    // opciones.max no viene fijado explícitamente) para que la línea de
+    // referencia nunca quede fuera del área de trazo.
+    if (opciones.referencia && typeof opciones.referencia.max === 'number') {
+      dataMax = Math.max(dataMax, opciones.referencia.max);
+    }
     var valorMax = (typeof opciones.max === 'number') ? opciones.max : (dataMax || 1);
     if (valorMax <= 0) valorMax = 1;
+    var tieneReferencia = !!(opciones.referencia && typeof opciones.referencia.min === 'number' && typeof opciones.referencia.max === 'number');
+
+    // R6: hairline 1px var(--text-muted) + etiqueta corta, misma anatomia que
+    // la linea Meta de linea() (contrato Adendum R6 punto 2). Dibuja las DOS
+    // fronteras (min y max) del rango de referencia sobre el eje recibido
+    // (perpendicular a las barras) y una sola etiqueta junto a la frontera max.
+    function dibujarReferencia(esVertical, escalaValor, obstaculosEtiqueta) {
+      if (!tieneReferencia) return;
+      var yMin, yMax, xMin, xMax;
+      if (esVertical) {
+        yMin = alto - margen.abajo - escalaValor(opciones.referencia.min);
+        yMax = alto - margen.abajo - escalaValor(opciones.referencia.max);
+        [yMin, yMax].forEach(function (yRef) {
+          var lineaRef = crearSVG(doc, 'line', { x1: margen.izquierda, x2: ancho - margen.derecha, y1: yRef, y2: yRef, 'stroke-width': '1', class: 'hz-referencia-linea' });
+          lineaRef.style.stroke = 'var(--text-muted)';
+          svg.appendChild(lineaRef);
+        });
+        // T-034 (R6-fix): la etiqueta ya NO se ancla al extremo derecho (ahí
+        // colisionaba con la barra Final y con su etiqueta de valor — evidencia
+        // LDL/HbA1c del coordinador). Se ancla al extremo IZQUIERDO de la
+        // hairline (inicio del eje); si aun así colisiona con una barra o con
+        // la etiqueta de valor del último elemento (que SIEMPRE gana la
+        // posición derecha, R6 data-4), se desplaza verticalmente por encima
+        // de la hairline con separación >= 4px del obstáculo más alto.
+        var textoRef = opciones.referencia.etiqueta || 'Referencia';
+        var posicionRef = resolverPosicionEtiquetaReferencia(margen.izquierda, yMax, textoRef, TAMANO_FUENTE_EJE, 4, obstaculosEtiqueta);
+        var etiquetaRef = crearSVG(doc, 'text', { x: posicionRef.x, y: posicionRef.y, 'text-anchor': 'start', 'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-referencia-etiqueta' });
+        etiquetaRef.style.fill = 'var(--text-muted)';
+        etiquetaRef.textContent = textoRef;
+        svg.appendChild(etiquetaRef);
+      } else {
+        xMin = margen.izquierda + escalaValor(opciones.referencia.min);
+        xMax = margen.izquierda + escalaValor(opciones.referencia.max);
+        [xMin, xMax].forEach(function (xRef) {
+          var lineaRefH = crearSVG(doc, 'line', { x1: xRef, x2: xRef, y1: margen.arriba, y2: alto - margen.abajo, 'stroke-width': '1', class: 'hz-referencia-linea' });
+          lineaRefH.style.stroke = 'var(--text-muted)';
+          svg.appendChild(lineaRefH);
+        });
+        var etiquetaRefH = crearSVG(doc, 'text', { x: xMax, y: margen.arriba - 4, 'text-anchor': 'middle', 'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-referencia-etiqueta' });
+        etiquetaRefH.style.fill = 'var(--text-muted)';
+        etiquetaRefH.textContent = opciones.referencia.etiqueta || 'Referencia';
+        svg.appendChild(etiquetaRefH);
+      }
+    }
 
     var nCat = categorias.length;
     var nSer = Math.max(series.length, 1);
@@ -2325,6 +2563,43 @@ button, input, select { font-family: inherit; }
       if (grosorBarra < 2) grosorBarra = 2;
       var escalaAlt = function (v) { return (v / valorMax) * altoPlot; };
 
+      // R6: la referencia se dibuja ANTES que las barras (misma capa que la
+      // línea Meta de linea(), detrás de las marcas de datos). T-034: para que
+      // la etiqueta de referencia sepa si colisiona, se calculan de antemano
+      // las cajas estimadas de CADA barra (valor máximo entre series por
+      // categoría) y, con serie única, la de la etiqueta de valor del último
+      // elemento — la misma geometría que este mismo bloque dibuja más abajo.
+      var obstaculosEtiquetaRef = [];
+      for (var oc = 0; oc < nCat; oc++) {
+        var valorMaxCategoriaRef = null;
+        for (var os = 0; os < series.length; os++) {
+          var vObstaculo = (series[os].datos || [])[oc];
+          if (typeof vObstaculo === 'number' && !isNaN(vObstaculo) && (valorMaxCategoriaRef === null || vObstaculo > valorMaxCategoriaRef)) {
+            valorMaxCategoriaRef = vObstaculo;
+          }
+        }
+        if (valorMaxCategoriaRef === null) continue;
+        var xCategoriaRef = margen.izquierda + oc * anchoGrupo;
+        obstaculosEtiquetaRef.push({
+          x0: xCategoriaRef, x1: xCategoriaRef + anchoGrupo,
+          y0: (alto - margen.abajo) - escalaAlt(valorMaxCategoriaRef), y1: alto - margen.abajo
+        });
+      }
+      if (series.length === 1) {
+        var datosUnicaRefPre = series[0].datos || [];
+        var idxUltimoRefPre = datosUnicaRefPre.length - 1;
+        if (idxUltimoRefPre >= 0 && typeof datosUnicaRefPre[idxUltimoRefPre] === 'number' && !isNaN(datosUnicaRefPre[idxUltimoRefPre])) {
+          var xCentroRefPre = margen.izquierda + idxUltimoRefPre * anchoGrupo + anchoGrupo / 2;
+          var anchoValorRefPre = estimarAnchoTexto(etiquetaConUnidad(datosUnicaRefPre[idxUltimoRefPre], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
+          var yCapRefPre = (alto - margen.abajo) - escalaAlt(datosUnicaRefPre[idxUltimoRefPre]);
+          obstaculosEtiquetaRef.push({
+            x0: xCentroRefPre - anchoValorRefPre / 2, x1: xCentroRefPre + anchoValorRefPre / 2,
+            y0: (yCapRefPre - 6) - TAMANO_FUENTE_ETIQUETA, y1: yCapRefPre - 6
+          });
+        }
+      }
+      dibujarReferencia(true, escalaAlt, obstaculosEtiquetaRef);
+
       for (var c = 0; c < nCat; c++) {
         var inicioGrupo = margen.izquierda + c * anchoGrupo;
         var anchoOcupado = grosorBarra * nSer + GAP_SEPARADOR * (nSer - 1);
@@ -2367,14 +2642,16 @@ button, input, select { font-family: inherit; }
 
       if (series.length === 1) {
         var datosUnica = series[0].datos || [];
-        var idxMax = indiceDelMaximo(datosUnica);
-        if (idxMax >= 0) {
-          var xCentro = margen.izquierda + idxMax * anchoGrupo + anchoGrupo / 2;
-          var valorMaxSel = datosUnica[idxMax];
-          var yCap = alto - margen.abajo - escalaAlt(valorMaxSel);
+        // R6 (data-4): el label directo por default va en el ÚLTIMO valor (el
+        // actual), no en el máximo — antes de R6 aquí vivía indiceDelMaximo().
+        var idxUltimo = datosUnica.length - 1;
+        if (idxUltimo >= 0 && typeof datosUnica[idxUltimo] === 'number' && !isNaN(datosUnica[idxUltimo])) {
+          var xCentro = margen.izquierda + idxUltimo * anchoGrupo + anchoGrupo / 2;
+          var valorUltimoSel = datosUnica[idxUltimo];
+          var yCap = alto - margen.abajo - escalaAlt(valorUltimoSel);
           var etiquetaValor = crearSVG(doc, 'text', { x: xCentro, y: yCap - 6, 'text-anchor': 'middle', class: 'hz-etiqueta-valor', 'font-size': String(TAMANO_FUENTE_ETIQUETA) });
           etiquetaValor.style.fill = 'var(--text-primary)';
-          etiquetaValor.textContent = formatearNumero(valorMaxSel);
+          etiquetaValor.textContent = etiquetaConUnidad(valorUltimoSel, opciones.unidad);
           svg.appendChild(etiquetaValor);
         }
       }
@@ -2387,6 +2664,8 @@ button, input, select { font-family: inherit; }
       var grosorBarraH = Math.min(GROSOR_MAX_BARRA, (altoGrupo - GAP_SEPARADOR * (nSer + 1)) / nSer);
       if (grosorBarraH < 2) grosorBarraH = 2;
       var escalaAncho = function (v) { return (v / valorMax) * anchoPlot; };
+
+      dibujarReferencia(false, escalaAncho);
 
       for (var c2 = 0; c2 < nCat; c2++) {
         var inicioGrupoH = margen.arriba + c2 * altoGrupo;
@@ -2447,15 +2726,31 @@ button, input, select { font-family: inherit; }
 
       if (series.length === 1) {
         var datosUnicaH = series[0].datos || [];
-        var idxMaxH = indiceDelMaximo(datosUnicaH);
-        if (idxMaxH >= 0) {
-          var yCentro = margen.arriba + idxMaxH * altoGrupo + altoGrupo / 2;
-          var valorMaxSelH = datosUnicaH[idxMaxH];
-          var xCap = margen.izquierda + escalaAncho(valorMaxSelH);
-          var etiquetaValorH = crearSVG(doc, 'text', { x: xCap + ESPACIO_PUNTO_ETIQUETA, y: yCentro, 'dominant-baseline': 'middle', class: 'hz-etiqueta-valor', 'font-size': String(TAMANO_FUENTE_ETIQUETA) });
-          etiquetaValorH.style.fill = 'var(--text-primary)';
-          etiquetaValorH.textContent = formatearNumero(valorMaxSelH);
-          svg.appendChild(etiquetaValorH);
+        // R6: valoresEnBarras (horizontal, serie única, <=6 categorías) dibuja
+        // el valor al final de CADA barra; fuera de esas condiciones se
+        // conserva el comportamiento previo (solo la barra máxima).
+        if (opciones.valoresEnBarras && categorias.length <= 6) {
+          for (var vb = 0; vb < datosUnicaH.length; vb++) {
+            var valorVB = datosUnicaH[vb];
+            if (typeof valorVB !== 'number' || isNaN(valorVB)) continue;
+            var yCentroVB = margen.arriba + vb * altoGrupo + altoGrupo / 2;
+            var xCapVB = margen.izquierda + escalaAncho(valorVB);
+            var etiquetaVB = crearSVG(doc, 'text', { x: xCapVB + ESPACIO_PUNTO_ETIQUETA, y: yCentroVB, 'dominant-baseline': 'middle', class: 'hz-etiqueta-valor', 'font-size': String(TAMANO_FUENTE_ETIQUETA) });
+            etiquetaVB.style.fill = 'var(--text-primary)';
+            etiquetaVB.textContent = etiquetaConUnidad(valorVB, opciones.unidad);
+            svg.appendChild(etiquetaVB);
+          }
+        } else {
+          var idxMaxH = indiceDelMaximo(datosUnicaH);
+          if (idxMaxH >= 0) {
+            var yCentro = margen.arriba + idxMaxH * altoGrupo + altoGrupo / 2;
+            var valorMaxSelH = datosUnicaH[idxMaxH];
+            var xCap = margen.izquierda + escalaAncho(valorMaxSelH);
+            var etiquetaValorH = crearSVG(doc, 'text', { x: xCap + ESPACIO_PUNTO_ETIQUETA, y: yCentro, 'dominant-baseline': 'middle', class: 'hz-etiqueta-valor', 'font-size': String(TAMANO_FUENTE_ETIQUETA) });
+            etiquetaValorH.style.fill = 'var(--text-primary)';
+            etiquetaValorH.textContent = etiquetaConUnidad(valorMaxSelH, opciones.unidad);
+            svg.appendChild(etiquetaValorH);
+          }
         }
       }
     }
@@ -2576,6 +2871,19 @@ button, input, select { font-family: inherit; }
           svg.appendChild(zonaHit);
         })(xBarra, y, hSeg, c, s, proporcion, rect);
 
+        // R6: etiquetasSegmento — % SOLO en segmentos con alto >= 14px (regla
+        // "segmentos angostos sin etiqueta, los cubre la tabla"). Tinta de
+        // texto via tokens de texto, jamás color de serie (regla 8).
+        if (opciones.etiquetasSegmento && hSeg >= ALTURA_MINIMA_ETIQUETA_SEGMENTO) {
+          var etiquetaSegmento = crearSVG(doc, 'text', {
+            x: xCentro, y: y + hSeg / 2, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
+            class: 'hz-etiqueta-segmento', 'font-size': String(TAMANO_FUENTE_ETIQUETA)
+          });
+          etiquetaSegmento.style.fill = 'var(--text-primary)';
+          etiquetaSegmento.textContent = formatearNumero(Math.round(proporcion * 1000) / 10) + '%';
+          svg.appendChild(etiquetaSegmento);
+        }
+
         yAcumulado = y + hSeg + GAP_SEPARADOR;
       }
 
@@ -2607,8 +2915,26 @@ button, input, select { font-family: inherit; }
     var lado = opciones.lado || 16;
     var gap = 3;
     var filas = Math.ceil(valores.length / columnas) || 1;
-    var ancho = opciones.ancho || (columnas * (lado + gap) + gap);
-    var alto = opciones.alto || (filas * (lado + gap) + gap);
+
+    // R6: encabezadosDia reserva una fila superior para las iniciales de día;
+    // etiquetasFila reserva una columna izquierda para las etiquetas de fila
+    // (p.ej. S1, S4, S8, S12). Ambas empiezan en 0 (sin cambio de render) y
+    // solo crecen cuando la opción viene activada, de modo que el viewBox por
+    // default sea exactamente el mismo de antes de R6.
+    var margenArribaEncabezados = opciones.encabezadosDia ? (TAMANO_FUENTE_EJE + 6) : 0;
+    var margenIzquierdaFilas = 0;
+    if (opciones.etiquetasFila) {
+      for (var mf = 0; mf < opciones.etiquetasFila.length; mf++) {
+        if (opciones.etiquetasFila[mf]) {
+          var wf = estimarAnchoTexto(opciones.etiquetasFila[mf], TAMANO_FUENTE_EJE);
+          if (wf > margenIzquierdaFilas) margenIzquierdaFilas = wf;
+        }
+      }
+      if (margenIzquierdaFilas > 0) margenIzquierdaFilas += PADDING_GUTTER_FILA_HEATMAP;
+    }
+
+    var ancho = opciones.ancho || (margenIzquierdaFilas + columnas * (lado + gap) + gap);
+    var alto = opciones.alto || (margenArribaEncabezados + filas * (lado + gap) + gap);
 
     var todos = valores.filter(function (v) { return typeof v === 'number' && !isNaN(v); });
     var minV = (typeof opciones.min === 'number') ? opciones.min : (todos.length ? Math.min.apply(null, todos) : 0);
@@ -2656,16 +2982,47 @@ button, input, select { font-family: inherit; }
 
     var TOKENS_RAMPA = ['var(--heat-1)', 'var(--heat-2)', 'var(--heat-3)', 'var(--heat-4)', 'var(--heat-5)'];
 
+    // R6: encabezadosDia — iniciales L M X J V S D derivadas de opciones.etiquetas
+    // (una por columna, tomadas de la primera fila), reutilizando derivarInicialDiaSemana.
+    if (opciones.encabezadosDia) {
+      for (var hc = 0; hc < columnas; hc++) {
+        var inicialDia = derivarInicialDiaSemana(etiquetas[hc], hc);
+        var xEncabezado = margenIzquierdaFilas + gap + hc * (lado + gap) + lado / 2;
+        var etiquetaEncabezado = crearSVG(doc, 'text', {
+          x: xEncabezado, y: margenArribaEncabezados - 4, 'text-anchor': 'middle',
+          'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-heat-encabezado-dia'
+        });
+        etiquetaEncabezado.style.fill = 'var(--text-muted)';
+        etiquetaEncabezado.textContent = inicialDia;
+        svg.appendChild(etiquetaEncabezado);
+      }
+    }
+
+    // R6: etiquetasFila — un rotulo por fila SOLO cuando la entrada correspondiente
+    // del arreglo recibido es no vacia (el llamador decide que filas rotular, p.ej.
+    // S1, S4, S8, S12 de 12 semanas).
+    if (opciones.etiquetasFila) {
+      for (var rf = 0; rf < filas; rf++) {
+        if (!opciones.etiquetasFila[rf]) continue;
+        var yFila = margenArribaEncabezados + gap + rf * (lado + gap) + lado / 2;
+        var etiquetaFila = crearSVG(doc, 'text', {
+          x: margenIzquierdaFilas - PADDING_GUTTER_FILA_HEATMAP + 4, y: yFila,
+          'text-anchor': 'end', 'dominant-baseline': 'middle',
+          'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-heat-fila-etiqueta'
+        });
+        etiquetaFila.style.fill = 'var(--text-muted)';
+        etiquetaFila.textContent = String(opciones.etiquetasFila[rf]);
+        svg.appendChild(etiquetaFila);
+      }
+    }
+
     for (var i = 0; i < valores.length; i++) {
       var valor = valores[i];
       var fila = Math.floor(i / columnas);
       var col = i % columnas;
-      var x = gap + col * (lado + gap);
-      var y = gap + fila * (lado + gap);
-      var proporcion = (valor - minV) / (maxV - minV);
-      if (proporcion < 0) proporcion = 0;
-      if (proporcion > 1) proporcion = 1;
-      var bucket = Math.min(4, Math.floor(proporcion * 5));
+      var x = margenIzquierdaFilas + gap + col * (lado + gap);
+      var y = margenArribaEncabezados + gap + fila * (lado + gap);
+      var bucket = calcularBucketRampa(valor, minV, maxV, 5);
 
       var celda = crearSVG(doc, 'rect', { x: x, y: y, width: lado, height: lado, rx: 2, class: 'hz-heat-celda' });
       celda.style.fill = TOKENS_RAMPA[bucket];
@@ -2689,6 +3046,16 @@ button, input, select { font-family: inherit; }
         zonaHit.addEventListener('blur', bajar);
         svg.appendChild(zonaHit);
       })(x, y, i, valor, celda);
+    }
+
+    // R6: leyendaRampa — 5 swatches --heat-1..5 con el rango numérico de cada
+    // bucket; reutiliza construirLeyenda (contrato Adendum R6 punto 2).
+    if (opciones.leyendaRampa) {
+      var rangosRampa = calcularRangosBucketsRampa(minV, maxV, 5);
+      var entradasLeyendaRampa = rangosRampa.map(function (r, idx) {
+        return { nombre: formatearNumero(r.desde) + '-' + formatearNumero(r.hasta), color: TOKENS_RAMPA[idx] };
+      });
+      construirLeyenda(doc, raiz, entradasLeyendaRampa);
     }
 
     if (opciones.tabla) {
@@ -2830,7 +3197,20 @@ button, input, select { font-family: inherit; }
     // anti-colisión de labels de punta que usa linea(), en vez de reinventarlo.
     resolverColisionesEtiquetasPunta: resolverColisionesEtiquetasPunta,
     ALTURA_MINIMA_ETIQUETA_PUNTA: ALTURA_MINIMA_ETIQUETA_PUNTA,
-    UMBRAL_LINEA_GUIA: UMBRAL_LINEA_GUIA
+    UMBRAL_LINEA_GUIA: UMBRAL_LINEA_GUIA,
+    // R6 (Adendum 2): expuestas para que el selfcheck asevere sobre el mismo
+    // cómputo puro que usan las opciones aditivas nuevas, en vez de reinventarlo.
+    etiquetaConUnidad: etiquetaConUnidad,
+    calcularBucketRampa: calcularBucketRampa,
+    calcularRangosBucketsRampa: calcularRangosBucketsRampa,
+    derivarInicialDiaSemana: derivarInicialDiaSemana,
+    ALTURA_MINIMA_ETIQUETA_SEGMENTO: ALTURA_MINIMA_ETIQUETA_SEGMENTO,
+    PADDING_GUTTER_FILA_HEATMAP: PADDING_GUTTER_FILA_HEATMAP,
+    // T-034 (R6-fix): expuestas para que el selfcheck asevere sobre el mismo
+    // cómputo de colisión/posición que usa la etiqueta de opciones.referencia
+    // en barras(), en vez de reinventarlo.
+    cajasIntersectan: cajasIntersectan,
+    resolverPosicionEtiquetaReferencia: resolverPosicionEtiquetaReferencia
   };
 })();
 
@@ -3036,18 +3416,22 @@ button, input, select { font-family: inherit; }
 </script>
 <script id="hz-docs">
 // build/documentos.js
-// U-DOCUMENTOS (T-023): Herzon.Docs — documento imprimible del plan,
-// descargas locales (.html/.csv via Blob) e importación de mediciones por
-// CSV. Ver .harness/plan.md Adendum R5 puntos 3 y 4.
+// U-DOCUMENTOS (T-023, refinado en T-030/R6): Herzon.Docs — documento
+// imprimible del plan, descargas locales (.html/.csv via Blob) e
+// importación de mediciones por CSV. Ver .harness/plan.md Adendum R5
+// puntos 3 y 4, y Adendum R6 punto 3 (forma real de Herzon.planActivo()).
 //
-// Consume window.HERZON_DATA (T-001, forma congelada en plan.md 3.I) y,
-// cuando ya existe en runtime, Herzon.planActivo() (T-022, aún no
-// implementado en esta corrida: "Herzon.Docs la consume con fallback al
-// plan por defecto si aún no existe" — Adendum R5 punto 4). No conoce ni
-// modifica build/data.js, build/vista_dieta_supl.js ni build/shell.html:
-// los ids que consulta (#documento-plan, #doc-herramientas y sus botones,
-// #hz-doc-input-importar) ya existen como marcado estático puesto por T-021
-// (build/shell.html); este módulo SOLO los cablea, nunca los define.
+// Consume window.HERZON_DATA (T-001, forma congelada en plan.md 3.I) y
+// Herzon.planActivo() (T-004/vista_dieta_supl.js): la forma REAL que
+// documenta la cabecera de ese módulo ES el contrato (Adendum R6 punto 3)
+// — { plan, kcalObjetivo, escalaPorciones, macros:{proteina_g,
+// carbohidrato_g,grasa_g} }, sin `necesidades` ni `ajustes` — con fallback
+// íntegro al plan por defecto si la función no existe, lanza, o no trae
+// `.plan`. No conoce ni modifica build/data.js, build/vista_dieta_supl.js
+// ni build/shell.html: los ids que consulta (#documento-plan,
+// #doc-herramientas y sus botones, #hz-doc-input-importar) ya existen como
+// marcado estático puesto por T-021 (build/shell.html); este módulo SOLO
+// los cablea, nunca los define.
 //
 // Preámbulo obligatorio (plan.md 3.A): script clásico, IIFE, sin
 // import/export. Prohibido tocar `document` en el nivel superior del
@@ -3151,12 +3535,16 @@ button, input, select { font-family: inherit; }
   }
 
   // -----------------------------------------------------------------------
-  // Herzon.planActivo() — Adendum R5 punto 4: "Herzon.Docs la consume con
-  // fallback al plan por defecto si aún no existe". Consumo DEFENSIVO: si
-  // la función no existe, no es function, o lanza, o no trae `.plan`, cae
-  // al plan por defecto (primer plan del catálogo). Si trae `.necesidades`
-  // se muestra en el documento; si no, esa sección simplemente se omite
-  // ("necesidades si existen", criterio de aceptación T-023).
+  // Herzon.planActivo() — Adendum R5 punto 4 + Adendum R6 punto 3: "la forma
+  // REAL documentada en la cabecera de vista_dieta_supl.js ES el contrato".
+  // Esa forma es { plan, kcalObjetivo, escalaPorciones, macros:{proteina_g,
+  // carbohidrato_g,grasa_g} } — NO trae `necesidades` ni `ajustes` (ese era
+  // el bug prod-3: este módulo esperaba claves que planActivo() jamás
+  // devolvió, así que kcal objetivo/macros/escala nunca llegaban al
+  // documento). Consumo DEFENSIVO: si la función no existe, no es function,
+  // o lanza, o no trae `.plan`, cae al plan por defecto (primer plan del
+  // catálogo) con kcalObjetivo/escalaPorciones/macros en null (esa sección
+  // del documento simplemente se omite).
   // -----------------------------------------------------------------------
   function obtenerPlanActivo(HERZON_DATA) {
     if (typeof G.Herzon.planActivo === 'function') {
@@ -3165,8 +3553,9 @@ button, input, select { font-family: inherit; }
         if (resultado && resultado.plan) {
           return {
             plan: resultado.plan,
-            necesidades: resultado.necesidades || null,
-            ajustes: resultado.ajustes || null
+            kcalObjetivo: (resultado.kcalObjetivo === null || resultado.kcalObjetivo === undefined) ? null : resultado.kcalObjetivo,
+            escalaPorciones: (resultado.escalaPorciones === null || resultado.escalaPorciones === undefined) ? null : resultado.escalaPorciones,
+            macros: resultado.macros || null
           };
         }
       } catch (e) {
@@ -3174,7 +3563,7 @@ button, input, select { font-family: inherit; }
         // documento (defensivo, plan.md Adendum R5 punto 4).
       }
     }
-    return { plan: HERZON_DATA.planes[0], necesidades: null, ajustes: null };
+    return { plan: HERZON_DATA.planes[0], kcalObjetivo: null, escalaPorciones: null, macros: null };
   }
 
   function datosDocumento(HERZON_DATA, opciones) {
@@ -3184,8 +3573,9 @@ button, input, select { font-family: inherit; }
     return {
       paciente: HERZON_DATA.paciente,
       plan: activo.plan,
-      necesidades: activo.necesidades,
-      ajustes: activo.ajustes,
+      kcalObjetivo: activo.kcalObjetivo,
+      escalaPorciones: activo.escalaPorciones,
+      macros: activo.macros,
       suplementos: HERZON_DATA.suplementos,
       fechaGeneracion: fechaGeneracion,
       notaDatos: HERZON_DATA.meta.nota
@@ -3220,17 +3610,15 @@ button, input, select { font-family: inherit; }
     });
     contenedorEl.appendChild(meta);
 
-    if (payload.necesidades) {
-      var seccionNecesidades = crearSeccion(doc, contenedorEl, 'Necesidades calculadas');
-      var n = payload.necesidades;
+    if (payload.kcalObjetivo != null || payload.escalaPorciones != null || payload.macros) {
+      var seccionNecesidades = crearSeccion(doc, contenedorEl, 'Plan aplicado');
       var lineas = [];
-      if (n.tmb != null) { lineas.push('Tasa metabólica basal (TMB): ' + n.tmb + ' kcal/día.'); }
-      if (n.get != null) { lineas.push('Gasto energético total (GET): ' + n.get + ' kcal/día.'); }
-      if (n.kcalObjetivo != null) { lineas.push('Calorías objetivo: ' + n.kcalObjetivo + ' kcal/día.'); }
-      if (n.macros) {
+      if (payload.kcalObjetivo != null) { lineas.push('Calorías objetivo aplicadas: ' + payload.kcalObjetivo + ' kcal/día.'); }
+      if (payload.escalaPorciones != null) { lineas.push('Escala de porciones: ' + payload.escalaPorciones + '×.'); }
+      if (payload.macros) {
         lineas.push(
-          'Macronutrientes objetivo: proteína ' + n.macros.proteina_g +
-          ' g, carbohidrato ' + n.macros.carbohidrato_g + ' g, grasa ' + n.macros.grasa_g + ' g.'
+          'Macronutrientes objetivo: proteína ' + payload.macros.proteina_g +
+          ' g, carbohidrato ' + payload.macros.carbohidrato_g + ' g, grasa ' + payload.macros.grasa_g + ' g.'
         );
       }
       for (var li = 0; li < lineas.length; li++) {
@@ -3321,13 +3709,17 @@ button, input, select { font-family: inherit; }
       ].join(' &middot; ') + '</p>'
     );
 
-    if (payload.necesidades) {
-      partes.push('<h2>Necesidades calculadas</h2>');
-      var n = payload.necesidades;
+    if (payload.kcalObjetivo != null || payload.escalaPorciones != null || payload.macros) {
+      partes.push('<h2>Plan aplicado</h2>');
       var lineas = [];
-      if (n.tmb != null) { lineas.push('TMB: ' + n.tmb + ' kcal/día'); }
-      if (n.get != null) { lineas.push('GET: ' + n.get + ' kcal/día'); }
-      if (n.kcalObjetivo != null) { lineas.push('Objetivo: ' + n.kcalObjetivo + ' kcal/día'); }
+      if (payload.kcalObjetivo != null) { lineas.push('Calorías objetivo: ' + payload.kcalObjetivo + ' kcal/día'); }
+      if (payload.escalaPorciones != null) { lineas.push('Escala de porciones: ' + payload.escalaPorciones + '×'); }
+      if (payload.macros) {
+        lineas.push(
+          'Macronutrientes: proteína ' + payload.macros.proteina_g + ' g, carbohidrato ' +
+          payload.macros.carbohidrato_g + ' g, grasa ' + payload.macros.grasa_g + ' g'
+        );
+      }
       partes.push('<p>' + escaparHtml(lineas.join(' · ')) + '</p>');
     }
 
@@ -3773,9 +4165,14 @@ button, input, select { font-family: inherit; }
 
     var elEstado = null;
     if (toolbar) {
-      // Botón de plantilla + nota de estado: clases YA congeladas
-      // (hz-doc-btn, hz-nota, hz-delta-bad — plan.md 3.G y Adendum R5
-      // punto 5), como hijos adicionales de la fila flex #doc-herramientas.
+      // Botón de plantilla + nota de formato + nota de estado: clases YA
+      // congeladas (hz-doc-btn, hz-nota, hz-delta-bad — plan.md 3.G y
+      // Adendum R5 punto 5), como hijos adicionales de la fila flex
+      // #doc-herramientas. prod-5 (Adendum R6): la línea que documenta el
+      // formato CSV vive en un <p class="hz-nota"> FIJO, propio, que nadie
+      // vuelve a tocar; el estado de cada importación (éxito/error) vive en
+      // OTRO <p class="hz-nota"> separado (#hz-doc-estado-importar), así
+      // mostrarEstadoImportacion() nunca pisa la línea de formato.
       var botonPlantilla = crearHTML(doc, 'button');
       botonPlantilla.setAttribute('type', 'button');
       botonPlantilla.setAttribute('id', 'hz-doc-btn-plantilla-csv');
@@ -3786,12 +4183,17 @@ button, input, select { font-family: inherit; }
         descargarArchivo(doc, generarPlantillaCsv(), 'herzon-plantilla-mediciones.csv', 'text/csv');
       });
 
+      var elFormatoCsv = crearHTML(doc, 'p');
+      elFormatoCsv.classList.add('hz-nota');
+      elFormatoCsv.setAttribute('id', 'hz-doc-formato-csv');
+      elFormatoCsv.textContent =
+        'Formato esperado del CSV: ' + COLUMNAS_MEDICIONES.join(', ') +
+        ' (fecha en AAAA-MM-DD). Los datos importados no se guardan: se pierden al recargar la página.';
+      toolbar.appendChild(elFormatoCsv);
+
       elEstado = crearHTML(doc, 'p');
       elEstado.classList.add('hz-nota');
       elEstado.setAttribute('id', 'hz-doc-estado-importar');
-      elEstado.textContent =
-        'Formato esperado del CSV: ' + COLUMNAS_MEDICIONES.join(', ') +
-        ' (fecha en AAAA-MM-DD). Los datos importados no se guardan: se pierden al recargar la página.';
       toolbar.appendChild(elEstado);
     }
 
@@ -3800,11 +4202,17 @@ button, input, select { font-family: inherit; }
       var archivo = archivos && archivos[0];
       if (!archivo) { return; }
       leerArchivoComoTexto(archivo, function (texto, errorLectura) {
+        // prod-5 (Adendum R6): resetear el input tras CADA importación
+        // (éxito o error) para permitir reintentar el mismo archivo — el
+        // navegador no dispara "change" dos veces seguidas para el mismo
+        // archivo si el <input> conserva su valor anterior.
         if (errorLectura) {
           mostrarEstadoImportacion(elEstado, 'No se pudo leer el archivo: ' + errorLectura, true);
+          inputImportar.value = '';
           return;
         }
         procesarImportacionCsv(HERZON_DATA, texto, elEstado, actualizarDocumento);
+        inputImportar.value = '';
       });
     });
 
@@ -4022,7 +4430,7 @@ button, input, select { font-family: inherit; }
     // Mini barra apilada de macros de ESTA comida: ancho proporcional a las
     // kcal que aporta cada macro (proteína y carbohidrato 4 kcal/g, grasa
     // 9 kcal/g), asignación de color fija del contrato (proteína=series-1,
-    // carbohidrato=series-2, grasa=series-3), gap de 2px via CSS.
+    // carbohidrato=series-2, grasa=series-3), gap de 2px vía CSS.
     var macros = crearHTML(doc, 'div');
     macros.classList.add('hz-menu-macros');
     var kcalProteina = comida.proteina_g * 4;
@@ -4167,6 +4575,16 @@ button, input, select { font-family: inherit; }
       var encontrado = planPorId(HERZON_DATA, est.planIdSeleccionado);
       if (encontrado) return encontrado;
     }
+    // R6 (prod-2): en modo automático (sin elección explícita en el
+    // recomendador) la fuente de verdad es la MISMA que usa la card
+    // "Personaliza tu plan" (objetivo/restricción) -- así el resto de la
+    // vista y Herzon.planActivo() nunca contradicen qué plantilla está
+    // activa. Antes caía al mejor score del ranking, que podía ser una
+    // plantilla distinta a la que el formulario ya mostraba.
+    if (est.filtroObjetivo || est.filtroRestriccion) {
+      var porFiltro = elegirPlan(HERZON_DATA.planes, est.filtroObjetivo, est.filtroRestriccion);
+      if (porFiltro) return porFiltro;
+    }
     if (est.ranking && est.ranking.length) return est.ranking[0].plan;
     return HERZON_DATA.planes[0];
   }
@@ -4193,7 +4611,16 @@ button, input, select { font-family: inherit; }
       ranking: null,          // [{ plan, score, razones[] }] descendente (Herzon.Motor.recomendar)
       planIdSeleccionado: null, // id elegido a mano en el ranking, o null = automático (el mejor rankeado)
       kcalManual: null,       // override manual del kcal objetivo mostrado, o null = usa el de la plantilla
-      escalaPorciones: 1      // 0.8 - 1.2
+      escalaPorciones: 1,     // 0.8 - 1.2
+      // R6 (prod-2, claves ADITIVAS, plan.md Adendum R6 punto 3): la card
+      // "Personaliza tu plan" (objetivo/restricción) y Herzon.planActivo()
+      // deben coincidir SIEMPRE en modo automático (planIdSeleccionado nulo);
+      // antes, cada uno resolvía la plantilla por su cuenta (el formulario
+      // vía elegirPlan, planActivo() vía el mejor score del ranking) y podían
+      // apuntar a plantillas distintas, mostrando kcal contradictorias entre
+      // la vista principal y el panel del recomendador. Se comparten aquí.
+      filtroObjetivo: derivarOpciones(HERZON_DATA.planes, 'objetivo')[0] || null,
+      filtroRestriccion: derivarOpciones(HERZON_DATA.planes, 'restriccion')[0] || null
     };
   }
 
@@ -4236,20 +4663,66 @@ button, input, select { font-family: inherit; }
     return recoEstadoSingleton;
   }
 
-  // Da un toque visual de botón secundario SIN hoja de estilo propia (regla
-  // 3.G: ningún módulo declara bloques de estilo inline en el documento;
-  // T-022 no posee build/shell.html, así que no puede registrar una clase
-  // hz-reco-btn-* nueva). Estilo puntual vía element.style, colores SIEMPRE
-  // con var(--token) (regla 3.H).
-  function estilizarBotonSecundario(el) {
-    el.style.appearance = 'none';
-    el.style.border = '1px solid var(--border)';
-    el.style.borderRadius = '999px';
-    el.style.padding = '6px 14px';
-    el.style.fontSize = '0.82rem';
-    el.style.cursor = 'pointer';
-    el.style.background = 'var(--surface-1)';
-    el.style.color = 'var(--text-secondary)';
+  // R6 (fini-4): los botones del recomendador dejan de estilizarse con
+  // element.style inline y pasan a la clase congelada .hz-table-toggle
+  // (plan.md Adendum R6 punto 6: "botones del recomendador via clases
+  // existentes tipo .hz-table-toggle"), estilizada por build/shell.html
+  // (T-026), que ya hereda :hover/:focus-visible y el estado disabled
+  // (opacidad + cursor) sin que este módulo declare un solo estilo propio.
+
+  // R6 (jera-6): distingue el par "proteína suficiente"/"insuficiente" del
+  // resto de las razones del ranking con el patrón punto de estatus
+  // (.hz-status-dot + .hz-status-label, clases congeladas en plan.md 3.G,
+  // ya usadas por build/vista_metricas.js). "insuficiente" contiene la
+  // subcadena "suficiente" en medio de otra palabra, así que se prueba
+  // primero para no confundirla con "suficiente" a secas.
+  function estadoDesdeRazon(texto) {
+    var normalizado = String(texto || '').toLowerCase();
+    if (normalizado.indexOf('insuficiente') !== -1) return 'warning';
+    if (normalizado.indexOf('suficiente') !== -1) return 'good';
+    return null;
+  }
+
+  function capitalizarPrimeraLetra(texto) {
+    if (!texto) return texto;
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+  }
+
+  // Pinta las razones del ranking como UNA línea de texto normal (jera-6):
+  // 0.85rem, sentence case (solo la primera razón capitalizada; el resto
+  // conserva el texto en minúsculas que ya produce Herzon.Motor), color
+  // var(--text-secondary) y razones separadas por ' · ' -- ya NO chips
+  // .hz-badge (ese queda reservado a rótulos cortos reales, plan.md
+  // Adendum R6 punto 6). El contenedor .hz-reco-razones es flex-wrap en
+  // build/shell.html (pensado para chips); se desactiva puntualmente a
+  // "block" vía element.style (regla 3.H) para que los fragmentos de texto
+  // fluyan como una sola línea en vez de separarse con el gap de la fila.
+  function construirLineaRazones(doc, contenedorEl, razones) {
+    limpiar(contenedorEl);
+    contenedorEl.style.display = 'block';
+    contenedorEl.style.fontSize = '0.85rem';
+    contenedorEl.style.color = 'var(--text-secondary)';
+    for (var i = 0; i < razones.length; i++) {
+      if (i > 0) contenedorEl.appendChild(doc.createTextNode(' · '));
+      var textoRazon = i === 0 ? capitalizarPrimeraLetra(razones[i]) : razones[i];
+      var estado = estadoDesdeRazon(razones[i]);
+      if (estado) {
+        var envoltura = crearHTML(doc, 'span');
+        envoltura.style.display = 'inline-flex';
+        envoltura.style.alignItems = 'center';
+        var punto = crearHTML(doc, 'span');
+        punto.classList.add('hz-status-dot');
+        punto.setAttribute('data-status', estado);
+        var etiquetaEstado = crearHTML(doc, 'span');
+        etiquetaEstado.classList.add('hz-status-label');
+        etiquetaEstado.textContent = textoRazon;
+        envoltura.appendChild(punto);
+        envoltura.appendChild(etiquetaEstado);
+        contenedorEl.appendChild(envoltura);
+      } else {
+        contenedorEl.appendChild(doc.createTextNode(textoRazon));
+      }
+    }
   }
 
   function crearStat(doc, contenedorEl, etiquetaTexto) {
@@ -4377,9 +4850,37 @@ button, input, select { font-family: inherit; }
     botonCalcular.setAttribute('type', 'button');
     botonCalcular.setAttribute('id', 'hz-reco-btn-calcular');
     botonCalcular.setAttribute('data-accion', 'calcular');
-    estilizarBotonSecundario(botonCalcular);
+    botonCalcular.classList.add('hz-table-toggle');
     botonCalcular.textContent = 'Calcular necesidades';
     accionesCalculo.appendChild(botonCalcular);
+
+    // R6 (prod-4): "Calcular" con campos vacíos/inválidos NO recalcula en
+    // silencio -- marca el/los input(s) ofensivos (element.style con
+    // var(--delta-bad), permitido por la regla 3.H) y pinta esta nota
+    // indicando el campo. Los campos numéricos son los únicos que pueden
+    // quedar vacíos o fuera de rango; los <select> siempre traen un valor
+    // válido de sus <option>.
+    var notaValidacion = crearHTML(doc, 'p');
+    notaValidacion.classList.add('hz-nota');
+    contenedorReco.appendChild(notaValidacion);
+
+    var CAMPOS_NUMERICOS_VALIDABLES = [
+      { input: campoEdad.input, etiqueta: 'Edad' },
+      { input: campoTalla.input, etiqueta: 'Talla' },
+      { input: campoPeso.input, etiqueta: 'Peso' }
+    ];
+
+    function validarCamposNumericos() {
+      var invalidos = [];
+      CAMPOS_NUMERICOS_VALIDABLES.forEach(function (campo) {
+        var texto = campo.input.value;
+        var numero = parseFloat(texto);
+        if (texto === '' || texto === null || texto === undefined || isNaN(numero) || numero <= 0) {
+          invalidos.push(campo);
+        }
+      });
+      return invalidos;
+    }
 
     // --- 2. Necesidades (TMB/GET/kcal objetivo/macros en g) ---
     var resumenNecesidades = crearHTML(doc, 'div');
@@ -4452,12 +4953,7 @@ button, input, select { font-family: inherit; }
 
         var razones = crearHTML(doc, 'div');
         razones.classList.add('hz-reco-razones');
-        entrada.razones.forEach(function (razonTexto) {
-          var chip = crearHTML(doc, 'span');
-          chip.classList.add('hz-badge');
-          chip.textContent = razonTexto;
-          razones.appendChild(chip);
-        });
+        construirLineaRazones(doc, razones, entrada.razones);
         item.appendChild(razones);
 
         var accionesItem = crearHTML(doc, 'div');
@@ -4466,7 +4962,7 @@ button, input, select { font-family: inherit; }
         botonUsar.setAttribute('type', 'button');
         botonUsar.setAttribute('data-plan-id', entrada.plan.id);
         botonUsar.setAttribute('data-accion', 'usar-plan');
-        estilizarBotonSecundario(botonUsar);
+        botonUsar.classList.add('hz-table-toggle');
         if (esAplicado) {
           botonUsar.textContent = 'Plan aplicado';
           botonUsar.setAttribute('disabled', 'disabled');
@@ -4483,7 +4979,7 @@ button, input, select { font-family: inherit; }
           est.escalaPorciones = 1;
           campoKcalManual.input.value = '';
           campoEscala.input.value = '1';
-          etiquetaEscala.textContent = formatoEscala(1);
+          actualizarEtiquetaEscala(1);
           renderRanking();
           renderPlanAplicado();
           refrescarVistaPrincipal();
@@ -4504,14 +5000,31 @@ button, input, select { font-family: inherit; }
       doc, accionesModificar, 'hz-reco-kcal-manual', 'Kcal objetivo manual (opcional)',
       'number', '', { min: 800, max: 5000, step: 10, placeholder: 'Automático' }
     );
-    var campoEscala = crearCampoInput(
-      doc, accionesModificar, 'hz-reco-escala', 'Escala de porciones (0.8x a 1.2x)',
-      'range', '1', { min: '0.8', max: '1.2', step: '0.05' }
-    );
-    campoEscala.input.classList.add('hz-reco-slider');
-    var etiquetaEscala = crearHTML(doc, 'span');
-    etiquetaEscala.textContent = formatoEscala(1);
-    campoEscala.campo.appendChild(etiquetaEscala);
+    // R6 (prod-8): el valor vivo de la escala se muestra JUNTO a su
+    // etiqueta ("Escala de porciones: 1.00x"), no como un span aparte que
+    // el layout de .hz-form-campo (columna) termina separando en su propia
+    // línea. La <label> del campo es el propio texto dinámico.
+    var campoEscalaDiv = crearHTML(doc, 'div');
+    campoEscalaDiv.classList.add('hz-form-campo');
+    var etiquetaEscala = crearHTML(doc, 'label');
+    etiquetaEscala.setAttribute('for', 'hz-reco-escala');
+    var inputEscala = crearHTML(doc, 'input');
+    inputEscala.setAttribute('id', 'hz-reco-escala');
+    inputEscala.setAttribute('type', 'range');
+    inputEscala.setAttribute('min', '0.8');
+    inputEscala.setAttribute('max', '1.2');
+    inputEscala.setAttribute('step', '0.05');
+    inputEscala.value = '1';
+    inputEscala.classList.add('hz-reco-slider');
+    campoEscalaDiv.appendChild(etiquetaEscala);
+    campoEscalaDiv.appendChild(inputEscala);
+    accionesModificar.appendChild(campoEscalaDiv);
+    var campoEscala = { campo: campoEscalaDiv, input: inputEscala };
+
+    function actualizarEtiquetaEscala(valorNum) {
+      etiquetaEscala.textContent = 'Escala de porciones: ' + formatoEscala(valorNum);
+    }
+    actualizarEtiquetaEscala(1);
 
     campoKcalManual.input.addEventListener('change', function (evento) {
       var valorTexto = evento.target.value;
@@ -4529,8 +5042,9 @@ button, input, select { font-family: inherit; }
       if (isNaN(valorNum)) valorNum = 1;
       valorNum = Math.max(0.8, Math.min(1.2, valorNum));
       est.escalaPorciones = valorNum;
-      etiquetaEscala.textContent = formatoEscala(valorNum);
+      actualizarEtiquetaEscala(valorNum);
       renderPlanAplicado();
+      refrescarVistaPrincipal();
     });
 
     // --- 5. Plantilla aplicada: macros mostrados recalculados en vivo ---
@@ -4560,6 +5074,25 @@ button, input, select { font-family: inherit; }
     }
 
     botonCalcular.addEventListener('click', function () {
+      // R6 (prod-4): limpia marcas de una validación previa antes de
+      // revisar de nuevo -- si el usuario ya corrigió el campo, no debe
+      // quedar pintado en rojo aunque el resto siga vigente.
+      CAMPOS_NUMERICOS_VALIDABLES.forEach(function (campo) {
+        campo.input.style.borderColor = '';
+        campo.input.removeAttribute('aria-invalid');
+      });
+      var invalidos = validarCamposNumericos();
+      if (invalidos.length) {
+        invalidos.forEach(function (campo) {
+          campo.input.style.borderColor = 'var(--delta-bad)';
+          campo.input.setAttribute('aria-invalid', 'true');
+        });
+        notaValidacion.textContent = 'Revisa el campo ' +
+          invalidos.map(function (campo) { return campo.etiqueta; }).join(', ') +
+          ' antes de calcular: debe ser un número mayor que cero. No se recalculó.';
+        return;
+      }
+      notaValidacion.textContent = '';
       leerPerfilDeFormulario();
       recalcularNecesidadesYRanking(est);
       renderNecesidades();
@@ -4587,11 +5120,20 @@ button, input, select { font-family: inherit; }
       return { valor: v, etiqueta: ETIQUETAS_RESTRICCION[v] || v };
     });
 
+    // R6 (prod-2): objetivo/restricción se guardan también en el estado
+    // compartido del recomendador (obtenerRecoEstado().filtroObjetivo/
+    // filtroRestriccion), para que Herzon.planActivo() resuelva la MISMA
+    // plantilla que esta card en modo automático (ver planSeleccionadoActivo).
+    // derivarOpciones(planes, campo)[0] es la misma cuenta que usa
+    // crearRecoEstadoInicial(), así que ambos arrancan coincidiendo.
+    var recoEstInicial = obtenerRecoEstado();
     var estado = {
-      objetivo: opcionesObjetivo[0].valor,
-      restriccion: opcionesRestriccion[0].valor,
+      objetivo: recoEstInicial.filtroObjetivo || opcionesObjetivo[0].valor,
+      restriccion: recoEstInicial.filtroRestriccion || opcionesRestriccion[0].valor,
       dia: 1
     };
+    recoEstInicial.filtroObjetivo = estado.objetivo;
+    recoEstInicial.filtroRestriccion = estado.restriccion;
 
     var grid = crearHTML(doc, 'div');
     grid.classList.add('hz-grid');
@@ -4606,6 +5148,13 @@ button, input, select { font-family: inherit; }
 
     // --- Formulario mínimo (.hz-form): objetivo + restricción/alergia ---
     var cardForm = crearCard(doc, grid, 'Personaliza tu plan');
+    // R6 (prod-6): mientras el recomendador tenga una plantilla fijada a
+    // mano, esta nota lo deja explícito aquí mismo (textContent); se retira
+    // sola en cuanto el usuario vuelve al modo automático (cambia objetivo
+    // o restricción, lo que limpia planIdSeleccionado -- ver render()).
+    var notaPlantillaFijada = crearHTML(doc, 'p');
+    notaPlantillaFijada.classList.add('hz-nota');
+    cardForm.appendChild(notaPlantillaFijada);
     var form = crearHTML(doc, 'form');
     form.classList.add('hz-form');
     cardForm.appendChild(form);
@@ -4656,27 +5205,61 @@ button, input, select { font-family: inherit; }
     cardDetalle.appendChild(listaMenu);
 
     function render() {
-      // El recomendador (Adendum R5, T-022) puede fijar una plantilla a
-      // mano (botón "Usar este plan" en #reco-plan); mientras esa selección
-      // exista, tiene prioridad sobre el emparejamiento automático por
-      // objetivo/restricción de la card "Personaliza tu plan" (así "el resto
-      // de la vista refleja la selección" del Adendum R5 punto 4).
+      // R6 (prod-2): hero, gráficas, filas del menú y total del día derivan
+      // TODOS de Herzon.planActivo() -- única fuente de verdad, compartida
+      // con el panel del recomendador (renderPlanAplicado), así que las
+      // cifras en pantalla ya no pueden contradecirse entre secciones. El
+      // recomendador (Adendum R5, T-022) puede fijar una plantilla a mano
+      // (botón "Usar este plan" en #reco-plan); mientras esa selección
+      // exista, planActivo() la respeta (Adendum R5 punto 4); si no, cae en
+      // la MISMA plantilla que resuelve la card "Personaliza tu plan"
+      // (planSeleccionadoActivo, sincronizada más abajo).
       var recoEst = obtenerRecoEstado();
-      var plan = recoEst.planIdSeleccionado
-        ? (planPorId(HERZON_DATA, recoEst.planIdSeleccionado) || elegirPlan(planes, estado.objetivo, estado.restriccion))
-        : elegirPlan(planes, estado.objetivo, estado.restriccion);
+      var activo = G.Herzon.planActivo();
+      var plan = activo.plan;
+      var escala = activo.escalaPorciones;
       rootEl.setAttribute('data-plan-id', plan.id);
 
-      hero.num.textContent = formatearEntero(plan.kcalObjetivo);
-      limpiar(notaPlan);
-      notaPlan.textContent = plan.nombre + ' — objetivo ' + formatearEntero(plan.kcalObjetivo) +
-        ' kcal/día (proteína ' + plan.macrosObjetivo.proteina_g + ' g, carbohidrato ' +
-        plan.macrosObjetivo.carbohidrato_g + ' g, grasa ' + plan.macrosObjetivo.grasa_g + ' g).';
+      // prod-6: nota de plantilla fijada, SOLO mientras haya una elección
+      // explícita del recomendador; se retira (textContent vacío) en modo
+      // automático.
+      if (recoEst.planIdSeleccionado) {
+        notaPlantillaFijada.textContent = 'Plantilla fijada desde el recomendador: ' + plan.nombre +
+          '. Cambia objetivo o restricción aquí abajo para volver al modo automático.';
+      } else {
+        notaPlantillaFijada.textContent = '';
+      }
 
       var diaIdx = Math.max(1, Math.min(plan.dias.length, estado.dia)) - 1;
       var diaData = plan.dias[diaIdx];
-      var comidas = diaData.comidas;
-      var categoriasComida = comidas.map(function (c) { return NOMBRES_MOMENTO[c.momento] || c.momento; });
+      // "El menú escalado" (prod-2): cada comida del día se multiplica por
+      // escalaPorciones -- hero, gráficas y menú comparten estos mismos
+      // números escalados, incluso con kcalManual fijado (ese override es
+      // solo el objetivo mostrado en el panel del recomendador; aquí se
+      // muestra lo que la comida REAL, ya escalada, realmente suma).
+      var comidasEscaladas = diaData.comidas.map(function (c) {
+        return {
+          hora: c.hora,
+          momento: c.momento,
+          nombre: c.nombre,
+          kcal: c.kcal * escala,
+          proteina_g: c.proteina_g * escala,
+          carbohidrato_g: c.carbohidrato_g * escala,
+          grasa_g: c.grasa_g * escala
+        };
+      });
+      var totalKcalEscalado = comidasEscaladas.reduce(function (acc, c) { return acc + c.kcal; }, 0);
+      var totalProteinaEscalada = comidasEscaladas.reduce(function (acc, c) { return acc + c.proteina_g; }, 0);
+      var totalCarbohidratoEscalado = comidasEscaladas.reduce(function (acc, c) { return acc + c.carbohidrato_g; }, 0);
+      var totalGrasaEscalada = comidasEscaladas.reduce(function (acc, c) { return acc + c.grasa_g; }, 0);
+
+      hero.num.textContent = formatearEntero(totalKcalEscalado);
+      limpiar(notaPlan);
+      notaPlan.textContent = plan.nombre + ' (escala ' + formatoEscala(escala) + ') — el menú del día ' + diaData.dia +
+        ' suma ' + formatearEntero(totalKcalEscalado) + ' kcal/día (proteína ' + formatearEntero(totalProteinaEscalada) +
+        ' g, carbohidrato ' + formatearEntero(totalCarbohidratoEscalado) + ' g, grasa ' + formatearEntero(totalGrasaEscalada) + ' g).';
+
+      var categoriasComida = comidasEscaladas.map(function (c) { return NOMBRES_MOMENTO[c.momento] || c.momento; });
 
       limpiar(contMacros);
       Charts.apilada100(contMacros, {
@@ -4688,29 +5271,36 @@ button, input, select { font-family: inherit; }
         tituloAccesible: 'Distribución de proteínas, carbohidratos y grasas por comida del día ' + diaData.dia,
         categorias: categoriasComida,
         series: [
-          { nombre: 'Proteínas', color: 'var(--series-1)', datos: comidas.map(function (c) { return c.proteina_g; }) },
-          { nombre: 'Carbohidratos', color: 'var(--series-2)', datos: comidas.map(function (c) { return c.carbohidrato_g; }) },
-          { nombre: 'Grasas', color: 'var(--series-3)', datos: comidas.map(function (c) { return c.grasa_g; }) }
+          { nombre: 'Proteínas', color: 'var(--series-1)', datos: comidasEscaladas.map(function (c) { return c.proteina_g; }) },
+          { nombre: 'Carbohidratos', color: 'var(--series-2)', datos: comidasEscaladas.map(function (c) { return c.carbohidrato_g; }) },
+          { nombre: 'Grasas', color: 'var(--series-3)', datos: comidasEscaladas.map(function (c) { return c.grasa_g; }) }
         ],
         etiquetaColumna: 'Comida',
-        tabla: true
+        tabla: true,
+        // R6-fix (hallazgo data-7, T-035): la gráfica no mostraba ni un solo
+        // valor legible sin abrir la tabla. etiquetasSegmento ya existe
+        // verificada en Charts.apilada100 (T-027): % en cada segmento con
+        // alto >= 14px, tinta de texto vía var(--text-primary), jamás color
+        // de serie. Cableado quirúrgico: solo esta opción, nada más.
+        etiquetasSegmento: true
       });
 
       limpiar(contKcal);
       Charts.barras(contKcal, {
         // Idem: título visible propio, ya no duplica el heading de "Gráficas
-        // del plan" (corrección R4).
+        // del plan" (corrección R4). Escalado por el mismo factor que el
+        // menú (prod-2): esta gráfica no puede contradecir el total de abajo.
         titulo: 'Calorías por día (semana del plan)',
         tituloAccesible: 'Calorías totales por cada día de la semana del plan ' + plan.nombre,
         categorias: plan.dias.map(function (d) { return 'Día ' + d.dia; }),
-        series: [{ nombre: 'Calorías (kcal)', datos: plan.dias.map(function (d) { return d.totales.kcal; }) }],
+        series: [{ nombre: 'Calorías (kcal)', datos: plan.dias.map(function (d) { return d.totales.kcal * escala; }) }],
         etiquetaColumna: 'Día',
         tabla: true
       });
 
       limpiar(listaMenu);
-      for (var mi = 0; mi < comidas.length; mi++) {
-        construirFilaMenuComida(doc, listaMenu, comidas[mi]);
+      for (var mi = 0; mi < comidasEscaladas.length; mi++) {
+        construirFilaMenuComida(doc, listaMenu, comidasEscaladas[mi]);
       }
 
       // Leyenda una sola vez (no por fila): colores por token, misma
@@ -4723,7 +5313,7 @@ button, input, select { font-family: inherit; }
         ]
       });
 
-      // Total del día, visible al pie del menú.
+      // Total del día, visible al pie del menú (escalado, prod-2).
       var filaTotal = crearHTML(doc, 'div');
       filaTotal.classList.add('hz-menu-total');
       var totalLabel = crearHTML(doc, 'span');
@@ -4731,11 +5321,11 @@ button, input, select { font-family: inherit; }
       totalLabel.textContent = 'Total del día';
       var totalMacros = crearHTML(doc, 'span');
       totalMacros.classList.add('hz-menu-total-macros');
-      totalMacros.textContent = 'Proteína ' + diaData.totales.proteina_g + ' g · Carbohidrato ' +
-        diaData.totales.carbohidrato_g + ' g · Grasa ' + diaData.totales.grasa_g + ' g';
+      totalMacros.textContent = 'Proteína ' + formatearEntero(totalProteinaEscalada) + ' g · Carbohidrato ' +
+        formatearEntero(totalCarbohidratoEscalado) + ' g · Grasa ' + formatearEntero(totalGrasaEscalada) + ' g';
       var totalKcal = crearHTML(doc, 'span');
       totalKcal.classList.add('hz-menu-total-kcal');
-      totalKcal.textContent = formatearEntero(diaData.totales.kcal) + ' kcal';
+      totalKcal.textContent = formatearEntero(totalKcalEscalado) + ' kcal';
       filaTotal.appendChild(totalLabel);
       filaTotal.appendChild(totalMacros);
       filaTotal.appendChild(totalKcal);
@@ -4746,13 +5336,18 @@ button, input, select { font-family: inherit; }
       estado.objetivo = evento.target.value;
       // Volver al emparejamiento automático: una elección explícita en la
       // card "Personaliza tu plan" reemplaza cualquier plantilla aplicada
-      // a mano desde el recomendador.
-      obtenerRecoEstado().planIdSeleccionado = null;
+      // a mano desde el recomendador. filtroObjetivo sincroniza esta card
+      // con Herzon.planActivo() (prod-2).
+      var recoEstCambio = obtenerRecoEstado();
+      recoEstCambio.filtroObjetivo = estado.objetivo;
+      recoEstCambio.planIdSeleccionado = null;
       render();
     });
     campoRestriccion.select.addEventListener('change', function (evento) {
       estado.restriccion = evento.target.value;
-      obtenerRecoEstado().planIdSeleccionado = null;
+      var recoEstCambio = obtenerRecoEstado();
+      recoEstCambio.filtroRestriccion = estado.restriccion;
+      recoEstCambio.planIdSeleccionado = null;
       render();
     });
     campoDia.select.addEventListener('change', function (evento) {
@@ -4810,7 +5405,14 @@ button, input, select { font-family: inherit; }
     cardHero.appendChild(notaHero);
 
     // --- Régimen (tabla siempre visible: dosis, horario, propósito) ---
+    // R6 (jera-1/data-3/fini-1/resp-1): ancho completo (regla de T-026,
+    // plan.md Adendum R6 punto 1) -- con 5 columnas, la card compartiendo
+    // fila con las otras dos cards recortaba "Horario"/"Momento"/"Propósito"
+    // fuera del viewport a 1240px. data-ancho="completo" la expande a las
+    // 1/-1 columnas del grid (CSS de build/shell.html, este módulo solo
+    // aplica el atributo).
     var cardRegimen = crearCard(doc, grid, 'Régimen de suplementos');
+    cardRegimen.setAttribute('data-ancho', 'completo');
     var columnasRegimen = ['Suplemento', 'Dosis', 'Horario', 'Momento', 'Propósito'];
     var filasRegimen = suplementos.map(function (s) {
       return [s.nombre, s.dosis, s.horario, s.momento, s.proposito];
@@ -4828,6 +5430,12 @@ button, input, select { font-family: inherit; }
       categorias: suplementos.map(function (s) { return s.nombre; }),
       series: [{ nombre: 'Adherencia (%)', datos: suplementos.map(function (s) { return s.adherencia_pct; }) }],
       max: 100,
+      // R6 (data-6, Adendum R6 punto 2): serie única, 4 categorías (<=6) en
+      // horizontal -- unidad agrega el sufijo '%' a cada etiqueta y
+      // valoresEnBarras dibuja el valor al final de CADA barra (antes solo
+      // se etiquetaba la barra máxima).
+      unidad: '%',
+      valoresEnBarras: true,
       etiquetaColumna: 'Suplemento',
       tabla: true
     });
@@ -4836,6 +5444,17 @@ button, input, select { font-family: inherit; }
     var cardAdherenciaTiempo = crearCard(doc, grid, 'Adherencia diaria a suplementos en el tiempo');
     var contAdherenciaTiempo = crearHTML(doc, 'div');
     cardAdherenciaTiempo.appendChild(contAdherenciaTiempo);
+    // R6 (jera-5/data-5, Adendum R6 punto 2): etiquetasFila rotula solo las
+    // filas S1/S4/S8/S12 (una por semana, 7 días por fila) del rango real de
+    // 12 semanas; el resto queda vacío para que heatmapCalendario omita el
+    // rótulo (comportamiento ya verificado en T-027, sección 22.8).
+    var filasAdherenciaTiempo = Math.ceil(adherenciaDiaria.length / 7);
+    var etiquetasFilaAdherenciaTiempo = [];
+    for (var efAdh = 0; efAdh < filasAdherenciaTiempo; efAdh++) {
+      etiquetasFilaAdherenciaTiempo.push(
+        (efAdh === 0 || efAdh === 3 || efAdh === 7 || efAdh === 11) ? 'S' + (efAdh + 1) : ''
+      );
+    }
     Charts.heatmapCalendario(contAdherenciaTiempo, {
       // D5: sin titulo interno (duplicaria el heading de cardAdherenciaTiempo).
       valores: adherenciaDiaria.map(function (d) { return d.suplementos_pct; }),
@@ -4845,6 +5464,12 @@ button, input, select { font-family: inherit; }
       max: 100,
       nombreSerie: 'Adherencia suplementos (%)',
       etiquetaColumna: 'Fecha',
+      // R6 (jera-5/data-5): encabezadosDia agrega la fila de iniciales de día
+      // (L M X J V S D); etiquetasFila rotula S1/S4/S8/S12; leyendaRampa
+      // agrega los 5 swatches --heat-1..5 con el rango numérico de cada uno.
+      encabezadosDia: true,
+      etiquetasFila: etiquetasFilaAdherenciaTiempo,
+      leyendaRampa: true,
       tabla: true
     });
 
@@ -4912,12 +5537,15 @@ button, input, select { font-family: inherit; }
 // acceso al DOM ocurre dentro de las funciones de montaje, usando
 // `rootEl.ownerDocument`.
 //
-// Color (contrato sección H): cero hexes literales en este módulo. Las gráficas ya
+// Color (contrato sección H): cero hexes literales en este módulo. Las gráficas
 // asignan su propio color vía Herzon.Charts (que internamente usa
-// el.style.fill / el.style.stroke con var(--token)); este módulo solo PASA nombres
-// de token como string en las opciones de Herzon.Charts.* y jamás escribe
-// el.style ni declara bloques de estilo propios (nada de la etiqueta de hoja de
-// estilos HTML en este archivo).
+// el.style.fill / el.style.stroke con var(--token)); este módulo solo PASA
+// nombres de token como string en las opciones de Herzon.Charts.*. El único
+// estilo puntual que este módulo escribe directo es element.style con un
+// token de color, o con un valor tipográfico sin color (font-weight,
+// font-variant-numeric) para jerarquía de texto fuera de la lista de clases
+// congeladas (contrato sección G, mismo patrón que build/vista_dieta_supl.js);
+// jamás un hex y jamás una etiqueta de hoja de estilos HTML propia.
 (function () {
   var G = (typeof window !== 'undefined') ? window : globalThis;
   G.Herzon = G.Herzon || {};
@@ -5019,11 +5647,24 @@ button, input, select { font-family: inherit; }
     var delta = crear(doc, 'div', ['hz-stat-delta'], conSigno(deltaPeso, 1) + ' kg desde el inicio');
     delta.classList.add(deltaPeso <= 0 ? 'hz-delta-good' : 'hz-delta-bad');
     hero.appendChild(delta);
-    if (typeof Charts.sparkline === 'function') {
-      Charts.sparkline(hero, { valores: pesoSerie, color: 'var(--series-1)' });
-    }
     heroCard.appendChild(hero);
     rootEl.appendChild(heroCard);
+
+    // jera-8/fini-6 (Adendum R6, misma causa raíz que los labs de
+    // Seguimiento): la card se monta en el documento PRIMERO; recién
+    // entonces se mide su ancho real y se dibuja el sparkline con ese
+    // ancho (opciones.ancho), para que recorra la card junto al número
+    // héroe en vez de quedarse en el ancho de respaldo fijo (120px) de
+    // Herzon.Charts.sparkline cuando el contenedor está desconectado del
+    // documento en el momento de la llamada.
+    if (typeof Charts.sparkline === 'function') {
+      var anchoSparkResumen = hero.clientWidth || heroCard.clientWidth || 0;
+      Charts.sparkline(hero, {
+        valores: pesoSerie,
+        color: 'var(--series-1)',
+        ancho: anchoSparkResumen > 0 ? anchoSparkResumen : undefined
+      });
+    }
 
     var statsGrid = crear(doc, 'div', ['hz-grid']);
     var grasaSerie = series.grasa_pct || [];
@@ -5123,17 +5764,31 @@ button, input, select { font-family: inherit; }
     var cortes = labs.cortes || [];
     var ultimoCorte = cortes.length ? cortes[cortes.length - 1].etiqueta : '';
     tarjetaLabs.appendChild(crear(doc, 'p', null, 'Corte más reciente: ' + ultimoCorte));
-    (labs.marcadores || []).forEach(function (m) {
+    // jera-7 (Adendum R6): jerarquía interna dentro de cada fila -- el
+    // nombre del marcador va en peso regular / --text-secondary (dato de
+    // apoyo) y el valor va en 600 / --text-primary / tabular-nums (el dato
+    // que importa), sin tocar el punto de estatus. Estilo puntual vía
+    // element.style con tokens (contrato sección G), no clases nuevas: el
+    // valor conserva la clase congelada hz-status-label (ya trae 600 +
+    // --text-primary) y solo se le suma tabular-nums; el nombre es un span
+    // aparte, sin esa clase. 6-8px de separación vertical entre filas.
+    (labs.marcadores || []).forEach(function (m, indiceMarcador) {
       var valores = m.valores || [];
       var valorFinal = valores[valores.length - 1];
       var estado = calcularEstadoMarcador(valorFinal, m.referencia, m.mejorSi);
       var fila = crear(doc, 'div');
+      if (indiceMarcador > 0) { fila.style.marginTop = '7px'; }
       var punto = crear(doc, 'span', ['hz-status-dot']);
       punto.setAttribute('data-status', estado);
-      var etiqueta = crear(doc, 'span', ['hz-status-label'],
-        m.nombre + ': ' + formatoNumero(valorFinal, 1) + ' ' + m.unidad + ' - ' + ETIQUETAS_ESTADO[estado]);
+      var nombre = crear(doc, 'span', null, m.nombre + ': ');
+      nombre.style.color = 'var(--text-secondary)';
+      nombre.style.fontWeight = '400';
+      var valor = crear(doc, 'span', ['hz-status-label'],
+        formatoNumero(valorFinal, 1) + ' ' + m.unidad + ' - ' + ETIQUETAS_ESTADO[estado]);
+      valor.style.fontVariantNumeric = 'tabular-nums';
       fila.appendChild(punto);
-      fila.appendChild(etiqueta);
+      fila.appendChild(nombre);
+      fila.appendChild(valor);
       tarjetaLabs.appendChild(fila);
     });
     rootEl.appendChild(tarjetaLabs);
@@ -5161,15 +5816,11 @@ button, input, select { font-family: inherit; }
     var Charts = G.Herzon.Charts || {};
     var Herzon = G.Herzon;
     var data = G.HERZON_DATA || {};
-    var series = data.series || {};
     var labs = data.labs || {};
     var plicometria = data.plicometria || {};
-    var semanas = series.semanas || [];
-    var pesoSerie = series.peso_kg || [];
-    var musculoSerie = series.musculo_kg || [];
-    var grasaSerie = series.grasa_pct || [];
-    var cinturaSerie = series.cintura_cm || [];
-    var totalSemanas = semanas.length;
+    var unidades = (data.meta && data.meta.unidades) || {};
+    var unidadPeso = unidades.peso || 'kg';
+    var unidadCintura = unidades.cintura || 'cm';
 
     var heroCard = crear(doc, 'div', ['hz-card']);
     var hero = crear(doc, 'div', ['hz-hero']);
@@ -5184,9 +5835,11 @@ button, input, select { font-family: inherit; }
 
     // R4: recalcula el héroe contra el primer punto del rango `n` activo
     // (no contra el inicio absoluto de las 12 semanas -- esa lectura es la
-    // de Resumen, que no tiene filtro y sigue "desde el inicio").
-    function actualizarHero(n) {
-      var recorte = ultimasN(pesoSerie, n);
+    // de Resumen, que no tiene filtro y sigue "desde el inicio"). prod-1
+    // (Adendum R6 punto 4): recibe la serie de peso YA releída en la
+    // llamada de `redibujar` que la invoca -- nunca una referencia vieja.
+    function actualizarHero(n, pesoSerieActual) {
+      var recorte = ultimasN(pesoSerieActual, n);
       var inicioPeriodo = recorte.length ? recorte[0] : 0;
       var pesoActual = recorte.length ? recorte[recorte.length - 1] : 0;
       var deltaPeriodo = redondear(pesoActual - inicioPeriodo, 1);
@@ -5204,11 +5857,23 @@ button, input, select { font-family: inherit; }
     cardPeso.appendChild(wrapPeso);
     rootEl.appendChild(cardPeso);
 
-    var cardComp = crear(doc, 'div', ['hz-card']);
-    cardComp.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Composición corporal'));
-    var wrapComp = crear(doc, 'div');
-    cardComp.appendChild(wrapComp);
-    rootEl.appendChild(cardComp);
+    // data-2 (Adendum R6 punto 7): Composición corporal partida en DOS
+    // gráficas de una serie y un eje cada una -- kg y % nunca comparten
+    // escala (regla "un eje" del contrato). El token de serie se conserva
+    // por entidad: masa muscular series-3, grasa corporal series-2. Con
+    // una sola serie por gráfica, Herzon.Charts.linea ya NO dibuja caja de
+    // leyenda (regla 7 del contrato): el título nombra la serie única.
+    var cardMusculo = crear(doc, 'div', ['hz-card']);
+    cardMusculo.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Masa muscular (kg)'));
+    var wrapMusculo = crear(doc, 'div');
+    cardMusculo.appendChild(wrapMusculo);
+    rootEl.appendChild(cardMusculo);
+
+    var cardGrasa = crear(doc, 'div', ['hz-card']);
+    cardGrasa.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Grasa corporal (%)'));
+    var wrapGrasa = crear(doc, 'div');
+    cardGrasa.appendChild(wrapGrasa);
+    rootEl.appendChild(cardGrasa);
 
     var cardCintura = crear(doc, 'div', ['hz-card']);
     cardCintura.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Circunferencia de cintura'));
@@ -5220,12 +5885,26 @@ button, input, select { font-family: inherit; }
       return semanasSlice.map(function (s) { return 'S' + s; });
     }
 
+    // prod-1 (Adendum R6 punto 4, causa raíz): `redibujar` releía arreglos
+    // capturados UNA sola vez al montar (`pesoSerie`, `musculoSerie`, ...).
+    // build/documentos.js hace merge de mediciones REASIGNANDO
+    // `HERZON_DATA.series.<clave> = arregloNuevo` (nunca in-place), así que
+    // esa referencia vieja quedaba huérfana y la vista jamás reflejaba una
+    // importación. Ahora cada llamada relee `G.HERZON_DATA.series` desde
+    // cero: no hay arreglo de serie capturado fuera de esta función.
     function redibujar(weeksRaw) {
-      var n = Math.min((weeksRaw || totalSemanas), totalSemanas);
-      var semanasSlice = ultimasN(semanas, n);
+      var seriesActual = (G.HERZON_DATA && G.HERZON_DATA.series) || {};
+      var semanasActual = seriesActual.semanas || [];
+      var pesoSerieActual = seriesActual.peso_kg || [];
+      var musculoSerieActual = seriesActual.musculo_kg || [];
+      var grasaSerieActual = seriesActual.grasa_pct || [];
+      var cinturaSerieActual = seriesActual.cintura_cm || [];
+      var totalSemanasActual = semanasActual.length;
+      var n = Math.min((weeksRaw || totalSemanasActual), totalSemanasActual);
+      var semanasSlice = ultimasN(semanasActual, n);
       var etiquetasX = etiquetasDe(semanasSlice);
 
-      actualizarHero(n);
+      actualizarHero(n, pesoSerieActual);
 
       limpiar(wrapPeso);
       if (typeof Charts.linea === 'function') {
@@ -5233,26 +5912,41 @@ button, input, select { font-family: inherit; }
           // D5: sin título interno (duplicaría el heading de cardPeso);
           // se conserva el título accesible para lector de pantalla.
           tituloAccesible: 'Peso corporal en kilogramos a lo largo del tiempo',
-          series: [{ nombre: 'Peso', datos: ultimasN(pesoSerie, n) }],
+          series: [{ nombre: 'Peso', datos: ultimasN(pesoSerieActual, n) }],
           etiquetasX: etiquetasX,
           yMin: 55,
           yMax: 85,
+          // data-4 (Adendum R6 punto 2/consumo): unidad de HERZON_DATA.meta
+          // en la etiqueta de punta ("70.2 kg"), ticks del eje intactos.
+          unidad: unidadPeso,
           tabla: true
         });
       }
 
-      limpiar(wrapComp);
+      limpiar(wrapMusculo);
       if (typeof Charts.linea === 'function') {
-        Charts.linea(wrapComp, {
-          // D5: sin título interno (duplicaría el heading de cardComp).
-          tituloAccesible: 'Composición corporal: masa muscular en kilogramos y grasa corporal en porcentaje',
-          series: [
-            { nombre: 'Masa muscular (kg)', datos: ultimasN(musculoSerie, n), color: 'var(--series-3)' },
-            { nombre: 'Grasa corporal (%)', datos: ultimasN(grasaSerie, n), color: 'var(--series-2)' }
-          ],
+        Charts.linea(wrapMusculo, {
+          // D5: sin título interno (duplicaría el heading de cardMusculo).
+          tituloAccesible: 'Masa muscular corporal en kilogramos a lo largo del tiempo',
+          series: [{ nombre: 'Masa muscular (kg)', datos: ultimasN(musculoSerieActual, n), color: 'var(--series-3)' }],
+          etiquetasX: etiquetasX,
+          yMin: 15,
+          yMax: 40,
+          unidad: unidadPeso,
+          tabla: true
+        });
+      }
+
+      limpiar(wrapGrasa);
+      if (typeof Charts.linea === 'function') {
+        Charts.linea(wrapGrasa, {
+          // D5: sin título interno (duplicaría el heading de cardGrasa).
+          tituloAccesible: 'Grasa corporal en porcentaje a lo largo del tiempo',
+          series: [{ nombre: 'Grasa corporal (%)', datos: ultimasN(grasaSerieActual, n), color: 'var(--series-2)' }],
           etiquetasX: etiquetasX,
           yMin: 15,
           yMax: 45,
+          unidad: '%',
           tabla: true
         });
       }
@@ -5262,10 +5956,11 @@ button, input, select { font-family: inherit; }
         Charts.linea(wrapCintura, {
           // D5: sin título interno (duplicaría el heading de cardCintura).
           tituloAccesible: 'Circunferencia de cintura en centímetros a lo largo del tiempo',
-          series: [{ nombre: 'Cintura', datos: ultimasN(cinturaSerie, n) }],
+          series: [{ nombre: 'Cintura', datos: ultimasN(cinturaSerieActual, n) }],
           etiquetasX: etiquetasX,
           yMin: 70,
           yMax: 100,
+          unidad: unidadCintura,
           tabla: true
         });
       }
@@ -5277,27 +5972,73 @@ button, input, select { font-family: inherit; }
       Herzon.filters.onRangeChange(function (weeks) { redibujar(weeks); });
     }
 
-    // Laboratorios en 3 cortes: son puntos clínicos fijos (Basal / Seguimiento /
-    // Final), no muestras semanales -- no se re-cortan con el filtro de rango
-    // (DECISION registrada en el hand-off de esta tarea).
+    // prod-1 (Adendum R6 punto 4): al importar mediciones desde
+    // build/documentos.js, esa función dispara `herzon:mediciones-importadas`
+    // en el objeto global tras hacer merge sobre HERZON_DATA.series. Esta
+    // vista escucha ese evento y vuelve a dibujar el rango actualmente
+    // activo (no el absoluto): como `redibujar` relee la serie completa en
+    // cada llamada, la semana importada aparece sin recargar la página.
+    if (typeof G.addEventListener === 'function') {
+      G.addEventListener('herzon:mediciones-importadas', function () {
+        var rangoActivo = (Herzon.filters && typeof Herzon.filters.getRange === 'function') ? Herzon.filters.getRange() : 12;
+        redibujar(rangoActivo);
+      });
+    }
+
+    // jera-2/data-1/fini-2 (Adendum R6 fix, T-033, CAUSA RAÍZ REAL): montar
+    // cardLabs/gridLabs en el documento ANTES del loop no bastaba, porque el
+    // loop anterior seguía haciendo append+render POR ITEM: en la primera
+    // vuelta, gridLabs tenía UN solo hijo (el auto-fit de la grilla le daba
+    // la fila completa, ~1130px) y Charts.barras medía `clientWidth` en ESE
+    // instante y horneaba el viewBox a ese ancho; recién en la vuelta
+    // siguiente el grid reflowaba a columnas y esa primera celda se
+    // comprimía a ~356px, quedando a escala ~0.31 (texto microscópico y una
+    // altura distinta a sus 6 hermanas). El fix real es en DOS FASES
+    // separadas: fase 1 crea y adjunta TODOS los wrapMarcador a gridLabs
+    // (el grid ya queda en su geometría final de 7 columnas); solo
+    // entonces arranca la fase 2, en un loop aparte, que llama
+    // Charts.barras sobre cada wrap ya con esa geometría estable -- las 7
+    // miden el mismo ancho de celda y salen con la misma altura. Mismo
+    // patrón ya correcto en la card de plicometría, más abajo (una sola
+    // gráfica, sin este riesgo de reflow intermedio). Laboratorios en 3
+    // cortes: son puntos clínicos fijos (Basal / Seguimiento / Final), no
+    // muestras semanales -- no se re-cortan con el filtro de rango
+    // (DECISION registrada en el hand-off de la tarea original).
     var cardLabs = crear(doc, 'div', ['hz-card']);
     cardLabs.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Laboratorios en 3 cortes'));
     var gridLabs = crear(doc, 'div', ['hz-grid']);
-    var cortesEtiquetas = (labs.cortes || []).map(function (c) { return c.etiqueta; });
-    (labs.marcadores || []).forEach(function (m) {
-      var wrapMarcador = crear(doc, 'div');
-      if (typeof Charts.barras === 'function') {
-        Charts.barras(wrapMarcador, {
-          titulo: m.nombre + ' (' + m.unidad + ')',
-          categorias: cortesEtiquetas,
-          series: [{ nombre: m.nombre, datos: m.valores }],
-          tabla: true
-        });
-      }
-      gridLabs.appendChild(wrapMarcador);
-    });
     cardLabs.appendChild(gridLabs);
     rootEl.appendChild(cardLabs);
+
+    var cortesEtiquetas = (labs.cortes || []).map(function (c) { return c.etiqueta; });
+    var marcadoresLabs = labs.marcadores || [];
+
+    // Fase 1 (T-033): crear y adjuntar TODOS los wrapMarcador a gridLabs
+    // antes de renderizar ninguno. Ningún Charts.* se invoca en este loop.
+    var wrapsLabs = marcadoresLabs.map(function (m) {
+      var wrapMarcador = crear(doc, 'div');
+      gridLabs.appendChild(wrapMarcador);
+      return wrapMarcador;
+    });
+
+    // Fase 2 (T-033): con gridLabs ya en su geometría final (7 hijos
+    // adjuntos), renderizar cada gráfica de laboratorio en un loop
+    // separado -- todas miden el mismo clientWidth de celda.
+    marcadoresLabs.forEach(function (m, indiceMarcadorLab) {
+      if (typeof Charts.barras !== 'function') { return; }
+      var opcionesBarras = {
+        titulo: m.nombre + ' (' + m.unidad + ')',
+        categorias: cortesEtiquetas,
+        series: [{ nombre: m.nombre, datos: m.valores }],
+        tabla: true
+      };
+      // data-8 (Adendum R6 punto 2/consumo): referencia clínica {min,max}
+      // SOLO para los marcadores que la traen en HERZON_DATA.
+      if (m.referencia && typeof m.referencia.min === 'number' && typeof m.referencia.max === 'number') {
+        opcionesBarras.referencia = { min: m.referencia.min, max: m.referencia.max, etiqueta: 'Rango normal' };
+      }
+      Charts.barras(wrapsLabs[indiceMarcadorLab], opcionesBarras);
+    });
 
     // -------------------------------------------------------------------
     // Card de plicometría (Adendum R4 punto 1 + esta tarea): 4 series (una

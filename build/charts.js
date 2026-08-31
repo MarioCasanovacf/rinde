@@ -60,6 +60,19 @@
   var ALTURA_MINIMA_ETIQUETA_PUNTA = 12;
   var UMBRAL_LINEA_GUIA = 4;
 
+  // R6 (Adendum 2): opciones aditivas default-apagadas del refinamiento Justesse.
+  // Umbral mínimo de alto de segmento (apilada100) para dibujar su etiqueta de
+  // porcentaje; segmentos más angostos quedan sin etiqueta (los cubre la tabla).
+  var ALTURA_MINIMA_ETIQUETA_SEGMENTO = 14;
+  // Aire entre el texto de etiquetasFila (heatmapCalendario) y el borde
+  // izquierdo del grid de celdas.
+  var PADDING_GUTTER_FILA_HEATMAP = 10;
+  // Iniciales de día en español: orden que devuelve Date.prototype.getUTCDay()
+  // (0 = domingo) y orden canónico de semana que empieza en lunes (fallback
+  // cuando la etiqueta no es una fecha ISO parseable, p.ej. fixtures sintéticos).
+  var INICIALES_DIA_POR_GETDAY = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
+  var INICIALES_DIA_CANONICA = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+
   // ---------------------------------------------------------------------
   // Utilidades internas puras (sin DOM)
   // ---------------------------------------------------------------------
@@ -118,6 +131,51 @@
       if (typeof arr[i] === 'number' && arr[i] > arr[idx]) idx = i;
     }
     return idx;
+  }
+
+  // R6: sufijo de unidad SOLO para etiquetas de valor (nunca para ticks de eje,
+  // que siempre quedan limpios via formatearNumero directo).
+  function etiquetaConUnidad(valor, unidad) {
+    var base = formatearNumero(valor);
+    return unidad ? (base + ' ' + unidad) : base;
+  }
+
+  // R6 (heatmapCalendario): bucket ordinal 0..pasos-1 de un valor dentro del
+  // rango [minV, maxV]; mismo cómputo que antes vivía inline en el render.
+  function calcularBucketRampa(valor, minV, maxV, pasos) {
+    pasos = pasos || 5;
+    if (maxV === minV) return 0;
+    var proporcion = (valor - minV) / (maxV - minV);
+    if (proporcion < 0) proporcion = 0;
+    if (proporcion > 1) proporcion = 1;
+    return Math.min(pasos - 1, Math.floor(proporcion * pasos));
+  }
+
+  // R6 (heatmapCalendario, leyendaRampa): rango numérico [desde, hasta) de cada
+  // bucket ordinal, para rotular cada swatch de la leyenda con su cota.
+  function calcularRangosBucketsRampa(minV, maxV, pasos) {
+    pasos = pasos || 5;
+    var rangos = [];
+    for (var i = 0; i < pasos; i++) {
+      rangos.push({
+        desde: minV + (maxV - minV) * (i / pasos),
+        hasta: minV + (maxV - minV) * ((i + 1) / pasos)
+      });
+    }
+    return rangos;
+  }
+
+  // R6 (heatmapCalendario, encabezadosDia): inicial de día derivada de
+  // opciones.etiquetas cuando es una fecha ISO parseable (YYYY-MM-DD...); si no,
+  // cae al orden canónico de semana (lunes-primero) por posición de columna, para
+  // que la función nunca lance con etiquetas sintéticas no fechables.
+  function derivarInicialDiaSemana(etiquetaFecha, indiceColumna) {
+    var cadena = etiquetaFecha == null ? '' : String(etiquetaFecha);
+    if (/^\d{4}-\d{2}-\d{2}/.test(cadena)) {
+      var fecha = new Date(cadena.slice(0, 10) + 'T00:00:00Z');
+      if (!isNaN(fecha.getTime())) return INICIALES_DIA_POR_GETDAY[fecha.getUTCDay()];
+    }
+    return INICIALES_DIA_CANONICA[indiceColumna % 7];
   }
 
   function construirTablaAutomatica(etiquetas, series, etiquetaColumna) {
@@ -265,6 +323,44 @@
     });
 
     return puntos;
+  }
+
+  // T-034 (R6-fix): colisión rectangular estimada entre dos cajas de texto/marca.
+  // Cajas siempre en el mismo sistema de coordenadas del SVG (x0<x1, y0<y1, "y"
+  // crece hacia abajo). Reutilizada por la etiqueta de opciones.referencia de
+  // barras() para no reinventar el cómputo de intersección en cada llamador.
+  function cajasIntersectan(a, b) {
+    return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+  }
+
+  // T-034 (R6-fix, barras verticales): posiciona la etiqueta corta de
+  // opciones.referencia. Por defecto se ancla al extremo IZQUIERDO de la
+  // hairline (`xEtiqueta`, típicamente margen.izquierda): el extremo derecho es
+  // SIEMPRE de la etiqueta de valor del último elemento (R6 data-4), que nunca
+  // cede esa posición. Si la caja estimada de la etiqueta en su posición por
+  // defecto (medida con estimarAnchoTexto, igual que el resto del módulo)
+  // colisiona con alguna de `obstaculos` (cajas de barra y/o de etiqueta de
+  // valor final que el llamador ya calculó con las posiciones reales del
+  // render), se desplaza verticalmente por encima de la hairline: al menos
+  // `separacionMinima` px por encima del borde superior del obstáculo más alto
+  // que la toca (nunca menos que `separacionMinima` respecto de la propia
+  // hairline, que es la separación de la posición por defecto). Función pura
+  // (sin DOM) para que el render y el selfcheck compartan el mismo cómputo.
+  function resolverPosicionEtiquetaReferencia(xEtiqueta, yHairline, texto, tamanoFuente, separacionMinima, obstaculos) {
+    var anchoTexto = estimarAnchoTexto(texto, tamanoFuente);
+    var y = yHairline - separacionMinima;
+    var caja = { x0: xEtiqueta, x1: xEtiqueta + anchoTexto, y0: y - tamanoFuente, y1: y };
+    (obstaculos || []).forEach(function (o) {
+      if (cajasIntersectan(caja, o)) {
+        var yTecho = o.y0 - separacionMinima;
+        if (yTecho < caja.y1) {
+          var delta = caja.y1 - yTecho;
+          caja.y0 -= delta;
+          caja.y1 -= delta;
+        }
+      }
+    });
+    return { x: xEtiqueta, y: caja.y1, ancho: anchoTexto, caja: caja };
   }
 
   // ---------------------------------------------------------------------
@@ -451,7 +547,7 @@
     series.forEach(function (s) {
       var datos = s.datos || [];
       if (!datos.length) return;
-      var anchoTexto = estimarAnchoTexto(formatearNumero(datos[datos.length - 1]), TAMANO_FUENTE_ETIQUETA);
+      var anchoTexto = estimarAnchoTexto(etiquetaConUnidad(datos[datos.length - 1], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
       if (anchoTexto > anchoEtiquetaFinalMax) anchoEtiquetaFinalMax = anchoTexto;
     });
     var margenDerecho = Math.max(20, ESPACIO_PUNTO_ETIQUETA + anchoEtiquetaFinalMax + 6);
@@ -574,7 +670,7 @@
         anillo.style.stroke = 'var(--surface-1)';
         svg.appendChild(anillo);
 
-        puntosEtiquetaPunta.push({ cx: cx, cy: cy, texto: formatearNumero(datos[ultimoI]) });
+        puntosEtiquetaPunta.push({ cx: cx, cy: cy, texto: etiquetaConUnidad(datos[ultimoI], opciones.unidad) });
       }
     });
 
@@ -617,7 +713,9 @@
     if (n > 0) {
       var crosshair = crearSVG(doc, 'line', { x1: escalaX(0), x2: escalaX(0), y1: margen.arriba, y2: alto - margen.abajo, 'stroke-width': '1' });
       crosshair.classList.add('hz-crosshair');
-      crosshair.style.stroke = 'var(--axis)';
+      // R6 punto 5 / Adendum R6.5: el crosshair de hover pasa de var(--axis) a
+      // var(--text-muted); gridlines y ejes conservan var(--axis) (sin tocar).
+      crosshair.style.stroke = 'var(--text-muted)';
       crosshair.style.display = 'none';
       svg.appendChild(crosshair);
 
@@ -693,13 +791,30 @@
     // la marca (véase más abajo, "series.length === 1"); reservar margen según
     // su ancho estimado en vez de un margen fijo que lo recorta contra el borde
     // del viewBox (regla explícita del QA para barras horizontales).
+    // R6 (data-4): en vertical el label directo por default va en el ÚLTIMO
+    // valor, no en el máximo; el margen se reserva según ESE valor. R6
+    // (valoresEnBarras): en horizontal con <=6 categorías y serie única, se
+    // reserva margen según el valor MÁS ANCHO de TODAS las barras etiquetadas.
+    // Ambos casos incluyen el sufijo de unidad (opciones.unidad) si viene.
     var ESPACIO_PUNTO_ETIQUETA = 6;
     var anchoEtiquetaMaximo = 0;
     if (series.length === 1) {
       var datosUnicaPre = series[0].datos || [];
-      var idxMaxPre = indiceDelMaximo(datosUnicaPre);
-      if (idxMaxPre >= 0) {
-        anchoEtiquetaMaximo = estimarAnchoTexto(formatearNumero(datosUnicaPre[idxMaxPre]), TAMANO_FUENTE_ETIQUETA);
+      if (orientacion === 'vertical') {
+        var idxUltimoPre = datosUnicaPre.length - 1;
+        if (idxUltimoPre >= 0) {
+          anchoEtiquetaMaximo = estimarAnchoTexto(etiquetaConUnidad(datosUnicaPre[idxUltimoPre], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
+        }
+      } else if (opciones.valoresEnBarras && categorias.length <= 6) {
+        for (var ivp = 0; ivp < datosUnicaPre.length; ivp++) {
+          var wvp = estimarAnchoTexto(etiquetaConUnidad(datosUnicaPre[ivp], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
+          if (wvp > anchoEtiquetaMaximo) anchoEtiquetaMaximo = wvp;
+        }
+      } else {
+        var idxMaxPre = indiceDelMaximo(datosUnicaPre);
+        if (idxMaxPre >= 0) {
+          anchoEtiquetaMaximo = estimarAnchoTexto(etiquetaConUnidad(datosUnicaPre[idxMaxPre], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
+        }
       }
     }
     // QA-R3 (b): el gutter izquierdo de barras horizontales se dimensiona según el label de
@@ -738,8 +853,58 @@
       (s.datos || []).forEach(function (v) { if (typeof v === 'number' && !isNaN(v)) todosValores.push(v); });
     });
     var dataMax = todosValores.length ? Math.max.apply(null, todosValores) : 1;
+    // R6: opciones.referencia.max amplía la escala automática (solo cuando
+    // opciones.max no viene fijado explícitamente) para que la línea de
+    // referencia nunca quede fuera del área de trazo.
+    if (opciones.referencia && typeof opciones.referencia.max === 'number') {
+      dataMax = Math.max(dataMax, opciones.referencia.max);
+    }
     var valorMax = (typeof opciones.max === 'number') ? opciones.max : (dataMax || 1);
     if (valorMax <= 0) valorMax = 1;
+    var tieneReferencia = !!(opciones.referencia && typeof opciones.referencia.min === 'number' && typeof opciones.referencia.max === 'number');
+
+    // R6: hairline 1px var(--text-muted) + etiqueta corta, misma anatomia que
+    // la linea Meta de linea() (contrato Adendum R6 punto 2). Dibuja las DOS
+    // fronteras (min y max) del rango de referencia sobre el eje recibido
+    // (perpendicular a las barras) y una sola etiqueta junto a la frontera max.
+    function dibujarReferencia(esVertical, escalaValor, obstaculosEtiqueta) {
+      if (!tieneReferencia) return;
+      var yMin, yMax, xMin, xMax;
+      if (esVertical) {
+        yMin = alto - margen.abajo - escalaValor(opciones.referencia.min);
+        yMax = alto - margen.abajo - escalaValor(opciones.referencia.max);
+        [yMin, yMax].forEach(function (yRef) {
+          var lineaRef = crearSVG(doc, 'line', { x1: margen.izquierda, x2: ancho - margen.derecha, y1: yRef, y2: yRef, 'stroke-width': '1', class: 'hz-referencia-linea' });
+          lineaRef.style.stroke = 'var(--text-muted)';
+          svg.appendChild(lineaRef);
+        });
+        // T-034 (R6-fix): la etiqueta ya NO se ancla al extremo derecho (ahí
+        // colisionaba con la barra Final y con su etiqueta de valor — evidencia
+        // LDL/HbA1c del coordinador). Se ancla al extremo IZQUIERDO de la
+        // hairline (inicio del eje); si aun así colisiona con una barra o con
+        // la etiqueta de valor del último elemento (que SIEMPRE gana la
+        // posición derecha, R6 data-4), se desplaza verticalmente por encima
+        // de la hairline con separación >= 4px del obstáculo más alto.
+        var textoRef = opciones.referencia.etiqueta || 'Referencia';
+        var posicionRef = resolverPosicionEtiquetaReferencia(margen.izquierda, yMax, textoRef, TAMANO_FUENTE_EJE, 4, obstaculosEtiqueta);
+        var etiquetaRef = crearSVG(doc, 'text', { x: posicionRef.x, y: posicionRef.y, 'text-anchor': 'start', 'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-referencia-etiqueta' });
+        etiquetaRef.style.fill = 'var(--text-muted)';
+        etiquetaRef.textContent = textoRef;
+        svg.appendChild(etiquetaRef);
+      } else {
+        xMin = margen.izquierda + escalaValor(opciones.referencia.min);
+        xMax = margen.izquierda + escalaValor(opciones.referencia.max);
+        [xMin, xMax].forEach(function (xRef) {
+          var lineaRefH = crearSVG(doc, 'line', { x1: xRef, x2: xRef, y1: margen.arriba, y2: alto - margen.abajo, 'stroke-width': '1', class: 'hz-referencia-linea' });
+          lineaRefH.style.stroke = 'var(--text-muted)';
+          svg.appendChild(lineaRefH);
+        });
+        var etiquetaRefH = crearSVG(doc, 'text', { x: xMax, y: margen.arriba - 4, 'text-anchor': 'middle', 'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-referencia-etiqueta' });
+        etiquetaRefH.style.fill = 'var(--text-muted)';
+        etiquetaRefH.textContent = opciones.referencia.etiqueta || 'Referencia';
+        svg.appendChild(etiquetaRefH);
+      }
+    }
 
     var nCat = categorias.length;
     var nSer = Math.max(series.length, 1);
@@ -793,6 +958,43 @@
       if (grosorBarra < 2) grosorBarra = 2;
       var escalaAlt = function (v) { return (v / valorMax) * altoPlot; };
 
+      // R6: la referencia se dibuja ANTES que las barras (misma capa que la
+      // línea Meta de linea(), detrás de las marcas de datos). T-034: para que
+      // la etiqueta de referencia sepa si colisiona, se calculan de antemano
+      // las cajas estimadas de CADA barra (valor máximo entre series por
+      // categoría) y, con serie única, la de la etiqueta de valor del último
+      // elemento — la misma geometría que este mismo bloque dibuja más abajo.
+      var obstaculosEtiquetaRef = [];
+      for (var oc = 0; oc < nCat; oc++) {
+        var valorMaxCategoriaRef = null;
+        for (var os = 0; os < series.length; os++) {
+          var vObstaculo = (series[os].datos || [])[oc];
+          if (typeof vObstaculo === 'number' && !isNaN(vObstaculo) && (valorMaxCategoriaRef === null || vObstaculo > valorMaxCategoriaRef)) {
+            valorMaxCategoriaRef = vObstaculo;
+          }
+        }
+        if (valorMaxCategoriaRef === null) continue;
+        var xCategoriaRef = margen.izquierda + oc * anchoGrupo;
+        obstaculosEtiquetaRef.push({
+          x0: xCategoriaRef, x1: xCategoriaRef + anchoGrupo,
+          y0: (alto - margen.abajo) - escalaAlt(valorMaxCategoriaRef), y1: alto - margen.abajo
+        });
+      }
+      if (series.length === 1) {
+        var datosUnicaRefPre = series[0].datos || [];
+        var idxUltimoRefPre = datosUnicaRefPre.length - 1;
+        if (idxUltimoRefPre >= 0 && typeof datosUnicaRefPre[idxUltimoRefPre] === 'number' && !isNaN(datosUnicaRefPre[idxUltimoRefPre])) {
+          var xCentroRefPre = margen.izquierda + idxUltimoRefPre * anchoGrupo + anchoGrupo / 2;
+          var anchoValorRefPre = estimarAnchoTexto(etiquetaConUnidad(datosUnicaRefPre[idxUltimoRefPre], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
+          var yCapRefPre = (alto - margen.abajo) - escalaAlt(datosUnicaRefPre[idxUltimoRefPre]);
+          obstaculosEtiquetaRef.push({
+            x0: xCentroRefPre - anchoValorRefPre / 2, x1: xCentroRefPre + anchoValorRefPre / 2,
+            y0: (yCapRefPre - 6) - TAMANO_FUENTE_ETIQUETA, y1: yCapRefPre - 6
+          });
+        }
+      }
+      dibujarReferencia(true, escalaAlt, obstaculosEtiquetaRef);
+
       for (var c = 0; c < nCat; c++) {
         var inicioGrupo = margen.izquierda + c * anchoGrupo;
         var anchoOcupado = grosorBarra * nSer + GAP_SEPARADOR * (nSer - 1);
@@ -835,14 +1037,16 @@
 
       if (series.length === 1) {
         var datosUnica = series[0].datos || [];
-        var idxMax = indiceDelMaximo(datosUnica);
-        if (idxMax >= 0) {
-          var xCentro = margen.izquierda + idxMax * anchoGrupo + anchoGrupo / 2;
-          var valorMaxSel = datosUnica[idxMax];
-          var yCap = alto - margen.abajo - escalaAlt(valorMaxSel);
+        // R6 (data-4): el label directo por default va en el ÚLTIMO valor (el
+        // actual), no en el máximo — antes de R6 aquí vivía indiceDelMaximo().
+        var idxUltimo = datosUnica.length - 1;
+        if (idxUltimo >= 0 && typeof datosUnica[idxUltimo] === 'number' && !isNaN(datosUnica[idxUltimo])) {
+          var xCentro = margen.izquierda + idxUltimo * anchoGrupo + anchoGrupo / 2;
+          var valorUltimoSel = datosUnica[idxUltimo];
+          var yCap = alto - margen.abajo - escalaAlt(valorUltimoSel);
           var etiquetaValor = crearSVG(doc, 'text', { x: xCentro, y: yCap - 6, 'text-anchor': 'middle', class: 'hz-etiqueta-valor', 'font-size': String(TAMANO_FUENTE_ETIQUETA) });
           etiquetaValor.style.fill = 'var(--text-primary)';
-          etiquetaValor.textContent = formatearNumero(valorMaxSel);
+          etiquetaValor.textContent = etiquetaConUnidad(valorUltimoSel, opciones.unidad);
           svg.appendChild(etiquetaValor);
         }
       }
@@ -855,6 +1059,8 @@
       var grosorBarraH = Math.min(GROSOR_MAX_BARRA, (altoGrupo - GAP_SEPARADOR * (nSer + 1)) / nSer);
       if (grosorBarraH < 2) grosorBarraH = 2;
       var escalaAncho = function (v) { return (v / valorMax) * anchoPlot; };
+
+      dibujarReferencia(false, escalaAncho);
 
       for (var c2 = 0; c2 < nCat; c2++) {
         var inicioGrupoH = margen.arriba + c2 * altoGrupo;
@@ -915,15 +1121,31 @@
 
       if (series.length === 1) {
         var datosUnicaH = series[0].datos || [];
-        var idxMaxH = indiceDelMaximo(datosUnicaH);
-        if (idxMaxH >= 0) {
-          var yCentro = margen.arriba + idxMaxH * altoGrupo + altoGrupo / 2;
-          var valorMaxSelH = datosUnicaH[idxMaxH];
-          var xCap = margen.izquierda + escalaAncho(valorMaxSelH);
-          var etiquetaValorH = crearSVG(doc, 'text', { x: xCap + ESPACIO_PUNTO_ETIQUETA, y: yCentro, 'dominant-baseline': 'middle', class: 'hz-etiqueta-valor', 'font-size': String(TAMANO_FUENTE_ETIQUETA) });
-          etiquetaValorH.style.fill = 'var(--text-primary)';
-          etiquetaValorH.textContent = formatearNumero(valorMaxSelH);
-          svg.appendChild(etiquetaValorH);
+        // R6: valoresEnBarras (horizontal, serie única, <=6 categorías) dibuja
+        // el valor al final de CADA barra; fuera de esas condiciones se
+        // conserva el comportamiento previo (solo la barra máxima).
+        if (opciones.valoresEnBarras && categorias.length <= 6) {
+          for (var vb = 0; vb < datosUnicaH.length; vb++) {
+            var valorVB = datosUnicaH[vb];
+            if (typeof valorVB !== 'number' || isNaN(valorVB)) continue;
+            var yCentroVB = margen.arriba + vb * altoGrupo + altoGrupo / 2;
+            var xCapVB = margen.izquierda + escalaAncho(valorVB);
+            var etiquetaVB = crearSVG(doc, 'text', { x: xCapVB + ESPACIO_PUNTO_ETIQUETA, y: yCentroVB, 'dominant-baseline': 'middle', class: 'hz-etiqueta-valor', 'font-size': String(TAMANO_FUENTE_ETIQUETA) });
+            etiquetaVB.style.fill = 'var(--text-primary)';
+            etiquetaVB.textContent = etiquetaConUnidad(valorVB, opciones.unidad);
+            svg.appendChild(etiquetaVB);
+          }
+        } else {
+          var idxMaxH = indiceDelMaximo(datosUnicaH);
+          if (idxMaxH >= 0) {
+            var yCentro = margen.arriba + idxMaxH * altoGrupo + altoGrupo / 2;
+            var valorMaxSelH = datosUnicaH[idxMaxH];
+            var xCap = margen.izquierda + escalaAncho(valorMaxSelH);
+            var etiquetaValorH = crearSVG(doc, 'text', { x: xCap + ESPACIO_PUNTO_ETIQUETA, y: yCentro, 'dominant-baseline': 'middle', class: 'hz-etiqueta-valor', 'font-size': String(TAMANO_FUENTE_ETIQUETA) });
+            etiquetaValorH.style.fill = 'var(--text-primary)';
+            etiquetaValorH.textContent = etiquetaConUnidad(valorMaxSelH, opciones.unidad);
+            svg.appendChild(etiquetaValorH);
+          }
         }
       }
     }
@@ -1044,6 +1266,19 @@
           svg.appendChild(zonaHit);
         })(xBarra, y, hSeg, c, s, proporcion, rect);
 
+        // R6: etiquetasSegmento — % SOLO en segmentos con alto >= 14px (regla
+        // "segmentos angostos sin etiqueta, los cubre la tabla"). Tinta de
+        // texto via tokens de texto, jamás color de serie (regla 8).
+        if (opciones.etiquetasSegmento && hSeg >= ALTURA_MINIMA_ETIQUETA_SEGMENTO) {
+          var etiquetaSegmento = crearSVG(doc, 'text', {
+            x: xCentro, y: y + hSeg / 2, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
+            class: 'hz-etiqueta-segmento', 'font-size': String(TAMANO_FUENTE_ETIQUETA)
+          });
+          etiquetaSegmento.style.fill = 'var(--text-primary)';
+          etiquetaSegmento.textContent = formatearNumero(Math.round(proporcion * 1000) / 10) + '%';
+          svg.appendChild(etiquetaSegmento);
+        }
+
         yAcumulado = y + hSeg + GAP_SEPARADOR;
       }
 
@@ -1075,8 +1310,26 @@
     var lado = opciones.lado || 16;
     var gap = 3;
     var filas = Math.ceil(valores.length / columnas) || 1;
-    var ancho = opciones.ancho || (columnas * (lado + gap) + gap);
-    var alto = opciones.alto || (filas * (lado + gap) + gap);
+
+    // R6: encabezadosDia reserva una fila superior para las iniciales de día;
+    // etiquetasFila reserva una columna izquierda para las etiquetas de fila
+    // (p.ej. S1, S4, S8, S12). Ambas empiezan en 0 (sin cambio de render) y
+    // solo crecen cuando la opción viene activada, de modo que el viewBox por
+    // default sea exactamente el mismo de antes de R6.
+    var margenArribaEncabezados = opciones.encabezadosDia ? (TAMANO_FUENTE_EJE + 6) : 0;
+    var margenIzquierdaFilas = 0;
+    if (opciones.etiquetasFila) {
+      for (var mf = 0; mf < opciones.etiquetasFila.length; mf++) {
+        if (opciones.etiquetasFila[mf]) {
+          var wf = estimarAnchoTexto(opciones.etiquetasFila[mf], TAMANO_FUENTE_EJE);
+          if (wf > margenIzquierdaFilas) margenIzquierdaFilas = wf;
+        }
+      }
+      if (margenIzquierdaFilas > 0) margenIzquierdaFilas += PADDING_GUTTER_FILA_HEATMAP;
+    }
+
+    var ancho = opciones.ancho || (margenIzquierdaFilas + columnas * (lado + gap) + gap);
+    var alto = opciones.alto || (margenArribaEncabezados + filas * (lado + gap) + gap);
 
     var todos = valores.filter(function (v) { return typeof v === 'number' && !isNaN(v); });
     var minV = (typeof opciones.min === 'number') ? opciones.min : (todos.length ? Math.min.apply(null, todos) : 0);
@@ -1124,16 +1377,47 @@
 
     var TOKENS_RAMPA = ['var(--heat-1)', 'var(--heat-2)', 'var(--heat-3)', 'var(--heat-4)', 'var(--heat-5)'];
 
+    // R6: encabezadosDia — iniciales L M X J V S D derivadas de opciones.etiquetas
+    // (una por columna, tomadas de la primera fila), reutilizando derivarInicialDiaSemana.
+    if (opciones.encabezadosDia) {
+      for (var hc = 0; hc < columnas; hc++) {
+        var inicialDia = derivarInicialDiaSemana(etiquetas[hc], hc);
+        var xEncabezado = margenIzquierdaFilas + gap + hc * (lado + gap) + lado / 2;
+        var etiquetaEncabezado = crearSVG(doc, 'text', {
+          x: xEncabezado, y: margenArribaEncabezados - 4, 'text-anchor': 'middle',
+          'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-heat-encabezado-dia'
+        });
+        etiquetaEncabezado.style.fill = 'var(--text-muted)';
+        etiquetaEncabezado.textContent = inicialDia;
+        svg.appendChild(etiquetaEncabezado);
+      }
+    }
+
+    // R6: etiquetasFila — un rotulo por fila SOLO cuando la entrada correspondiente
+    // del arreglo recibido es no vacia (el llamador decide que filas rotular, p.ej.
+    // S1, S4, S8, S12 de 12 semanas).
+    if (opciones.etiquetasFila) {
+      for (var rf = 0; rf < filas; rf++) {
+        if (!opciones.etiquetasFila[rf]) continue;
+        var yFila = margenArribaEncabezados + gap + rf * (lado + gap) + lado / 2;
+        var etiquetaFila = crearSVG(doc, 'text', {
+          x: margenIzquierdaFilas - PADDING_GUTTER_FILA_HEATMAP + 4, y: yFila,
+          'text-anchor': 'end', 'dominant-baseline': 'middle',
+          'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-heat-fila-etiqueta'
+        });
+        etiquetaFila.style.fill = 'var(--text-muted)';
+        etiquetaFila.textContent = String(opciones.etiquetasFila[rf]);
+        svg.appendChild(etiquetaFila);
+      }
+    }
+
     for (var i = 0; i < valores.length; i++) {
       var valor = valores[i];
       var fila = Math.floor(i / columnas);
       var col = i % columnas;
-      var x = gap + col * (lado + gap);
-      var y = gap + fila * (lado + gap);
-      var proporcion = (valor - minV) / (maxV - minV);
-      if (proporcion < 0) proporcion = 0;
-      if (proporcion > 1) proporcion = 1;
-      var bucket = Math.min(4, Math.floor(proporcion * 5));
+      var x = margenIzquierdaFilas + gap + col * (lado + gap);
+      var y = margenArribaEncabezados + gap + fila * (lado + gap);
+      var bucket = calcularBucketRampa(valor, minV, maxV, 5);
 
       var celda = crearSVG(doc, 'rect', { x: x, y: y, width: lado, height: lado, rx: 2, class: 'hz-heat-celda' });
       celda.style.fill = TOKENS_RAMPA[bucket];
@@ -1157,6 +1441,16 @@
         zonaHit.addEventListener('blur', bajar);
         svg.appendChild(zonaHit);
       })(x, y, i, valor, celda);
+    }
+
+    // R6: leyendaRampa — 5 swatches --heat-1..5 con el rango numérico de cada
+    // bucket; reutiliza construirLeyenda (contrato Adendum R6 punto 2).
+    if (opciones.leyendaRampa) {
+      var rangosRampa = calcularRangosBucketsRampa(minV, maxV, 5);
+      var entradasLeyendaRampa = rangosRampa.map(function (r, idx) {
+        return { nombre: formatearNumero(r.desde) + '-' + formatearNumero(r.hasta), color: TOKENS_RAMPA[idx] };
+      });
+      construirLeyenda(doc, raiz, entradasLeyendaRampa);
     }
 
     if (opciones.tabla) {
@@ -1298,6 +1592,19 @@
     // anti-colisión de labels de punta que usa linea(), en vez de reinventarlo.
     resolverColisionesEtiquetasPunta: resolverColisionesEtiquetasPunta,
     ALTURA_MINIMA_ETIQUETA_PUNTA: ALTURA_MINIMA_ETIQUETA_PUNTA,
-    UMBRAL_LINEA_GUIA: UMBRAL_LINEA_GUIA
+    UMBRAL_LINEA_GUIA: UMBRAL_LINEA_GUIA,
+    // R6 (Adendum 2): expuestas para que el selfcheck asevere sobre el mismo
+    // cómputo puro que usan las opciones aditivas nuevas, en vez de reinventarlo.
+    etiquetaConUnidad: etiquetaConUnidad,
+    calcularBucketRampa: calcularBucketRampa,
+    calcularRangosBucketsRampa: calcularRangosBucketsRampa,
+    derivarInicialDiaSemana: derivarInicialDiaSemana,
+    ALTURA_MINIMA_ETIQUETA_SEGMENTO: ALTURA_MINIMA_ETIQUETA_SEGMENTO,
+    PADDING_GUTTER_FILA_HEATMAP: PADDING_GUTTER_FILA_HEATMAP,
+    // T-034 (R6-fix): expuestas para que el selfcheck asevere sobre el mismo
+    // cómputo de colisión/posición que usa la etiqueta de opciones.referencia
+    // en barras(), en vez de reinventarlo.
+    cajasIntersectan: cajasIntersectan,
+    resolverPosicionEtiquetaReferencia: resolverPosicionEtiquetaReferencia
   };
 })();

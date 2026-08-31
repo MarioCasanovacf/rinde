@@ -175,7 +175,7 @@
     // Mini barra apilada de macros de ESTA comida: ancho proporcional a las
     // kcal que aporta cada macro (proteína y carbohidrato 4 kcal/g, grasa
     // 9 kcal/g), asignación de color fija del contrato (proteína=series-1,
-    // carbohidrato=series-2, grasa=series-3), gap de 2px via CSS.
+    // carbohidrato=series-2, grasa=series-3), gap de 2px vía CSS.
     var macros = crearHTML(doc, 'div');
     macros.classList.add('hz-menu-macros');
     var kcalProteina = comida.proteina_g * 4;
@@ -320,6 +320,16 @@
       var encontrado = planPorId(HERZON_DATA, est.planIdSeleccionado);
       if (encontrado) return encontrado;
     }
+    // R6 (prod-2): en modo automático (sin elección explícita en el
+    // recomendador) la fuente de verdad es la MISMA que usa la card
+    // "Personaliza tu plan" (objetivo/restricción) -- así el resto de la
+    // vista y Herzon.planActivo() nunca contradicen qué plantilla está
+    // activa. Antes caía al mejor score del ranking, que podía ser una
+    // plantilla distinta a la que el formulario ya mostraba.
+    if (est.filtroObjetivo || est.filtroRestriccion) {
+      var porFiltro = elegirPlan(HERZON_DATA.planes, est.filtroObjetivo, est.filtroRestriccion);
+      if (porFiltro) return porFiltro;
+    }
     if (est.ranking && est.ranking.length) return est.ranking[0].plan;
     return HERZON_DATA.planes[0];
   }
@@ -346,7 +356,16 @@
       ranking: null,          // [{ plan, score, razones[] }] descendente (Herzon.Motor.recomendar)
       planIdSeleccionado: null, // id elegido a mano en el ranking, o null = automático (el mejor rankeado)
       kcalManual: null,       // override manual del kcal objetivo mostrado, o null = usa el de la plantilla
-      escalaPorciones: 1      // 0.8 - 1.2
+      escalaPorciones: 1,     // 0.8 - 1.2
+      // R6 (prod-2, claves ADITIVAS, plan.md Adendum R6 punto 3): la card
+      // "Personaliza tu plan" (objetivo/restricción) y Herzon.planActivo()
+      // deben coincidir SIEMPRE en modo automático (planIdSeleccionado nulo);
+      // antes, cada uno resolvía la plantilla por su cuenta (el formulario
+      // vía elegirPlan, planActivo() vía el mejor score del ranking) y podían
+      // apuntar a plantillas distintas, mostrando kcal contradictorias entre
+      // la vista principal y el panel del recomendador. Se comparten aquí.
+      filtroObjetivo: derivarOpciones(HERZON_DATA.planes, 'objetivo')[0] || null,
+      filtroRestriccion: derivarOpciones(HERZON_DATA.planes, 'restriccion')[0] || null
     };
   }
 
@@ -389,20 +408,66 @@
     return recoEstadoSingleton;
   }
 
-  // Da un toque visual de botón secundario SIN hoja de estilo propia (regla
-  // 3.G: ningún módulo declara bloques de estilo inline en el documento;
-  // T-022 no posee build/shell.html, así que no puede registrar una clase
-  // hz-reco-btn-* nueva). Estilo puntual vía element.style, colores SIEMPRE
-  // con var(--token) (regla 3.H).
-  function estilizarBotonSecundario(el) {
-    el.style.appearance = 'none';
-    el.style.border = '1px solid var(--border)';
-    el.style.borderRadius = '999px';
-    el.style.padding = '6px 14px';
-    el.style.fontSize = '0.82rem';
-    el.style.cursor = 'pointer';
-    el.style.background = 'var(--surface-1)';
-    el.style.color = 'var(--text-secondary)';
+  // R6 (fini-4): los botones del recomendador dejan de estilizarse con
+  // element.style inline y pasan a la clase congelada .hz-table-toggle
+  // (plan.md Adendum R6 punto 6: "botones del recomendador via clases
+  // existentes tipo .hz-table-toggle"), estilizada por build/shell.html
+  // (T-026), que ya hereda :hover/:focus-visible y el estado disabled
+  // (opacidad + cursor) sin que este módulo declare un solo estilo propio.
+
+  // R6 (jera-6): distingue el par "proteína suficiente"/"insuficiente" del
+  // resto de las razones del ranking con el patrón punto de estatus
+  // (.hz-status-dot + .hz-status-label, clases congeladas en plan.md 3.G,
+  // ya usadas por build/vista_metricas.js). "insuficiente" contiene la
+  // subcadena "suficiente" en medio de otra palabra, así que se prueba
+  // primero para no confundirla con "suficiente" a secas.
+  function estadoDesdeRazon(texto) {
+    var normalizado = String(texto || '').toLowerCase();
+    if (normalizado.indexOf('insuficiente') !== -1) return 'warning';
+    if (normalizado.indexOf('suficiente') !== -1) return 'good';
+    return null;
+  }
+
+  function capitalizarPrimeraLetra(texto) {
+    if (!texto) return texto;
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+  }
+
+  // Pinta las razones del ranking como UNA línea de texto normal (jera-6):
+  // 0.85rem, sentence case (solo la primera razón capitalizada; el resto
+  // conserva el texto en minúsculas que ya produce Herzon.Motor), color
+  // var(--text-secondary) y razones separadas por ' · ' -- ya NO chips
+  // .hz-badge (ese queda reservado a rótulos cortos reales, plan.md
+  // Adendum R6 punto 6). El contenedor .hz-reco-razones es flex-wrap en
+  // build/shell.html (pensado para chips); se desactiva puntualmente a
+  // "block" vía element.style (regla 3.H) para que los fragmentos de texto
+  // fluyan como una sola línea en vez de separarse con el gap de la fila.
+  function construirLineaRazones(doc, contenedorEl, razones) {
+    limpiar(contenedorEl);
+    contenedorEl.style.display = 'block';
+    contenedorEl.style.fontSize = '0.85rem';
+    contenedorEl.style.color = 'var(--text-secondary)';
+    for (var i = 0; i < razones.length; i++) {
+      if (i > 0) contenedorEl.appendChild(doc.createTextNode(' · '));
+      var textoRazon = i === 0 ? capitalizarPrimeraLetra(razones[i]) : razones[i];
+      var estado = estadoDesdeRazon(razones[i]);
+      if (estado) {
+        var envoltura = crearHTML(doc, 'span');
+        envoltura.style.display = 'inline-flex';
+        envoltura.style.alignItems = 'center';
+        var punto = crearHTML(doc, 'span');
+        punto.classList.add('hz-status-dot');
+        punto.setAttribute('data-status', estado);
+        var etiquetaEstado = crearHTML(doc, 'span');
+        etiquetaEstado.classList.add('hz-status-label');
+        etiquetaEstado.textContent = textoRazon;
+        envoltura.appendChild(punto);
+        envoltura.appendChild(etiquetaEstado);
+        contenedorEl.appendChild(envoltura);
+      } else {
+        contenedorEl.appendChild(doc.createTextNode(textoRazon));
+      }
+    }
   }
 
   function crearStat(doc, contenedorEl, etiquetaTexto) {
@@ -530,9 +595,37 @@
     botonCalcular.setAttribute('type', 'button');
     botonCalcular.setAttribute('id', 'hz-reco-btn-calcular');
     botonCalcular.setAttribute('data-accion', 'calcular');
-    estilizarBotonSecundario(botonCalcular);
+    botonCalcular.classList.add('hz-table-toggle');
     botonCalcular.textContent = 'Calcular necesidades';
     accionesCalculo.appendChild(botonCalcular);
+
+    // R6 (prod-4): "Calcular" con campos vacíos/inválidos NO recalcula en
+    // silencio -- marca el/los input(s) ofensivos (element.style con
+    // var(--delta-bad), permitido por la regla 3.H) y pinta esta nota
+    // indicando el campo. Los campos numéricos son los únicos que pueden
+    // quedar vacíos o fuera de rango; los <select> siempre traen un valor
+    // válido de sus <option>.
+    var notaValidacion = crearHTML(doc, 'p');
+    notaValidacion.classList.add('hz-nota');
+    contenedorReco.appendChild(notaValidacion);
+
+    var CAMPOS_NUMERICOS_VALIDABLES = [
+      { input: campoEdad.input, etiqueta: 'Edad' },
+      { input: campoTalla.input, etiqueta: 'Talla' },
+      { input: campoPeso.input, etiqueta: 'Peso' }
+    ];
+
+    function validarCamposNumericos() {
+      var invalidos = [];
+      CAMPOS_NUMERICOS_VALIDABLES.forEach(function (campo) {
+        var texto = campo.input.value;
+        var numero = parseFloat(texto);
+        if (texto === '' || texto === null || texto === undefined || isNaN(numero) || numero <= 0) {
+          invalidos.push(campo);
+        }
+      });
+      return invalidos;
+    }
 
     // --- 2. Necesidades (TMB/GET/kcal objetivo/macros en g) ---
     var resumenNecesidades = crearHTML(doc, 'div');
@@ -605,12 +698,7 @@
 
         var razones = crearHTML(doc, 'div');
         razones.classList.add('hz-reco-razones');
-        entrada.razones.forEach(function (razonTexto) {
-          var chip = crearHTML(doc, 'span');
-          chip.classList.add('hz-badge');
-          chip.textContent = razonTexto;
-          razones.appendChild(chip);
-        });
+        construirLineaRazones(doc, razones, entrada.razones);
         item.appendChild(razones);
 
         var accionesItem = crearHTML(doc, 'div');
@@ -619,7 +707,7 @@
         botonUsar.setAttribute('type', 'button');
         botonUsar.setAttribute('data-plan-id', entrada.plan.id);
         botonUsar.setAttribute('data-accion', 'usar-plan');
-        estilizarBotonSecundario(botonUsar);
+        botonUsar.classList.add('hz-table-toggle');
         if (esAplicado) {
           botonUsar.textContent = 'Plan aplicado';
           botonUsar.setAttribute('disabled', 'disabled');
@@ -636,7 +724,7 @@
           est.escalaPorciones = 1;
           campoKcalManual.input.value = '';
           campoEscala.input.value = '1';
-          etiquetaEscala.textContent = formatoEscala(1);
+          actualizarEtiquetaEscala(1);
           renderRanking();
           renderPlanAplicado();
           refrescarVistaPrincipal();
@@ -657,14 +745,31 @@
       doc, accionesModificar, 'hz-reco-kcal-manual', 'Kcal objetivo manual (opcional)',
       'number', '', { min: 800, max: 5000, step: 10, placeholder: 'Automático' }
     );
-    var campoEscala = crearCampoInput(
-      doc, accionesModificar, 'hz-reco-escala', 'Escala de porciones (0.8x a 1.2x)',
-      'range', '1', { min: '0.8', max: '1.2', step: '0.05' }
-    );
-    campoEscala.input.classList.add('hz-reco-slider');
-    var etiquetaEscala = crearHTML(doc, 'span');
-    etiquetaEscala.textContent = formatoEscala(1);
-    campoEscala.campo.appendChild(etiquetaEscala);
+    // R6 (prod-8): el valor vivo de la escala se muestra JUNTO a su
+    // etiqueta ("Escala de porciones: 1.00x"), no como un span aparte que
+    // el layout de .hz-form-campo (columna) termina separando en su propia
+    // línea. La <label> del campo es el propio texto dinámico.
+    var campoEscalaDiv = crearHTML(doc, 'div');
+    campoEscalaDiv.classList.add('hz-form-campo');
+    var etiquetaEscala = crearHTML(doc, 'label');
+    etiquetaEscala.setAttribute('for', 'hz-reco-escala');
+    var inputEscala = crearHTML(doc, 'input');
+    inputEscala.setAttribute('id', 'hz-reco-escala');
+    inputEscala.setAttribute('type', 'range');
+    inputEscala.setAttribute('min', '0.8');
+    inputEscala.setAttribute('max', '1.2');
+    inputEscala.setAttribute('step', '0.05');
+    inputEscala.value = '1';
+    inputEscala.classList.add('hz-reco-slider');
+    campoEscalaDiv.appendChild(etiquetaEscala);
+    campoEscalaDiv.appendChild(inputEscala);
+    accionesModificar.appendChild(campoEscalaDiv);
+    var campoEscala = { campo: campoEscalaDiv, input: inputEscala };
+
+    function actualizarEtiquetaEscala(valorNum) {
+      etiquetaEscala.textContent = 'Escala de porciones: ' + formatoEscala(valorNum);
+    }
+    actualizarEtiquetaEscala(1);
 
     campoKcalManual.input.addEventListener('change', function (evento) {
       var valorTexto = evento.target.value;
@@ -682,8 +787,9 @@
       if (isNaN(valorNum)) valorNum = 1;
       valorNum = Math.max(0.8, Math.min(1.2, valorNum));
       est.escalaPorciones = valorNum;
-      etiquetaEscala.textContent = formatoEscala(valorNum);
+      actualizarEtiquetaEscala(valorNum);
       renderPlanAplicado();
+      refrescarVistaPrincipal();
     });
 
     // --- 5. Plantilla aplicada: macros mostrados recalculados en vivo ---
@@ -713,6 +819,25 @@
     }
 
     botonCalcular.addEventListener('click', function () {
+      // R6 (prod-4): limpia marcas de una validación previa antes de
+      // revisar de nuevo -- si el usuario ya corrigió el campo, no debe
+      // quedar pintado en rojo aunque el resto siga vigente.
+      CAMPOS_NUMERICOS_VALIDABLES.forEach(function (campo) {
+        campo.input.style.borderColor = '';
+        campo.input.removeAttribute('aria-invalid');
+      });
+      var invalidos = validarCamposNumericos();
+      if (invalidos.length) {
+        invalidos.forEach(function (campo) {
+          campo.input.style.borderColor = 'var(--delta-bad)';
+          campo.input.setAttribute('aria-invalid', 'true');
+        });
+        notaValidacion.textContent = 'Revisa el campo ' +
+          invalidos.map(function (campo) { return campo.etiqueta; }).join(', ') +
+          ' antes de calcular: debe ser un número mayor que cero. No se recalculó.';
+        return;
+      }
+      notaValidacion.textContent = '';
       leerPerfilDeFormulario();
       recalcularNecesidadesYRanking(est);
       renderNecesidades();
@@ -740,11 +865,20 @@
       return { valor: v, etiqueta: ETIQUETAS_RESTRICCION[v] || v };
     });
 
+    // R6 (prod-2): objetivo/restricción se guardan también en el estado
+    // compartido del recomendador (obtenerRecoEstado().filtroObjetivo/
+    // filtroRestriccion), para que Herzon.planActivo() resuelva la MISMA
+    // plantilla que esta card en modo automático (ver planSeleccionadoActivo).
+    // derivarOpciones(planes, campo)[0] es la misma cuenta que usa
+    // crearRecoEstadoInicial(), así que ambos arrancan coincidiendo.
+    var recoEstInicial = obtenerRecoEstado();
     var estado = {
-      objetivo: opcionesObjetivo[0].valor,
-      restriccion: opcionesRestriccion[0].valor,
+      objetivo: recoEstInicial.filtroObjetivo || opcionesObjetivo[0].valor,
+      restriccion: recoEstInicial.filtroRestriccion || opcionesRestriccion[0].valor,
       dia: 1
     };
+    recoEstInicial.filtroObjetivo = estado.objetivo;
+    recoEstInicial.filtroRestriccion = estado.restriccion;
 
     var grid = crearHTML(doc, 'div');
     grid.classList.add('hz-grid');
@@ -759,6 +893,13 @@
 
     // --- Formulario mínimo (.hz-form): objetivo + restricción/alergia ---
     var cardForm = crearCard(doc, grid, 'Personaliza tu plan');
+    // R6 (prod-6): mientras el recomendador tenga una plantilla fijada a
+    // mano, esta nota lo deja explícito aquí mismo (textContent); se retira
+    // sola en cuanto el usuario vuelve al modo automático (cambia objetivo
+    // o restricción, lo que limpia planIdSeleccionado -- ver render()).
+    var notaPlantillaFijada = crearHTML(doc, 'p');
+    notaPlantillaFijada.classList.add('hz-nota');
+    cardForm.appendChild(notaPlantillaFijada);
     var form = crearHTML(doc, 'form');
     form.classList.add('hz-form');
     cardForm.appendChild(form);
@@ -809,27 +950,61 @@
     cardDetalle.appendChild(listaMenu);
 
     function render() {
-      // El recomendador (Adendum R5, T-022) puede fijar una plantilla a
-      // mano (botón "Usar este plan" en #reco-plan); mientras esa selección
-      // exista, tiene prioridad sobre el emparejamiento automático por
-      // objetivo/restricción de la card "Personaliza tu plan" (así "el resto
-      // de la vista refleja la selección" del Adendum R5 punto 4).
+      // R6 (prod-2): hero, gráficas, filas del menú y total del día derivan
+      // TODOS de Herzon.planActivo() -- única fuente de verdad, compartida
+      // con el panel del recomendador (renderPlanAplicado), así que las
+      // cifras en pantalla ya no pueden contradecirse entre secciones. El
+      // recomendador (Adendum R5, T-022) puede fijar una plantilla a mano
+      // (botón "Usar este plan" en #reco-plan); mientras esa selección
+      // exista, planActivo() la respeta (Adendum R5 punto 4); si no, cae en
+      // la MISMA plantilla que resuelve la card "Personaliza tu plan"
+      // (planSeleccionadoActivo, sincronizada más abajo).
       var recoEst = obtenerRecoEstado();
-      var plan = recoEst.planIdSeleccionado
-        ? (planPorId(HERZON_DATA, recoEst.planIdSeleccionado) || elegirPlan(planes, estado.objetivo, estado.restriccion))
-        : elegirPlan(planes, estado.objetivo, estado.restriccion);
+      var activo = G.Herzon.planActivo();
+      var plan = activo.plan;
+      var escala = activo.escalaPorciones;
       rootEl.setAttribute('data-plan-id', plan.id);
 
-      hero.num.textContent = formatearEntero(plan.kcalObjetivo);
-      limpiar(notaPlan);
-      notaPlan.textContent = plan.nombre + ' — objetivo ' + formatearEntero(plan.kcalObjetivo) +
-        ' kcal/día (proteína ' + plan.macrosObjetivo.proteina_g + ' g, carbohidrato ' +
-        plan.macrosObjetivo.carbohidrato_g + ' g, grasa ' + plan.macrosObjetivo.grasa_g + ' g).';
+      // prod-6: nota de plantilla fijada, SOLO mientras haya una elección
+      // explícita del recomendador; se retira (textContent vacío) en modo
+      // automático.
+      if (recoEst.planIdSeleccionado) {
+        notaPlantillaFijada.textContent = 'Plantilla fijada desde el recomendador: ' + plan.nombre +
+          '. Cambia objetivo o restricción aquí abajo para volver al modo automático.';
+      } else {
+        notaPlantillaFijada.textContent = '';
+      }
 
       var diaIdx = Math.max(1, Math.min(plan.dias.length, estado.dia)) - 1;
       var diaData = plan.dias[diaIdx];
-      var comidas = diaData.comidas;
-      var categoriasComida = comidas.map(function (c) { return NOMBRES_MOMENTO[c.momento] || c.momento; });
+      // "El menú escalado" (prod-2): cada comida del día se multiplica por
+      // escalaPorciones -- hero, gráficas y menú comparten estos mismos
+      // números escalados, incluso con kcalManual fijado (ese override es
+      // solo el objetivo mostrado en el panel del recomendador; aquí se
+      // muestra lo que la comida REAL, ya escalada, realmente suma).
+      var comidasEscaladas = diaData.comidas.map(function (c) {
+        return {
+          hora: c.hora,
+          momento: c.momento,
+          nombre: c.nombre,
+          kcal: c.kcal * escala,
+          proteina_g: c.proteina_g * escala,
+          carbohidrato_g: c.carbohidrato_g * escala,
+          grasa_g: c.grasa_g * escala
+        };
+      });
+      var totalKcalEscalado = comidasEscaladas.reduce(function (acc, c) { return acc + c.kcal; }, 0);
+      var totalProteinaEscalada = comidasEscaladas.reduce(function (acc, c) { return acc + c.proteina_g; }, 0);
+      var totalCarbohidratoEscalado = comidasEscaladas.reduce(function (acc, c) { return acc + c.carbohidrato_g; }, 0);
+      var totalGrasaEscalada = comidasEscaladas.reduce(function (acc, c) { return acc + c.grasa_g; }, 0);
+
+      hero.num.textContent = formatearEntero(totalKcalEscalado);
+      limpiar(notaPlan);
+      notaPlan.textContent = plan.nombre + ' (escala ' + formatoEscala(escala) + ') — el menú del día ' + diaData.dia +
+        ' suma ' + formatearEntero(totalKcalEscalado) + ' kcal/día (proteína ' + formatearEntero(totalProteinaEscalada) +
+        ' g, carbohidrato ' + formatearEntero(totalCarbohidratoEscalado) + ' g, grasa ' + formatearEntero(totalGrasaEscalada) + ' g).';
+
+      var categoriasComida = comidasEscaladas.map(function (c) { return NOMBRES_MOMENTO[c.momento] || c.momento; });
 
       limpiar(contMacros);
       Charts.apilada100(contMacros, {
@@ -841,29 +1016,36 @@
         tituloAccesible: 'Distribución de proteínas, carbohidratos y grasas por comida del día ' + diaData.dia,
         categorias: categoriasComida,
         series: [
-          { nombre: 'Proteínas', color: 'var(--series-1)', datos: comidas.map(function (c) { return c.proteina_g; }) },
-          { nombre: 'Carbohidratos', color: 'var(--series-2)', datos: comidas.map(function (c) { return c.carbohidrato_g; }) },
-          { nombre: 'Grasas', color: 'var(--series-3)', datos: comidas.map(function (c) { return c.grasa_g; }) }
+          { nombre: 'Proteínas', color: 'var(--series-1)', datos: comidasEscaladas.map(function (c) { return c.proteina_g; }) },
+          { nombre: 'Carbohidratos', color: 'var(--series-2)', datos: comidasEscaladas.map(function (c) { return c.carbohidrato_g; }) },
+          { nombre: 'Grasas', color: 'var(--series-3)', datos: comidasEscaladas.map(function (c) { return c.grasa_g; }) }
         ],
         etiquetaColumna: 'Comida',
-        tabla: true
+        tabla: true,
+        // R6-fix (hallazgo data-7, T-035): la gráfica no mostraba ni un solo
+        // valor legible sin abrir la tabla. etiquetasSegmento ya existe
+        // verificada en Charts.apilada100 (T-027): % en cada segmento con
+        // alto >= 14px, tinta de texto vía var(--text-primary), jamás color
+        // de serie. Cableado quirúrgico: solo esta opción, nada más.
+        etiquetasSegmento: true
       });
 
       limpiar(contKcal);
       Charts.barras(contKcal, {
         // Idem: título visible propio, ya no duplica el heading de "Gráficas
-        // del plan" (corrección R4).
+        // del plan" (corrección R4). Escalado por el mismo factor que el
+        // menú (prod-2): esta gráfica no puede contradecir el total de abajo.
         titulo: 'Calorías por día (semana del plan)',
         tituloAccesible: 'Calorías totales por cada día de la semana del plan ' + plan.nombre,
         categorias: plan.dias.map(function (d) { return 'Día ' + d.dia; }),
-        series: [{ nombre: 'Calorías (kcal)', datos: plan.dias.map(function (d) { return d.totales.kcal; }) }],
+        series: [{ nombre: 'Calorías (kcal)', datos: plan.dias.map(function (d) { return d.totales.kcal * escala; }) }],
         etiquetaColumna: 'Día',
         tabla: true
       });
 
       limpiar(listaMenu);
-      for (var mi = 0; mi < comidas.length; mi++) {
-        construirFilaMenuComida(doc, listaMenu, comidas[mi]);
+      for (var mi = 0; mi < comidasEscaladas.length; mi++) {
+        construirFilaMenuComida(doc, listaMenu, comidasEscaladas[mi]);
       }
 
       // Leyenda una sola vez (no por fila): colores por token, misma
@@ -876,7 +1058,7 @@
         ]
       });
 
-      // Total del día, visible al pie del menú.
+      // Total del día, visible al pie del menú (escalado, prod-2).
       var filaTotal = crearHTML(doc, 'div');
       filaTotal.classList.add('hz-menu-total');
       var totalLabel = crearHTML(doc, 'span');
@@ -884,11 +1066,11 @@
       totalLabel.textContent = 'Total del día';
       var totalMacros = crearHTML(doc, 'span');
       totalMacros.classList.add('hz-menu-total-macros');
-      totalMacros.textContent = 'Proteína ' + diaData.totales.proteina_g + ' g · Carbohidrato ' +
-        diaData.totales.carbohidrato_g + ' g · Grasa ' + diaData.totales.grasa_g + ' g';
+      totalMacros.textContent = 'Proteína ' + formatearEntero(totalProteinaEscalada) + ' g · Carbohidrato ' +
+        formatearEntero(totalCarbohidratoEscalado) + ' g · Grasa ' + formatearEntero(totalGrasaEscalada) + ' g';
       var totalKcal = crearHTML(doc, 'span');
       totalKcal.classList.add('hz-menu-total-kcal');
-      totalKcal.textContent = formatearEntero(diaData.totales.kcal) + ' kcal';
+      totalKcal.textContent = formatearEntero(totalKcalEscalado) + ' kcal';
       filaTotal.appendChild(totalLabel);
       filaTotal.appendChild(totalMacros);
       filaTotal.appendChild(totalKcal);
@@ -899,13 +1081,18 @@
       estado.objetivo = evento.target.value;
       // Volver al emparejamiento automático: una elección explícita en la
       // card "Personaliza tu plan" reemplaza cualquier plantilla aplicada
-      // a mano desde el recomendador.
-      obtenerRecoEstado().planIdSeleccionado = null;
+      // a mano desde el recomendador. filtroObjetivo sincroniza esta card
+      // con Herzon.planActivo() (prod-2).
+      var recoEstCambio = obtenerRecoEstado();
+      recoEstCambio.filtroObjetivo = estado.objetivo;
+      recoEstCambio.planIdSeleccionado = null;
       render();
     });
     campoRestriccion.select.addEventListener('change', function (evento) {
       estado.restriccion = evento.target.value;
-      obtenerRecoEstado().planIdSeleccionado = null;
+      var recoEstCambio = obtenerRecoEstado();
+      recoEstCambio.filtroRestriccion = estado.restriccion;
+      recoEstCambio.planIdSeleccionado = null;
       render();
     });
     campoDia.select.addEventListener('change', function (evento) {
@@ -963,7 +1150,14 @@
     cardHero.appendChild(notaHero);
 
     // --- Régimen (tabla siempre visible: dosis, horario, propósito) ---
+    // R6 (jera-1/data-3/fini-1/resp-1): ancho completo (regla de T-026,
+    // plan.md Adendum R6 punto 1) -- con 5 columnas, la card compartiendo
+    // fila con las otras dos cards recortaba "Horario"/"Momento"/"Propósito"
+    // fuera del viewport a 1240px. data-ancho="completo" la expande a las
+    // 1/-1 columnas del grid (CSS de build/shell.html, este módulo solo
+    // aplica el atributo).
     var cardRegimen = crearCard(doc, grid, 'Régimen de suplementos');
+    cardRegimen.setAttribute('data-ancho', 'completo');
     var columnasRegimen = ['Suplemento', 'Dosis', 'Horario', 'Momento', 'Propósito'];
     var filasRegimen = suplementos.map(function (s) {
       return [s.nombre, s.dosis, s.horario, s.momento, s.proposito];
@@ -981,6 +1175,12 @@
       categorias: suplementos.map(function (s) { return s.nombre; }),
       series: [{ nombre: 'Adherencia (%)', datos: suplementos.map(function (s) { return s.adherencia_pct; }) }],
       max: 100,
+      // R6 (data-6, Adendum R6 punto 2): serie única, 4 categorías (<=6) en
+      // horizontal -- unidad agrega el sufijo '%' a cada etiqueta y
+      // valoresEnBarras dibuja el valor al final de CADA barra (antes solo
+      // se etiquetaba la barra máxima).
+      unidad: '%',
+      valoresEnBarras: true,
       etiquetaColumna: 'Suplemento',
       tabla: true
     });
@@ -989,6 +1189,17 @@
     var cardAdherenciaTiempo = crearCard(doc, grid, 'Adherencia diaria a suplementos en el tiempo');
     var contAdherenciaTiempo = crearHTML(doc, 'div');
     cardAdherenciaTiempo.appendChild(contAdherenciaTiempo);
+    // R6 (jera-5/data-5, Adendum R6 punto 2): etiquetasFila rotula solo las
+    // filas S1/S4/S8/S12 (una por semana, 7 días por fila) del rango real de
+    // 12 semanas; el resto queda vacío para que heatmapCalendario omita el
+    // rótulo (comportamiento ya verificado en T-027, sección 22.8).
+    var filasAdherenciaTiempo = Math.ceil(adherenciaDiaria.length / 7);
+    var etiquetasFilaAdherenciaTiempo = [];
+    for (var efAdh = 0; efAdh < filasAdherenciaTiempo; efAdh++) {
+      etiquetasFilaAdherenciaTiempo.push(
+        (efAdh === 0 || efAdh === 3 || efAdh === 7 || efAdh === 11) ? 'S' + (efAdh + 1) : ''
+      );
+    }
     Charts.heatmapCalendario(contAdherenciaTiempo, {
       // D5: sin titulo interno (duplicaria el heading de cardAdherenciaTiempo).
       valores: adherenciaDiaria.map(function (d) { return d.suplementos_pct; }),
@@ -998,6 +1209,12 @@
       max: 100,
       nombreSerie: 'Adherencia suplementos (%)',
       etiquetaColumna: 'Fecha',
+      // R6 (jera-5/data-5): encabezadosDia agrega la fila de iniciales de día
+      // (L M X J V S D); etiquetasFila rotula S1/S4/S8/S12; leyendaRampa
+      // agrega los 5 swatches --heat-1..5 con el rango numérico de cada uno.
+      encabezadosDia: true,
+      etiquetasFila: etiquetasFilaAdherenciaTiempo,
+      leyendaRampa: true,
       tabla: true
     });
 

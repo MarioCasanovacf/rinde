@@ -43,7 +43,7 @@ function leerFuente(nombreArchivo) {
   return fs.readFileSync(path.join(BUILD_DIR, nombreArchivo), 'utf8');
 }
 
-// Envuelve el contenido LITERAL de un modulo fuente en un <script> inline.
+// Envuelve el contenido LITERAL de un módulo fuente en un <script> inline.
 // El contenido ya es un script clásico IIFE (plan.md 3.A): se inyecta tal
 // cual, sin transformar ni una sola línea.
 function bloqueScript(idBloque, contenidoLiteral) {

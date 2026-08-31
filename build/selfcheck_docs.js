@@ -64,31 +64,42 @@ afirmar(typeof Docs.init === 'function', 'Herzon.Docs.init debe ser una función
 afirmar(typeof globalThis.document === 'undefined', 'este selfcheck no debe tener document real global: valida que el auto-inicio de nivel superior no lance sin navegador');
 
 // ---------------------------------------------------------------------
-// 2. planActivo(): fallback al plan por defecto (criterio de aceptación
-//    T-023 #13 y Adendum R5 punto 4), consumo con planActivo ausente, con
-//    planActivo devolviendo datos válidos, y con planActivo lanzando.
+// 2. planActivo(): mapeo de la FORMA REAL (Adendum R6 punto 3 — el mock de
+//    abajo replica exactamente lo que devuelve Herzon.planActivo() en
+//    build/vista_dieta_supl.js: { plan, kcalObjetivo, escalaPorciones,
+//    macros }, SIN `necesidades` ni `ajustes`), fallback al plan por
+//    defecto con planActivo ausente, y con planActivo lanzando o sin
+//    `.plan`.
 // ---------------------------------------------------------------------
 delete Herzon.planActivo;
 var datosSinPlanActivo = Docs.datosDocumento(HERZON_DATA_ORIGINAL, { fechaGeneracion: '2026-06-01' });
 afirmar(datosSinPlanActivo.plan === HERZON_DATA_ORIGINAL.planes[0], 'sin Herzon.planActivo(), datosDocumento debe caer al primer plan del catálogo (plan por defecto)');
-afirmar(datosSinPlanActivo.necesidades === null, 'sin Herzon.planActivo(), necesidades debe ser null (sección "si existen" se omite)');
+afirmar(datosSinPlanActivo.kcalObjetivo === null, 'sin Herzon.planActivo(), kcalObjetivo debe ser null (sección "plan aplicado" se omite)');
+afirmar(datosSinPlanActivo.escalaPorciones === null, 'sin Herzon.planActivo(), escalaPorciones debe ser null');
+afirmar(datosSinPlanActivo.macros === null, 'sin Herzon.planActivo(), macros debe ser null');
 afirmar(datosSinPlanActivo.fechaGeneracion === '2026-06-01', 'datosDocumento debe respetar opciones.fechaGeneracion cuando se provee (determinismo de prueba)');
 
 var planPersonalizado = HERZON_DATA_ORIGINAL.planes[2];
 Herzon.planActivo = function () {
-  return { plan: planPersonalizado, necesidades: { tmb: 1432, get: 1969, kcalObjetivo: 1772, macros: { proteina_g: 130, carbohidrato_g: 150, grasa_g: 55 } } };
+  // Forma REAL documentada en la cabecera de vista_dieta_supl.js (Adendum
+  // R6 punto 3): plan/kcalObjetivo/escalaPorciones/macros. Nada de
+  // `necesidades`/`ajustes`: ese era el bug prod-3.
+  return { plan: planPersonalizado, kcalObjetivo: 1772, escalaPorciones: 1.1, macros: { proteina_g: 130, carbohidrato_g: 150, grasa_g: 55 } };
 };
 var datosConPlanActivo = Docs.datosDocumento(HERZON_DATA_ORIGINAL, { fechaGeneracion: '2026-06-01' });
 afirmar(datosConPlanActivo.plan === planPersonalizado, 'con Herzon.planActivo() disponible, datosDocumento debe usar el plan que devuelve');
-afirmar(datosConPlanActivo.necesidades && datosConPlanActivo.necesidades.tmb === 1432, 'con Herzon.planActivo() disponible, necesidades debe venir de su retorno');
+afirmar(datosConPlanActivo.kcalObjetivo === 1772, 'con Herzon.planActivo() disponible, kcalObjetivo debe venir de r.kcalObjetivo (forma real)');
+afirmar(datosConPlanActivo.escalaPorciones === 1.1, 'con Herzon.planActivo() disponible, escalaPorciones debe venir de r.escalaPorciones (forma real)');
+afirmar(datosConPlanActivo.macros && datosConPlanActivo.macros.proteina_g === 130, 'con Herzon.planActivo() disponible, macros debe venir de r.macros (forma real)');
 delete Herzon.planActivo;
 
 Herzon.planActivo = function () { throw new Error('fallo simulado de planActivo'); };
 var datosConPlanActivoQueLanza = Docs.datosDocumento(HERZON_DATA_ORIGINAL, { fechaGeneracion: '2026-06-01' });
 afirmar(datosConPlanActivoQueLanza.plan === HERZON_DATA_ORIGINAL.planes[0], 'si Herzon.planActivo() lanza, datosDocumento debe caer al plan por defecto sin propagar la excepción');
+afirmar(datosConPlanActivoQueLanza.kcalObjetivo === null, 'si Herzon.planActivo() lanza, el fallback debe ser íntegro: kcalObjetivo en null');
 delete Herzon.planActivo;
 
-Herzon.planActivo = function () { return { necesidades: { tmb: 1 } }; }; // sin .plan
+Herzon.planActivo = function () { return { kcalObjetivo: 1 } }; // sin .plan
 var datosConPlanActivoSinPlan = Docs.datosDocumento(HERZON_DATA_ORIGINAL, { fechaGeneracion: '2026-06-01' });
 afirmar(datosConPlanActivoSinPlan.plan === HERZON_DATA_ORIGINAL.planes[0], 'si Herzon.planActivo() no trae .plan, datosDocumento debe caer al plan por defecto');
 delete Herzon.planActivo;
@@ -111,7 +122,7 @@ afirmar(metas[0].textContent.indexOf(HERZON_DATA_ORIGINAL.paciente.nombre) !== -
 afirmar(metas[0].textContent.indexOf(HERZON_DATA_ORIGINAL.paciente.objetivo) !== -1, 'el bloque meta debe incluir el objetivo del paciente');
 
 var secciones = contenedor.consultarTodo('.hz-doc-seccion');
-afirmar(secciones.length === 2, 'sin necesidades (planActivo ausente), renderDocumento debe pintar 2 secciones (menú semanal, suplementos)');
+afirmar(secciones.length === 2, 'sin plan aplicado (planActivo ausente), renderDocumento debe pintar 2 secciones (menú semanal, suplementos)');
 
 var tablasMenu = secciones[0].consultarTodo('.hz-table');
 afirmar(tablasMenu.length === payloadRender.plan.dias.length, 'la sección de menú debe traer una tabla por cada día del plan (7)');
@@ -125,18 +136,20 @@ var pies = contenedor.consultarTodo('.hz-doc-pie');
 afirmar(pies.length === 1, 'renderDocumento debe pintar exactamente un .hz-doc-pie');
 afirmar(pies[0].textContent === HERZON_DATA_ORIGINAL.meta.nota, 'el pie debe repetir literalmente la nota de datos sintéticos de HERZON_DATA.meta.nota');
 
-// Con necesidades presentes: debe aparecer una sección extra al inicio.
+// Con datos de planActivo() (forma real, Adendum R6 punto 3) presentes:
+// debe aparecer una sección extra "Plan aplicado" al inicio.
 Herzon.planActivo = function () {
-  return { plan: HERZON_DATA_ORIGINAL.planes[1], necesidades: { tmb: 1432, get: 1969, kcalObjetivo: 1772, macros: { proteina_g: 130, carbohidrato_g: 150, grasa_g: 55 } } };
+  return { plan: HERZON_DATA_ORIGINAL.planes[1], kcalObjetivo: 1772, escalaPorciones: 1.1, macros: { proteina_g: 130, carbohidrato_g: 150, grasa_g: 55 } };
 };
 var doc2 = TestDOM.crearDocumento();
 var contenedor2 = doc2.createElement('div');
-var payloadConNecesidades = Docs.datosDocumento(HERZON_DATA_ORIGINAL, { fechaGeneracion: '2026-06-01' });
-Docs.renderDocumento(doc2, contenedor2, payloadConNecesidades);
+var payloadConPlanAplicado = Docs.datosDocumento(HERZON_DATA_ORIGINAL, { fechaGeneracion: '2026-06-01' });
+Docs.renderDocumento(doc2, contenedor2, payloadConPlanAplicado);
 var secciones2 = contenedor2.consultarTodo('.hz-doc-seccion');
-afirmar(secciones2.length === 3, 'con necesidades presentes, renderDocumento debe pintar 3 secciones (necesidades, menú, suplementos)');
-afirmar(secciones2[0].textContent.indexOf('1432') !== -1, 'la sección de necesidades debe mostrar el TMB calculado');
-afirmar(secciones2[0].textContent.indexOf('1969') !== -1, 'la sección de necesidades debe mostrar el GET calculado');
+afirmar(secciones2.length === 3, 'con el plan aplicado presente, renderDocumento debe pintar 3 secciones (plan aplicado, menú, suplementos)');
+afirmar(secciones2[0].textContent.indexOf('1772') !== -1, 'la sección de plan aplicado debe mostrar las kcal objetivo aplicadas (r.kcalObjetivo)');
+afirmar(secciones2[0].textContent.indexOf('1.1') !== -1, 'la sección de plan aplicado debe mostrar la escala de porciones (r.escalaPorciones)');
+afirmar(secciones2[0].textContent.indexOf('130') !== -1, 'la sección de plan aplicado debe mostrar los macros reales (r.macros.proteina_g)');
 delete Herzon.planActivo;
 
 // re-render (idempotente: limpia antes de repintar, no acumula duplicados).
@@ -366,7 +379,22 @@ afirmar(handleInit !== null && typeof handleInit.actualizarDocumento === 'functi
 afirmar(fixture1.documentoPlan.consultarTodo('.hz-doc-titulo').length === 1, 'init(doc) debe renderizar el documento inicial en #documento-plan de inmediato');
 var botonPlantillaEncontrado = fixture1.toolbar.consultarTodo('.hz-doc-btn');
 afirmar(botonPlantillaEncontrado.length === 4, 'init(doc) debe agregar el botón de plantilla CSV a #doc-herramientas (3 botones estáticos del fixture + 1 nuevo)');
-afirmar(fixture1.toolbar.consultarTodo('.hz-nota').length === 1, 'init(doc) debe agregar la nota de estado/formato (.hz-nota) a #doc-herramientas');
+afirmar(fixture1.toolbar.consultarTodo('.hz-nota').length === 2, 'init(doc) debe agregar DOS notas separadas (.hz-nota) a #doc-herramientas: formato fijo + estado de importación (prod-5)');
+
+function buscarPorId(elementos, id) {
+  for (var bi = 0; bi < elementos.length; bi++) {
+    if (elementos[bi].getAttribute('id') === id) { return elementos[bi]; }
+  }
+  return null;
+}
+
+var elFormatoCsvTest = buscarPorId(fixture1.toolbar.consultarTodo('.hz-nota'), 'hz-doc-formato-csv');
+afirmar(elFormatoCsvTest !== null, 'init(doc) debe crear el nodo fijo #hz-doc-formato-csv con la línea de formato del CSV');
+var textoFormatoOriginal = elFormatoCsvTest.textContent;
+afirmar(textoFormatoOriginal.indexOf('Formato esperado del CSV') !== -1, 'el nodo #hz-doc-formato-csv debe documentar el formato esperado del CSV');
+
+var elEstadoInicial = buscarPorId(fixture1.toolbar.consultarTodo('.hz-nota'), 'hz-doc-estado-importar');
+afirmar(elEstadoInicial !== null, 'init(doc) debe crear el nodo separado #hz-doc-estado-importar (prod-5: distinto del nodo de formato)');
 
 // ---------------------------------------------------------------------
 // 19. init(doc) — botón Imprimir/PDF llama window.print() (stub).
@@ -431,27 +459,53 @@ var datosMergeGlobalAntes = fixture1.documentoPlan.textContent;
 var archivoValido = { _contenidoTexto: 'semana,fecha,peso_kg,grasa_pct,musculo_kg,cintura_cm\n50,2026-03-08,65.0,22.0,27.0,78.0\n' };
 // El listener real lee evento.target.files[0]; despachar() usa target=this,
 // así que basta con poner .files en el propio input antes de disparar.
+// prod-5: se fija un .value no vacío ANTES de disparar, simulando el
+// nombre de archivo que pinta el navegador en el <input type=file>, para
+// poder comprobar que el listener lo resetea tras procesar.
+fixture1.inputImportar.value = 'C:\\fakepath\\mediciones.csv';
 fixture1.inputImportar.files = [archivoValido];
 fixture1.inputImportar.despachar('change');
 
 afirmar(eventosCapturados.length === 1, 'una importación con al menos una fila válida debe disparar el evento herzon:mediciones-importadas');
 afirmar(eventosCapturados[0].type === 'herzon:mediciones-importadas', 'el evento disparado debe tener el nombre exacto herzon:mediciones-importadas');
 afirmar(eventosCapturados[0].detail.agregadas === 1, 'el detalle del evento debe reportar 1 fila agregada (semana 50 es nueva)');
-var elEstadoTest = fixture1.toolbar.consultarTodo('.hz-nota')[0];
-afirmar(elEstadoTest.textContent.indexOf('Importación completa') !== -1, 'tras una importación válida, la nota de estado debe anunciar "Importación completa"');
+var elEstadoTest = buscarPorId(fixture1.toolbar.consultarTodo('.hz-nota'), 'hz-doc-estado-importar');
+afirmar(elEstadoTest.textContent.indexOf('Importación completa') !== -1, 'tras una importación válida, la nota de estado (separada) debe anunciar "Importación completa"');
 afirmar(elEstadoTest.textContent.indexOf('NO se guardan') !== -1, 'la nota de estado debe declarar explícitamente que los datos importados no se guardan (sin persistencia)');
 afirmar(fixture1.documentoPlan.textContent !== datosMergeGlobalAntes || true, 'sanity: el documento se re-renderizó tras importar (contenido recalculado)');
+afirmar(fixture1.inputImportar.value === '', 'prod-5: tras una importación EXITOSA, inputImportar.value debe resetear a "" para permitir reintentar el mismo archivo');
+afirmar(elFormatoCsvTest.textContent === textoFormatoOriginal, 'prod-5: la línea de formato del CSV (#hz-doc-formato-csv) NO debe pisarse por una actualización de estado (nodo separado)');
 
 // ---------------------------------------------------------------------
 // 22. init(doc) — importar CSV inválido: no dispara evento, muestra error.
 // ---------------------------------------------------------------------
 eventosCapturados = [];
 var archivoInvalido = { _contenidoTexto: 'semana,fecha,peso_kg,grasa_pct,musculo_kg,cintura_cm\nabc,2026-03-08,65.0,22.0,27.0,78.0\n' };
+fixture1.inputImportar.value = 'C:\\fakepath\\mediciones.csv';
 fixture1.inputImportar.files = [archivoInvalido];
 fixture1.inputImportar.despachar('change');
 afirmar(eventosCapturados.length === 0, 'una importación sin ninguna fila válida NO debe disparar el evento de re-render');
 afirmar(elEstadoTest.textContent.indexOf('fila(s) con error') !== -1, 'tras una importación inválida, la nota de estado debe reportar la(s) fila(s) con error');
 afirmar(elEstadoTest.classList.contains('hz-delta-bad'), 'tras una importación totalmente fallida, la nota de estado debe marcarse con la clase hz-delta-bad');
+afirmar(fixture1.inputImportar.value === '', 'prod-5: tras una importación con ERROR, inputImportar.value también debe resetear a "" (reintentar el mismo archivo)');
+afirmar(elFormatoCsvTest.textContent === textoFormatoOriginal, 'prod-5: la línea de formato del CSV sigue intacta tras una importación con error (nunca se pisa)');
+
+// ---------------------------------------------------------------------
+// 22-bis. init(doc) — error de LECTURA del archivo (FileReader falla):
+//         también debe resetear inputImportar.value (Adendum R6 punto 5,
+//         criterio "tras CADA importación (éxito o error)").
+// ---------------------------------------------------------------------
+function FileReaderStubConError() { this.onload = null; this.onerror = null; this.result = null; }
+FileReaderStubConError.prototype.readAsText = function () {
+  if (typeof this.onerror === 'function') { this.onerror(); }
+};
+globalThis.FileReader = FileReaderStubConError;
+var archivoIlegible = { _contenidoTexto: 'no importa' };
+fixture1.inputImportar.value = 'C:\\fakepath\\ilegible.csv';
+fixture1.inputImportar.files = [archivoIlegible];
+fixture1.inputImportar.despachar('change');
+afirmar(elEstadoTest.textContent.indexOf('No se pudo leer el archivo') !== -1, 'un error de FileReader debe mostrarse en la nota de estado con un mensaje explícito');
+afirmar(fixture1.inputImportar.value === '', 'prod-5: un error de LECTURA (FileReader) también debe resetear inputImportar.value a ""');
 
 delete globalThis.FileReader;
 delete globalThis.dispatchEvent;

@@ -1,16 +1,20 @@
 // build/documentos.js
-// U-DOCUMENTOS (T-023): Herzon.Docs — documento imprimible del plan,
-// descargas locales (.html/.csv via Blob) e importación de mediciones por
-// CSV. Ver .harness/plan.md Adendum R5 puntos 3 y 4.
+// U-DOCUMENTOS (T-023, refinado en T-030/R6): Herzon.Docs — documento
+// imprimible del plan, descargas locales (.html/.csv via Blob) e
+// importación de mediciones por CSV. Ver .harness/plan.md Adendum R5
+// puntos 3 y 4, y Adendum R6 punto 3 (forma real de Herzon.planActivo()).
 //
-// Consume window.HERZON_DATA (T-001, forma congelada en plan.md 3.I) y,
-// cuando ya existe en runtime, Herzon.planActivo() (T-022, aún no
-// implementado en esta corrida: "Herzon.Docs la consume con fallback al
-// plan por defecto si aún no existe" — Adendum R5 punto 4). No conoce ni
-// modifica build/data.js, build/vista_dieta_supl.js ni build/shell.html:
-// los ids que consulta (#documento-plan, #doc-herramientas y sus botones,
-// #hz-doc-input-importar) ya existen como marcado estático puesto por T-021
-// (build/shell.html); este módulo SOLO los cablea, nunca los define.
+// Consume window.HERZON_DATA (T-001, forma congelada en plan.md 3.I) y
+// Herzon.planActivo() (T-004/vista_dieta_supl.js): la forma REAL que
+// documenta la cabecera de ese módulo ES el contrato (Adendum R6 punto 3)
+// — { plan, kcalObjetivo, escalaPorciones, macros:{proteina_g,
+// carbohidrato_g,grasa_g} }, sin `necesidades` ni `ajustes` — con fallback
+// íntegro al plan por defecto si la función no existe, lanza, o no trae
+// `.plan`. No conoce ni modifica build/data.js, build/vista_dieta_supl.js
+// ni build/shell.html: los ids que consulta (#documento-plan,
+// #doc-herramientas y sus botones, #hz-doc-input-importar) ya existen como
+// marcado estático puesto por T-021 (build/shell.html); este módulo SOLO
+// los cablea, nunca los define.
 //
 // Preámbulo obligatorio (plan.md 3.A): script clásico, IIFE, sin
 // import/export. Prohibido tocar `document` en el nivel superior del
@@ -114,12 +118,16 @@
   }
 
   // -----------------------------------------------------------------------
-  // Herzon.planActivo() — Adendum R5 punto 4: "Herzon.Docs la consume con
-  // fallback al plan por defecto si aún no existe". Consumo DEFENSIVO: si
-  // la función no existe, no es function, o lanza, o no trae `.plan`, cae
-  // al plan por defecto (primer plan del catálogo). Si trae `.necesidades`
-  // se muestra en el documento; si no, esa sección simplemente se omite
-  // ("necesidades si existen", criterio de aceptación T-023).
+  // Herzon.planActivo() — Adendum R5 punto 4 + Adendum R6 punto 3: "la forma
+  // REAL documentada en la cabecera de vista_dieta_supl.js ES el contrato".
+  // Esa forma es { plan, kcalObjetivo, escalaPorciones, macros:{proteina_g,
+  // carbohidrato_g,grasa_g} } — NO trae `necesidades` ni `ajustes` (ese era
+  // el bug prod-3: este módulo esperaba claves que planActivo() jamás
+  // devolvió, así que kcal objetivo/macros/escala nunca llegaban al
+  // documento). Consumo DEFENSIVO: si la función no existe, no es function,
+  // o lanza, o no trae `.plan`, cae al plan por defecto (primer plan del
+  // catálogo) con kcalObjetivo/escalaPorciones/macros en null (esa sección
+  // del documento simplemente se omite).
   // -----------------------------------------------------------------------
   function obtenerPlanActivo(HERZON_DATA) {
     if (typeof G.Herzon.planActivo === 'function') {
@@ -128,8 +136,9 @@
         if (resultado && resultado.plan) {
           return {
             plan: resultado.plan,
-            necesidades: resultado.necesidades || null,
-            ajustes: resultado.ajustes || null
+            kcalObjetivo: (resultado.kcalObjetivo === null || resultado.kcalObjetivo === undefined) ? null : resultado.kcalObjetivo,
+            escalaPorciones: (resultado.escalaPorciones === null || resultado.escalaPorciones === undefined) ? null : resultado.escalaPorciones,
+            macros: resultado.macros || null
           };
         }
       } catch (e) {
@@ -137,7 +146,7 @@
         // documento (defensivo, plan.md Adendum R5 punto 4).
       }
     }
-    return { plan: HERZON_DATA.planes[0], necesidades: null, ajustes: null };
+    return { plan: HERZON_DATA.planes[0], kcalObjetivo: null, escalaPorciones: null, macros: null };
   }
 
   function datosDocumento(HERZON_DATA, opciones) {
@@ -147,8 +156,9 @@
     return {
       paciente: HERZON_DATA.paciente,
       plan: activo.plan,
-      necesidades: activo.necesidades,
-      ajustes: activo.ajustes,
+      kcalObjetivo: activo.kcalObjetivo,
+      escalaPorciones: activo.escalaPorciones,
+      macros: activo.macros,
       suplementos: HERZON_DATA.suplementos,
       fechaGeneracion: fechaGeneracion,
       notaDatos: HERZON_DATA.meta.nota
@@ -183,17 +193,15 @@
     });
     contenedorEl.appendChild(meta);
 
-    if (payload.necesidades) {
-      var seccionNecesidades = crearSeccion(doc, contenedorEl, 'Necesidades calculadas');
-      var n = payload.necesidades;
+    if (payload.kcalObjetivo != null || payload.escalaPorciones != null || payload.macros) {
+      var seccionNecesidades = crearSeccion(doc, contenedorEl, 'Plan aplicado');
       var lineas = [];
-      if (n.tmb != null) { lineas.push('Tasa metabólica basal (TMB): ' + n.tmb + ' kcal/día.'); }
-      if (n.get != null) { lineas.push('Gasto energético total (GET): ' + n.get + ' kcal/día.'); }
-      if (n.kcalObjetivo != null) { lineas.push('Calorías objetivo: ' + n.kcalObjetivo + ' kcal/día.'); }
-      if (n.macros) {
+      if (payload.kcalObjetivo != null) { lineas.push('Calorías objetivo aplicadas: ' + payload.kcalObjetivo + ' kcal/día.'); }
+      if (payload.escalaPorciones != null) { lineas.push('Escala de porciones: ' + payload.escalaPorciones + '×.'); }
+      if (payload.macros) {
         lineas.push(
-          'Macronutrientes objetivo: proteína ' + n.macros.proteina_g +
-          ' g, carbohidrato ' + n.macros.carbohidrato_g + ' g, grasa ' + n.macros.grasa_g + ' g.'
+          'Macronutrientes objetivo: proteína ' + payload.macros.proteina_g +
+          ' g, carbohidrato ' + payload.macros.carbohidrato_g + ' g, grasa ' + payload.macros.grasa_g + ' g.'
         );
       }
       for (var li = 0; li < lineas.length; li++) {
@@ -284,13 +292,17 @@
       ].join(' &middot; ') + '</p>'
     );
 
-    if (payload.necesidades) {
-      partes.push('<h2>Necesidades calculadas</h2>');
-      var n = payload.necesidades;
+    if (payload.kcalObjetivo != null || payload.escalaPorciones != null || payload.macros) {
+      partes.push('<h2>Plan aplicado</h2>');
       var lineas = [];
-      if (n.tmb != null) { lineas.push('TMB: ' + n.tmb + ' kcal/día'); }
-      if (n.get != null) { lineas.push('GET: ' + n.get + ' kcal/día'); }
-      if (n.kcalObjetivo != null) { lineas.push('Objetivo: ' + n.kcalObjetivo + ' kcal/día'); }
+      if (payload.kcalObjetivo != null) { lineas.push('Calorías objetivo: ' + payload.kcalObjetivo + ' kcal/día'); }
+      if (payload.escalaPorciones != null) { lineas.push('Escala de porciones: ' + payload.escalaPorciones + '×'); }
+      if (payload.macros) {
+        lineas.push(
+          'Macronutrientes: proteína ' + payload.macros.proteina_g + ' g, carbohidrato ' +
+          payload.macros.carbohidrato_g + ' g, grasa ' + payload.macros.grasa_g + ' g'
+        );
+      }
       partes.push('<p>' + escaparHtml(lineas.join(' · ')) + '</p>');
     }
 
@@ -736,9 +748,14 @@
 
     var elEstado = null;
     if (toolbar) {
-      // Botón de plantilla + nota de estado: clases YA congeladas
-      // (hz-doc-btn, hz-nota, hz-delta-bad — plan.md 3.G y Adendum R5
-      // punto 5), como hijos adicionales de la fila flex #doc-herramientas.
+      // Botón de plantilla + nota de formato + nota de estado: clases YA
+      // congeladas (hz-doc-btn, hz-nota, hz-delta-bad — plan.md 3.G y
+      // Adendum R5 punto 5), como hijos adicionales de la fila flex
+      // #doc-herramientas. prod-5 (Adendum R6): la línea que documenta el
+      // formato CSV vive en un <p class="hz-nota"> FIJO, propio, que nadie
+      // vuelve a tocar; el estado de cada importación (éxito/error) vive en
+      // OTRO <p class="hz-nota"> separado (#hz-doc-estado-importar), así
+      // mostrarEstadoImportacion() nunca pisa la línea de formato.
       var botonPlantilla = crearHTML(doc, 'button');
       botonPlantilla.setAttribute('type', 'button');
       botonPlantilla.setAttribute('id', 'hz-doc-btn-plantilla-csv');
@@ -749,12 +766,17 @@
         descargarArchivo(doc, generarPlantillaCsv(), 'herzon-plantilla-mediciones.csv', 'text/csv');
       });
 
+      var elFormatoCsv = crearHTML(doc, 'p');
+      elFormatoCsv.classList.add('hz-nota');
+      elFormatoCsv.setAttribute('id', 'hz-doc-formato-csv');
+      elFormatoCsv.textContent =
+        'Formato esperado del CSV: ' + COLUMNAS_MEDICIONES.join(', ') +
+        ' (fecha en AAAA-MM-DD). Los datos importados no se guardan: se pierden al recargar la página.';
+      toolbar.appendChild(elFormatoCsv);
+
       elEstado = crearHTML(doc, 'p');
       elEstado.classList.add('hz-nota');
       elEstado.setAttribute('id', 'hz-doc-estado-importar');
-      elEstado.textContent =
-        'Formato esperado del CSV: ' + COLUMNAS_MEDICIONES.join(', ') +
-        ' (fecha en AAAA-MM-DD). Los datos importados no se guardan: se pierden al recargar la página.';
       toolbar.appendChild(elEstado);
     }
 
@@ -763,11 +785,17 @@
       var archivo = archivos && archivos[0];
       if (!archivo) { return; }
       leerArchivoComoTexto(archivo, function (texto, errorLectura) {
+        // prod-5 (Adendum R6): resetear el input tras CADA importación
+        // (éxito o error) para permitir reintentar el mismo archivo — el
+        // navegador no dispara "change" dos veces seguidas para el mismo
+        // archivo si el <input> conserva su valor anterior.
         if (errorLectura) {
           mostrarEstadoImportacion(elEstado, 'No se pudo leer el archivo: ' + errorLectura, true);
+          inputImportar.value = '';
           return;
         }
         procesarImportacionCsv(HERZON_DATA, texto, elEstado, actualizarDocumento);
+        inputImportar.value = '';
       });
     });
 

@@ -185,13 +185,14 @@ button, input, select { font-family: inherit; }
   background: transparent;
   color: var(--text-secondary);
   font-size: 0.95rem;
+  font-weight: 600;
   padding: 12px 16px;
   cursor: pointer;
   border-bottom: 3px solid transparent;
 }
 .hz-tab:hover { color: var(--text-primary); }
 .hz-tab:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
-.hz-tab[aria-selected="true"] { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--series-1); }
+.hz-tab[aria-selected="true"] { color: var(--text-primary); border-bottom-color: var(--series-1); }
 
 .hz-main { padding: 20px clamp(12px, 4vw, 32px) 48px; max-width: 100%; }
 
@@ -231,7 +232,7 @@ button, input, select { font-family: inherit; }
 /* ---------- 6. Componentes congelados (plan.md 3.G) ---------- */
 .hz-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 16px;
 }
 
@@ -326,7 +327,7 @@ button, input, select { font-family: inherit; }
 .hz-status-dot[data-status="critical"] { background: var(--status-critical); }
 .hz-status-label { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
 
-.hz-nota { font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; max-width: 70ch; }
+.hz-nota { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; max-width: 70ch; }
 
 .hz-form { display: flex; flex-direction: column; gap: 14px; max-width: 480px; }
 .hz-form-campo { display: flex; flex-direction: column; gap: 6px; }
@@ -545,7 +546,7 @@ button, input, select { font-family: inherit; }
   border: 1px solid var(--border);
   background: var(--surface-1);
   color: var(--text-secondary);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 6px 14px;
   font-size: 0.85rem;
   cursor: pointer;
@@ -575,7 +576,7 @@ button, input, select { font-family: inherit; }
   border: 1px solid var(--border);
   background: var(--surface-1);
   color: var(--text-secondary);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 6px 14px;
   font-size: 0.85rem;
   cursor: pointer;
@@ -593,7 +594,7 @@ button, input, select { font-family: inherit; }
 .hz-doc-meta { display: flex; flex-wrap: wrap; gap: 16px; margin: 0 0 20px; color: var(--text-secondary); font-size: 0.85rem; }
 .hz-doc-seccion { margin: 0 0 24px; }
 .hz-doc-seccion-titulo { margin: 0 0 8px; font-size: 1.05rem; font-weight: 600; color: var(--text-primary); }
-.hz-doc-pie { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--grid); font-size: 0.75rem; color: var(--text-muted); }
+.hz-doc-pie { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--grid); font-size: 0.75rem; color: var(--text-secondary); }
 
 /* ---------- 10. Adendum R5 (T-021): bloque @media print ----------
    Regla del criterio de aceptación: SOLO #documento-plan es visible al
@@ -641,7 +642,79 @@ button, input, select { font-family: inherit; }
     font-size: 11pt;
     line-height: 1.5;
   }
+
+  /* resp-4 (Adendum R6): un párrafo de sección no debe quedar solo al pie
+     de una página con el resto de la sección en la siguiente; una tabla no
+     debe partirse a la mitad entre páginas, y su overflow-x:auto (pensado
+     para pantalla) no aplica al imprimir -- el papel no scrollea. */
+  .hz-doc-seccion > p { break-after: avoid-page; }
+  .hz-doc-seccion .hz-table-wrap { break-inside: avoid-page; overflow-x: visible; }
 }
+
+/* ---------- 11. Adendum R6 (T-026): refinamiento Justesse (modo preserve) ----------
+   Extensiones ADITIVAS autorizadas explícitamente por el Adendum R6 del plan
+   (jerarquía, producto, finishing, responsive/dark). Los 4 bloques de
+   tokens (secciones 1-3 arriba) NO se tocan: esto solo agrega selectores
+   nuevos o ajusta valores puntuales ya autorizados explícitamente. */
+
+/* jera-3/fini-3: el slider del recomendador (.hz-reco-slider) vive dentro
+   de un .hz-form-campo (flex-direction: column) en layout vertical; sin
+   este ajuste hereda flex:1 1 200px y se estira ~200px de alto en vez de
+   ocupar el ancho del campo, rompiendo el ritmo etiqueta/control/valor. */
+.hz-form-campo .hz-reco-slider { flex: 0 0 auto; width: 100%; min-width: 0; }
+
+/* jera-4: la prosa secundaria (nota del prototipo, pie del documento
+   imprimible) sube de --text-muted a --text-secondary (contraste 4.5:1);
+   --text-muted queda reservado para ejes y labels de gráfica. Reasignación
+   aplicada IN-PLACE en las reglas base .hz-nota (sección 6) y .hz-doc-pie
+   (sección 9) -- no se duplica aquí para evitar dos declaraciones de
+   `color` para la misma clase en cascada. */
+
+/* prod-7/fini-7: gramática de botones -- las acciones one-shot pasan a
+   radius 8px (reasignación IN-PLACE en las reglas base .hz-doc-btn y
+   .hz-doc-import-label de la sección 9, no duplicada aquí); la píldora
+   999px queda reservada a .hz-badge (chip) y .hz-filtro-btn (filtro).
+   Disabled + hover/focus-visible garantizados en toda acción (incluye
+   .hz-table-toggle, ya congelada en radius 8px, que el recomendador
+   reutiliza para sus propios botones). */
+.hz-doc-btn:disabled,
+.hz-doc-btn[aria-disabled="true"],
+.hz-doc-import-label[aria-disabled="true"],
+.hz-table-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.hz-doc-import-label:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
+/* fini-5/resp-2: color-scheme sigue al toggle para que el chrome nativo
+   (track del slider, controles del navegador) cambie de tema con la app;
+   el default sin toggle conserva "light dark" (sección 4 arriba, intacta). */
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+
+/* fini-8: las tabs no se desplazan al activarse -- peso 600 constante en
+   todo estado (declarado en .hz-tab, sección 5 arriba); el acento visual
+   de "activa" vive solo en color + subrayado (border-bottom-color), nunca
+   en un salto de font-weight que cambie el ancho del texto. */
+
+/* resp-3: targets táctiles >=44px en pantallas táctiles o angostas. */
+@media (pointer: coarse), (max-width: 640px) {
+  .hz-filtro-btn,
+  .hz-doc-btn,
+  .hz-doc-import-label,
+  .hz-table-toggle {
+    min-height: 44px;
+    padding: 10px 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Adendum R6 punto 1: atributo data-ancho="completo" en hijos directos de
+   .hz-grid; las vistas lo aplican vía setAttribute (primer consumidor: la
+   card del régimen de suplementos, consumido en T-028/T-029). */
+.hz-grid > [data-ancho="completo"] { grid-column: 1 / -1; }
 </style>
 </head>
 <body>

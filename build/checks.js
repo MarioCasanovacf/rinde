@@ -398,6 +398,79 @@ for (var fi = 0; fi < FUENTES.length; fi++) {
 })();
 
 // ---------------------------------------------------------------------
+// K. Guard anti-fuga de script (T-031, R6): tras remover TODOS los bloques
+//    <script>...</script> del HTML ensamblado, el texto restante no debe
+//    contener fragmentos de código JS reconocibles. Guarda contra el
+//    hazard descrito en .harness/qa-visual-ronda1.md -- build/documentos.js
+//    (bloque hz-docs) construye su documento descargable con el patrón
+//    `var partes = []; partes.push(...); ... partes.join('\n')`, que
+//    incluye la cadena JS '</body>' como STRING de JS dentro de un
+//    'partes.push(...)' (nunca como markup real de prototype/index.html).
+//    Ese warning documenta un defecto de una HERRAMIENTA de QA que ancla su
+//    inyección de navegación al PRIMER '</body>' del archivo (que cae
+//    dentro de ese string) y confirma que el defecto NO existe en
+//    prototype/index.html en sí: aquí no se inyecta ningún script
+//    adicional, así que el único '</script>' real es el que assemble.js
+//    emite al cerrar cada bloque <script id="...">. Esta aserción verifica
+//    esa realidad de forma mecánica y queda como regla permanente: si algún
+//    cambio futuro rompiera el envoltorio de un bloque <script> (por
+//    ejemplo, una subcadena '</scr' + 'ipt>' sin escapar dentro de un
+//    módulo), el código JS de ese módulo se volvería texto visible fuera de
+//    cualquier <script>, y esta aserción lo atraparía de inmediato.
+// ---------------------------------------------------------------------
+(function verificarGuardAntiFugaDeScript() {
+  var htmlSinBloquesScript = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '');
+  var FRAGMENTOS_CODIGO_PROHIBIDOS = ['partes.push(', 'function(', '.join('];
+  for (var fci = 0; fci < FRAGMENTOS_CODIGO_PROHIBIDOS.length; fci++) {
+    var fragmento = FRAGMENTOS_CODIGO_PROHIBIDOS[fci];
+    assert(
+      htmlSinBloquesScript.indexOf(fragmento) === -1,
+      'guard anti-fuga de script: el texto fuera de todo bloque <script> no debe contener "' + fragmento + '" (código JS visible como texto plano; ver hazard de .harness/qa-visual-ronda1.md)'
+    );
+  }
+})();
+
+// ---------------------------------------------------------------------
+// L. Atributo data-ancho="completo" (Adendum R6 punto 1): la regla vive en
+//    el CSS del shell y al menos una vista la consume vía setAttribute.
+// ---------------------------------------------------------------------
+assert(
+  html.indexOf('.hz-grid > [data-ancho="completo"] { grid-column: 1 / -1; }') !== -1,
+  'presencia literal de la regla CSS .hz-grid > [data-ancho="completo"] { grid-column: 1 / -1; } (Adendum R6 punto 1)'
+);
+assert(
+  /setAttribute\(\s*['"]data-ancho['"]\s*,\s*['"]completo['"]\s*\)/.test(html),
+  'al menos una vista consume data-ancho="completo" vía setAttribute (Adendum R6 punto 1)'
+);
+
+// ---------------------------------------------------------------------
+// M. color-scheme sigue al toggle (Adendum R6 punto 5 / hallazgos
+//    fini-5 y resp-2): el chrome nativo (track del slider, controles del
+//    navegador) debe cambiar de tema junto con :root[data-theme].
+// ---------------------------------------------------------------------
+assert(html.indexOf(':root[data-theme="dark"] { color-scheme: dark; }') !== -1, 'presencia literal de :root[data-theme="dark"] { color-scheme: dark; } (color-scheme sigue al toggle en oscuro)');
+assert(html.indexOf(':root[data-theme="light"] { color-scheme: light; }') !== -1, 'presencia literal de :root[data-theme="light"] { color-scheme: light; } (color-scheme sigue al toggle en claro)');
+
+// ---------------------------------------------------------------------
+// N. Opciones ADITIVAS de Herzon.Charts (Adendum R6 punto 2) consumidas
+//    por las vistas -- criterio T-031 (d): unidad, leyendaRampa. Se
+//    verifica dentro de los bloques hz-vistas-a/hz-vistas-b específicamente
+//    (no en hz-charts, donde el nombre de la opción vive aunque nadie la
+//    invoque desde una vista real: eso volvería la aserción trivialmente
+//    verdadera sin probar consumo real).
+// ---------------------------------------------------------------------
+(function verificarOpcionesNuevasDeChartsConsumidasPorLasVistas() {
+  var bloqueVistasA = bloquePorId('hz-vistas-a'); // vista_dieta_supl.js
+  var bloqueVistasB = bloquePorId('hz-vistas-b'); // vista_metricas.js
+  assert(bloqueVistasA !== null, 'el bloque <script id="hz-vistas-a"> existe (necesario para verificar consumo de opciones nuevas de Charts)');
+  assert(bloqueVistasB !== null, 'el bloque <script id="hz-vistas-b"> existe (necesario para verificar consumo de opciones nuevas de Charts)');
+  var contenidoVistas = bloqueVistasA.contenido + '\n' + bloqueVistasB.contenido;
+
+  assert(/\bunidad\s*:/.test(contenidoVistas), 'opciones.unidad (Adendum R6 punto 2, línea/barras) aparece consumida por al menos una vista');
+  assert(/\bleyendaRampa\s*:/.test(contenidoVistas), 'opciones.leyendaRampa (Adendum R6 punto 2, heatmapCalendario) aparece consumida por al menos una vista');
+})();
+
+// ---------------------------------------------------------------------
 // Cierre (plan.md 3.J).
 // ---------------------------------------------------------------------
 console.log('todas las aserciones pasaron.');

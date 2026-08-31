@@ -121,7 +121,7 @@ clasesEnFuente.forEach(function (linea) {
   var m = /classList\.add\('([^']+)'\)/.exec(linea);
   afirmar(m[1].indexOf('hz-') === 0, 'toda clase agregada por classList.add debe llevar prefijo hz- (' + m[1] + ')');
 });
-afirmar(clasesEnFuente.length > 0, 'debe haber al menos una clase hz- agregada via classList.add (sanity del propio test)');
+afirmar(clasesEnFuente.length > 0, 'debe haber al menos una clase hz- agregada vía classList.add (sanity del propio test)');
 
 // ---------------------------------------------------------------------
 // 2. Namespaces disjuntos (plan.md 3.B): SOLO plan y suplementos
@@ -129,8 +129,8 @@ afirmar(clasesEnFuente.length > 0, 'debe haber al menos una clase hz- agregada v
 afirmar(typeof Herzon.Views === 'object' && Herzon.Views !== null,
   'Herzon.Views debe existir como objeto (abierto con G.Herzon.Views = G.Herzon.Views || {})');
 
-afirmar(typeof Herzon.Views.plan === 'function', 'Herzon.Views.plan debe ser una funcion');
-afirmar(typeof Herzon.Views.suplementos === 'function', 'Herzon.Views.suplementos debe ser una funcion');
+afirmar(typeof Herzon.Views.plan === 'function', 'Herzon.Views.plan debe ser una función');
+afirmar(typeof Herzon.Views.suplementos === 'function', 'Herzon.Views.suplementos debe ser una función');
 
 afirmar(Herzon.Views.resumen === undefined, 'Herzon.Views.resumen NO debe existir (namespace de T-005)');
 afirmar(Herzon.Views.perfil === undefined, 'Herzon.Views.perfil NO debe existir (namespace de T-005)');
@@ -146,7 +146,7 @@ afirmar(idsRegistrados.length === 2 && idsRegistrados[0] === 'plan' && idsRegist
 //     estado del recomendador se calcula de forma perezosa (obtenerRecoEstado
 //     en build/vista_dieta_supl.js), no depende del DOM.
 // ---------------------------------------------------------------------
-afirmar(typeof Herzon.planActivo === 'function', 'Herzon.planActivo debe existir como funcion (Adendum R5 punto 4)');
+afirmar(typeof Herzon.planActivo === 'function', 'Herzon.planActivo debe existir como función (Adendum R5 punto 4)');
 
 var activoPreMontaje = Herzon.planActivo();
 afirmar(!!activoPreMontaje && !!activoPreMontaje.plan && typeof activoPreMontaje.plan.id === 'string',
@@ -187,7 +187,7 @@ rootPlan.appendChild(recoPlanEstatico);
 afirmar((function () {
   try { registrosCapturados.plan(rootPlan); return true; }
   catch (e) { console.error(e); return false; }
-})(), 'Herzon.Views.plan (via registerView) debe montar sin lanzar contra el TestDOM');
+})(), 'Herzon.Views.plan (vía registerView) debe montar sin lanzar contra el TestDOM');
 
 afirmar(rootPlan.consultarTodo('.hz-reco-panel').length === 1,
   'la vista Plan de dieta NO debe duplicar #reco-plan: debe reutilizar el nodo estatico de build/shell.html');
@@ -197,10 +197,25 @@ afirmar(rootPlan.children.indexOf(recoPlanEstatico) !== -1,
 afirmar(rootPlan.consultarTodo('.hz-hero').length === 1,
   'la vista Plan de dieta debe tener EXACTAMENTE un .hz-hero (regla 11)');
 
+// R6 (fini-4, Adendum R6 punto 6): los botones del recomendador ("Calcular
+// necesidades", "Usar este plan"/"Plan aplicado") ahora REUTILIZAN la clase
+// .hz-table-toggle en vez de estilos inline -- ya no son un proxy fiel del
+// toggle "Ver tabla" de cada .hz-chart (contrato regla 9). Los toggles
+// reales de gráfica los marca build/charts.js con aria-expanded (ver
+// Charts.tablaToggle); los botones del recomendador nunca lo llevan, así
+// que se filtran por esa marca para no romper la paridad chart<->toggle.
 var chartsPlan = rootPlan.consultarTodo('.hz-chart');
-var togglesPlan = rootPlan.consultarTodo('.hz-table-toggle');
+var togglesPlan = rootPlan.consultarTodo('.hz-table-toggle').filter(function (b) { return b.hasAttribute('aria-expanded'); });
 afirmar(chartsPlan.length === togglesPlan.length,
-  'en la vista Plan de dieta el número de .hz-chart debe igualar el número de .hz-table-toggle (paridad, regla 9)');
+  'en la vista Plan de dieta el número de .hz-chart debe igualar el número de .hz-table-toggle propios de gráfica (con aria-expanded), paridad regla 9');
+
+var botonesRecoConTogglePlan = rootPlan.consultarTodo('.hz-table-toggle').filter(function (b) { return !b.hasAttribute('aria-expanded'); });
+afirmar(botonesRecoConTogglePlan.length === 6,
+  'los botones del recomendador (Calcular + 5 "Usar este plan"/"Plan aplicado") deben reutilizar .hz-table-toggle (fini-4), tiene ' + botonesRecoConTogglePlan.length);
+botonesRecoConTogglePlan.forEach(function (boton) {
+  afirmar(Object.keys(boton.style).length === 0,
+    'los botones del recomendador no deben llevar propiedades de estilo inline (fini-4): usan .hz-table-toggle, no element.style');
+});
 afirmar(chartsPlan.length === 2,
   'la vista Plan de dieta debe tener exactamente 2 gráficas: macros por comida y calorías por día');
 
@@ -250,6 +265,24 @@ afirmar(conteoFillsMacros['var(--series-2)'] === nComidas,
   'Carbohidratos debe pintarse con var(--series-2) en cada una de las ' + nComidas + ' comidas (asignación fija del contrato)');
 afirmar(conteoFillsMacros['var(--series-3)'] === nComidas,
   'Grasas debe pintarse con var(--series-3) en cada una de las ' + nComidas + ' comidas (asignación fija del contrato)');
+
+// --- R6-fix (hallazgo data-7, T-035): "Macronutrientes por comida" no
+//     mostraba ni un valor. Fix quirúrgico: cablear etiquetasSegmento: true
+//     en la llamada a Charts.apilada100 (opción verificada en T-027). ---
+var inicioLlamadaMacros = fuenteVista.indexOf('Charts.apilada100(contMacros');
+afirmar(inicioLlamadaMacros !== -1, 'debe existir una llamada a Charts.apilada100(contMacros, ...) en la fuente');
+var finLlamadaMacros = fuenteVista.indexOf('});', inicioLlamadaMacros);
+var bloqueLlamadaMacros = fuenteVista.slice(inicioLlamadaMacros, finLlamadaMacros);
+afirmar(/etiquetasSegmento\s*:\s*true/.test(bloqueLlamadaMacros),
+  'la llamada a Charts.apilada100 de "Macronutrientes por comida" debe declarar etiquetasSegmento: true (fix quirúrgico T-035, hallazgo data-7)');
+
+var etiquetasSegmentoMacros = contMacros.consultarTodo('.hz-etiqueta-segmento');
+afirmar(etiquetasSegmentoMacros.length > 0,
+  'tras cablear etiquetasSegmento: true, la gráfica de macros por comida debe montar al menos una etiqueta de segmento (%) en el TestDOM (hallazgo data-7)');
+etiquetasSegmentoMacros.forEach(function (nodo) {
+  afirmar(/^[0-9]+([.,][0-9]+)?%$/.test(nodo.textContent),
+    'cada etiqueta de segmento de la gráfica de macros debe mostrar un valor porcentual, tiene "' + nodo.textContent + '"');
+});
 
 // --- Calorías por día: una barra por cada uno de los 7 días del plan ---
 var contKcal = chartsPlan[1];
@@ -481,12 +514,67 @@ itemsRankingInicial.forEach(function (item, i) {
     'sin elección explícita todavía, ninguna fila del ranking debe llevar data-seleccionado="true" (fila ' + i + ')');
 });
 
+// R6 (jera-6): las razones del ranking ya NO son chips .hz-badge (reservado
+// a rótulos cortos reales, Adendum R6 punto 6), sino una línea de texto
+// normal (0.85rem, sentence case, var(--text-secondary)) separada por
+// ' · ', con el par suficiente/insuficiente de proteína distinguido con el
+// patrón punto de estatus (.hz-status-dot + .hz-status-label, ya usado por
+// build/vista_metricas.js). El ranking esperado se recomputa con el MISMO
+// perfil basal del ancla (Herzon.Motor.recomendar) para verificar el
+// contenido EXACTO de cada fila contra la fuente de verdad, no un string
+// adivinado.
+var kcalNecesidadAncla = MotorParaAncla.kcalObjetivo(getAncla, 'recomposicion');
+var macrosNecesidadAncla = MotorParaAncla.macrosObjetivo({ kcal: kcalNecesidadAncla, pesoKg: 75, objetivo: 'recomposicion' });
+var necesidadesEsperadasAncla = {
+  kcal: kcalNecesidadAncla,
+  proteina_g: macrosNecesidadAncla.proteina_g,
+  carbohidrato_g: macrosNecesidadAncla.carbohidrato_g,
+  grasa_g: macrosNecesidadAncla.grasa_g
+};
+var rankingEsperadoInicial = MotorParaAncla.recomendar(necesidadesEsperadasAncla, HERZON_DATA.planes);
+
 itemsRankingInicial.forEach(function (item, i) {
-  var razonesItem = item.consultarUno('.hz-reco-razones').consultarTodo('.hz-badge');
-  afirmar(razonesItem.length === 4, 'la fila ' + i + ' del ranking debe mostrar 4 razones (.hz-badge): kcal, proteína, carbohidrato, grasa');
-  razonesItem.forEach(function (chip) {
-    afirmar(!!chip.textContent && chip.textContent.trim().length > 0, 'cada razón del ranking debe tener texto no vacío');
+  var razonesEl = item.consultarUno('.hz-reco-razones');
+
+  afirmar(razonesEl.consultarTodo('.hz-badge').length === 0,
+    'la fila ' + i + ' del ranking NO debe usar chips .hz-badge para las razones (Adendum R6 punto 6)');
+  afirmar(razonesEl.style.fontSize === '0.85rem',
+    'la línea de razones de la fila ' + i + ' debe tener font-size 0.85rem (jera-6)');
+  afirmar(razonesEl.style.color === 'var(--text-secondary)',
+    'la línea de razones de la fila ' + i + ' debe usar var(--text-secondary) (jera-6)');
+
+  var planIdFila = item.getAttribute('data-plan-id');
+  var entradaEsperada = rankingEsperadoInicial.filter(function (e) { return e.plan.id === planIdFila; })[0];
+  afirmar(!!entradaEsperada, 'debe existir una entrada esperada de Herzon.Motor.recomendar para la plantilla ' + planIdFila);
+  var razonesEsperadas = entradaEsperada.razones;
+  afirmar(razonesEsperadas.length === 4, 'sanity: Herzon.Motor debe producir 4 razones por plantilla (kcal, proteína, carbohidrato, grasa)');
+
+  var textoLinea = razonesEl.textContent;
+  afirmar(textoLinea.indexOf(' · ') !== -1,
+    'la fila ' + i + ' del ranking debe separar sus razones con " · " (jera-6)');
+  afirmar(textoLinea.charAt(0) === textoLinea.charAt(0).toUpperCase(),
+    'la primera razón de la fila ' + i + ' debe ir en sentence case (primera letra mayúscula)');
+
+  razonesEsperadas.forEach(function (razonEsperada, ri) {
+    var fragmentoEsperado = ri === 0
+      ? (razonEsperada.charAt(0).toUpperCase() + razonEsperada.slice(1))
+      : razonEsperada;
+    afirmar(textoLinea.indexOf(fragmentoEsperado) !== -1,
+      'la fila ' + i + ' del ranking debe incluir la razón "' + fragmentoEsperado + '" (Herzon.Motor)');
   });
+
+  // Exactamente una razón (proteína) lleva el patrón punto de estatus.
+  var puntosEstado = razonesEl.consultarTodo('.hz-status-dot');
+  var etiquetasEstado = razonesEl.consultarTodo('.hz-status-label');
+  afirmar(puntosEstado.length === 1 && etiquetasEstado.length === 1,
+    'la fila ' + i + ' del ranking debe distinguir EXACTAMENTE una razón (proteína) con .hz-status-dot + .hz-status-label, tiene ' + puntosEstado.length + ' puntos y ' + etiquetasEstado.length + ' etiquetas');
+  var razonProteinaEsperada = razonesEsperadas.filter(function (r) { return r.indexOf('proteína') !== -1; })[0];
+  afirmar(!!razonProteinaEsperada, 'debe existir una razón sobre proteína en la fila ' + i);
+  var esperaInsuficiente = razonProteinaEsperada.indexOf('insuficiente') !== -1;
+  afirmar(puntosEstado[0].getAttribute('data-status') === (esperaInsuficiente ? 'warning' : 'good'),
+    'el punto de estatus de proteína de la fila ' + i + ' debe ser data-status="' + (esperaInsuficiente ? 'warning' : 'good') + '" según "' + razonProteinaEsperada + '"');
+  afirmar(etiquetasEstado[0].textContent === razonProteinaEsperada,
+    'la etiqueta del punto de estatus de la fila ' + i + ' debe mostrar el texto exacto de la razón de proteína ("' + razonProteinaEsperada + '"), mostró "' + etiquetasEstado[0].textContent + '"');
 });
 
 // --- Paso "calcular": editar el perfil y pulsar Calcular recalcula
@@ -605,13 +693,127 @@ afirmar(soloDigitos(numProteinaAplicadoStat.textContent) === String(proteinaEspe
   'el stat de proteína aplicada debe reflejar en vivo la escala de porciones (' + proteinaEsperadaEscalada + ' g), mostró "' + numProteinaAplicadoStat.textContent + '"');
 
 // ---------------------------------------------------------------------
+// 3.6 R6 prod-8: el valor vivo de la escala se muestra JUNTO a su
+//     etiqueta ("Escala de porciones: 1.20x"), no en un span aparte.
+// ---------------------------------------------------------------------
+var etiquetaEscalaEl = buscarPorAtributo(rootPlan, 'for', 'hz-reco-escala');
+afirmar(!!etiquetaEscalaEl && etiquetaEscalaEl.tagName === 'LABEL',
+  'debe existir un <label for="hz-reco-escala"> (prod-8)');
+afirmar(etiquetaEscalaEl.textContent === 'Escala de porciones: 1.20x',
+  'tras mover la escala a 1.2, la etiqueta debe mostrar el valor junto al texto ("Escala de porciones: 1.20x", prod-8), mostró "' + etiquetaEscalaEl.textContent + '"');
+
+// ---------------------------------------------------------------------
+// 3.7 R6 prod-2: con la plantilla elegida + kcal manual (1500) + escala
+//     (1.2x) TODOS activos a la vez, el héroe y el Total del día de la
+//     vista PRINCIPAL (no solo los stats de #reco-plan) deben mostrar lo
+//     que el menú REAL, escalado, realmente suma -- nunca el kcal manual
+//     (que es solo el objetivo del panel del recomendador).
+// ---------------------------------------------------------------------
+var diaIdxTrasEscala = Math.max(1, Math.min(planElegidoObjeto.dias.length, parseInt(selectDia.value, 10) || 1)) - 1;
+var comidasDiaTrasEscala = planElegidoObjeto.dias[diaIdxTrasEscala].comidas;
+var kcalRealEsperadoTrasEscala = Math.round(comidasDiaTrasEscala.reduce(function (acc, c) { return acc + c.kcal * 1.2; }, 0));
+var heroNumTrasEscala = rootPlan.consultarTodo('.hz-hero-num')[0];
+var totalKcalTrasEscala = rootPlan.consultarTodo('.hz-menu-total-kcal')[0];
+afirmar(soloDigitos(heroNumTrasEscala.textContent) === String(kcalRealEsperadoTrasEscala),
+  'tras escalar a 1.2x, el héroe de "Plan de dieta actual" debe mostrar la suma REAL del menú escalado (' + kcalRealEsperadoTrasEscala + ' kcal, prod-2), mostró "' + heroNumTrasEscala.textContent + '"');
+afirmar(soloDigitos(totalKcalTrasEscala.textContent) === String(kcalRealEsperadoTrasEscala),
+  'tras escalar a 1.2x, el Total del día debe coincidir con el héroe (' + kcalRealEsperadoTrasEscala + ' kcal, prod-2), mostró "' + totalKcalTrasEscala.textContent + '"');
+afirmar(soloDigitos(heroNumTrasEscala.textContent) !== '1500',
+  'el héroe NO debe mostrar el kcal objetivo MANUAL (1500 kcal): ese override solo gobierna el objetivo del panel del recomendador, no lo que el menú real ya escalado realmente suma (prod-2)');
+
+// ---------------------------------------------------------------------
+// 3.8 R6 prod-6: con una plantilla fijada desde el recomendador, la card
+//     "Personaliza tu plan" (vista principal) muestra la nota vía
+//     textContent; se retira al volver al modo automático.
+// ---------------------------------------------------------------------
+var cardPersonaliza = rootPlan.consultarTodo('.hz-card').filter(function (c) {
+  var t = c.consultarUno('.hz-card-title');
+  return !!t && t.textContent === 'Personaliza tu plan';
+})[0];
+afirmar(!!cardPersonaliza, 'debe existir la card "Personaliza tu plan"');
+var notaPlantillaFijadaEl = cardPersonaliza.consultarTodo('.hz-nota')[0];
+afirmar(!!notaPlantillaFijadaEl, 'la card "Personaliza tu plan" debe tener una .hz-nota para la plantilla fijada (prod-6)');
+afirmar(
+  notaPlantillaFijadaEl.textContent.indexOf('Plantilla fijada desde el recomendador') !== -1 &&
+  notaPlantillaFijadaEl.textContent.indexOf(planElegidoObjeto.nombre) !== -1,
+  'con una plantilla fijada desde el recomendador, la nota debe decir "Plantilla fijada desde el recomendador: ' +
+  planElegidoObjeto.nombre + '..." (prod-6), mostró "' + notaPlantillaFijadaEl.textContent + '"'
+);
+
+// Tocar de nuevo el formulario objetivo/restricción vuelve al modo
+// automático (limpia planIdSeleccionado, ver render()); la nota se retira.
+selectRestriccion.despachar('change');
+afirmar(notaPlantillaFijadaEl.textContent === '',
+  'al volver al modo automático (tocar el formulario objetivo/restricción), la nota de plantilla fijada debe retirarse (prod-6), quedó "' + notaPlantillaFijadaEl.textContent + '"');
+afirmar(Herzon.planActivo().plan.id !== idPlanElegido || HERZON_DATA.planes.length === 1,
+  'sanity (prod-6): en modo automático Herzon.planActivo() vuelve a resolver por objetivo/restricción, ya no por la elección manual retirada');
+
+// ---------------------------------------------------------------------
+// 3.9 R6 prod-4: "Calcular" con un campo numérico vacío o inválido NO
+//     recalcula en silencio -- marca el input (element.style con
+//     var(--delta-bad), regla 3.H) y pinta una .hz-nota indicando el
+//     campo. Los .hz-nota de #reco-plan, en orden de aparición en el DOM:
+//     [0] disclaimer Mifflin-St Jeor, [1] validación (prod-4), [2] nota de
+//     "plantilla aplicada" (Adendum R5).
+// ---------------------------------------------------------------------
+var notasReco = contenedorReco.consultarTodo('.hz-nota');
+afirmar(notasReco.length === 3,
+  '#reco-plan debe tener 3 .hz-nota: disclaimer, validación (prod-4) y plantilla aplicada, tiene ' + notasReco.length);
+var notaValidacionEl = notasReco[1];
+afirmar(notaValidacionEl.textContent === '',
+  'antes de cualquier intento inválido, la nota de validación debe estar vacía');
+
+var tmbAntesDeInvalido = statsNecesidades[0].consultarUno('.hz-stat-num').textContent;
+
+campoRecoTalla.value = '';
+campoRecoTalla.despachar('change');
+botonCalcular.despachar('click');
+
+afirmar(statsNecesidades[0].consultarUno('.hz-stat-num').textContent === tmbAntesDeInvalido,
+  'Calcular con Talla vacía NO debe recalcular en silencio: el TMB mostrado debe seguir siendo el del último cálculo válido ("' + tmbAntesDeInvalido + '")');
+afirmar(notaValidacionEl.textContent.indexOf('Talla') !== -1,
+  'la nota de validación debe señalar el campo inválido (Talla), mostró "' + notaValidacionEl.textContent + '"');
+afirmar(campoRecoTalla.style.borderColor === 'var(--delta-bad)',
+  'el campo Talla inválido debe marcarse con element.style.borderColor = var(--delta-bad) (prod-4, regla 3.H), fue "' + campoRecoTalla.style.borderColor + '"');
+afirmar(campoRecoTalla.getAttribute('aria-invalid') === 'true',
+  'el campo Talla inválido debe marcarse aria-invalid="true"');
+
+// Un segundo campo con un valor negativo también debe bloquear, sin
+// acumular texto de validaciones previas (el mensaje se reemplaza, no se
+// concatena).
+campoRecoTalla.value = '162';
+campoRecoPeso.value = '-5';
+campoRecoPeso.despachar('change');
+botonCalcular.despachar('click');
+afirmar(notaValidacionEl.textContent.indexOf('Peso') !== -1 && notaValidacionEl.textContent.indexOf('Talla') === -1,
+  'con Talla ya corregida y Peso en -5, la nota de validación debe señalar solo Peso, sin arrastrar el mensaje anterior de Talla, mostró "' + notaValidacionEl.textContent + '"');
+afirmar(campoRecoTalla.style.borderColor === '',
+  'al corregir Talla, su marca de invalidez debe retirarse aunque otro campo (Peso) siga inválido');
+afirmar(campoRecoPeso.style.borderColor === 'var(--delta-bad)',
+  'el campo Peso con valor negativo debe marcarse inválido (prod-4)');
+
+// Corrige el último campo: Calcular vuelve a recalcular con normalidad y
+// limpia toda marca/nota de validación.
+campoRecoPeso.value = '90';
+campoRecoPeso.despachar('change');
+botonCalcular.despachar('click');
+afirmar(notaValidacionEl.textContent === '',
+  'al corregir el último campo inválido y Calcular de nuevo, la nota de validación debe vaciarse');
+afirmar(campoRecoPeso.style.borderColor === '' && campoRecoTalla.style.borderColor === '',
+  'al recalcular con éxito, ningún campo debe seguir marcado en var(--delta-bad)');
+afirmar(!campoRecoPeso.hasAttribute('aria-invalid') && !campoRecoTalla.hasAttribute('aria-invalid'),
+  'al recalcular con éxito, aria-invalid debe retirarse de los campos ya corregidos');
+afirmar(statsNecesidades[0].consultarUno('.hz-stat-num').textContent === tmbAntesDeInvalido,
+  'tras corregir Talla/Peso de vuelta a 162/90 (los mismos valores del último cálculo válido) y Calcular, el TMB debe reproducir el mismo resultado ("' + tmbAntesDeInvalido + '")');
+
+// ---------------------------------------------------------------------
 // 4. Vista "Suplementos": monta contra TestDOM, sin lanzar
 // ---------------------------------------------------------------------
 var rootSup = doc.createElement('div');
 afirmar((function () {
   try { registrosCapturados.suplementos(rootSup); return true; }
   catch (e) { console.error(e); return false; }
-})(), 'Herzon.Views.suplementos (via registerView) debe montar sin lanzar contra el TestDOM');
+})(), 'Herzon.Views.suplementos (vía registerView) debe montar sin lanzar contra el TestDOM');
 
 afirmar(rootSup.consultarTodo('.hz-hero').length === 1,
   'la vista Suplementos debe tener EXACTAMENTE un .hz-hero (regla 11)');
@@ -628,6 +830,25 @@ var tablasSup = rootSup.consultarTodo('.hz-table');
 var filasRegimen = tablasSup[0].consultarTodo('tbody')[0].consultarTodo('tr');
 afirmar(filasRegimen.length === nSuplementos,
   'la tabla de régimen debe tener exactamente ' + nSuplementos + ' filas (una por suplemento), tiene ' + filasRegimen.length);
+
+// R6 (jera-1/data-3/fini-1/resp-1): la card del régimen lleva
+// data-ancho="completo" (regla de T-026: .hz-grid > [data-ancho="completo"]
+// { grid-column: 1/-1 }) para que sus 5 columnas quepan a 1240px sin
+// recortar Horario/Momento/Propósito fuera del viewport.
+var cardRegimenSup = rootSup.consultarTodo('.hz-card').filter(function (c) {
+  var t = c.consultarUno('.hz-card-title');
+  return !!t && t.textContent === 'Régimen de suplementos';
+})[0];
+afirmar(!!cardRegimenSup, 'debe existir la card "Régimen de suplementos"');
+afirmar(!!cardRegimenSup && cardRegimenSup.getAttribute('data-ancho') === 'completo',
+  'la card "Régimen de suplementos" debe llevar data-ancho="completo" (jera-1/data-3/fini-1/resp-1)');
+
+var columnasEncabezadoRegimen = tablasSup[0].consultarTodo('thead')[0].consultarTodo('th').map(function (th) { return th.textContent; });
+afirmar(columnasEncabezadoRegimen.length === 5 &&
+  columnasEncabezadoRegimen[0] === 'Suplemento' && columnasEncabezadoRegimen[1] === 'Dosis' &&
+  columnasEncabezadoRegimen[2] === 'Horario' && columnasEncabezadoRegimen[3] === 'Momento' &&
+  columnasEncabezadoRegimen[4] === 'Propósito',
+  'la tabla de régimen debe tener las 5 columnas visibles, en orden Suplemento/Dosis/Horario/Momento/Propósito, obtuvo ' + columnasEncabezadoRegimen.join(','));
 
 var contAdherenciaSup = chartsSup[0];
 var barrasAdherenciaSup = contarPorTagSinAtributo(contAdherenciaSup, 'path', 'role');
@@ -648,6 +869,72 @@ for (var h = 0; h < celdasHeatmap.length; h++) {
 var tokensHeatEsperados = ['var(--heat-1)', 'var(--heat-2)', 'var(--heat-3)', 'var(--heat-4)', 'var(--heat-5)'];
 var soloTokensHeat = Object.keys(fillsHeatmap).every(function (f) { return tokensHeatEsperados.indexOf(f) !== -1; });
 afirmar(soloTokensHeat, 'el heatmap de adherencia debe pintar sus celdas SOLO con var(--heat-1..5), nunca la serie categórica ni un hex');
+
+// ---------------------------------------------------------------------
+// 4.bis (T-032, Adendum R6 punto 2; hallazgos jera-5/data-5/data-6 de
+// T-031): las opciones de Charts.heatmapCalendario y Charts.barras que
+// T-027 implementó y verificó en build/charts.js deben aparecer CABLEADAS
+// en sus únicos call sites reales de esta vista, tanto en el código fuente
+// (estructural) como en el DOM que efectivamente renderizan.
+// ---------------------------------------------------------------------
+function extraerLlamada(fuente, marcadorInicio) {
+  var inicio = fuente.indexOf(marcadorInicio);
+  if (inicio === -1) return '';
+  var fin = fuente.indexOf('\n    });', inicio);
+  if (fin === -1) return '';
+  return fuente.slice(inicio, fin);
+}
+
+// -- Estructural: las opciones nuevas aparecen en el texto de cada llamada.
+var llamadaBarrasAdherenciaSup = extraerLlamada(fuenteVista, 'Charts.barras(contAdherenciaSup');
+afirmar(llamadaBarrasAdherenciaSup.length > 0,
+  'debe existir la llamada Charts.barras(contAdherenciaSup...) ("Adherencia por suplemento") en el código fuente');
+afirmar(/unidad\s*:\s*'%'/.test(llamadaBarrasAdherenciaSup),
+  'la llamada Charts.barras de "Adherencia por suplemento" debe pasar unidad: \'%\' (data-6, Adendum R6 punto 2)');
+afirmar(/valoresEnBarras\s*:\s*true/.test(llamadaBarrasAdherenciaSup),
+  'la llamada Charts.barras de "Adherencia por suplemento" debe pasar valoresEnBarras: true (data-6, Adendum R6 punto 2)');
+
+var llamadaHeatmapAdherenciaTiempo = extraerLlamada(fuenteVista, 'Charts.heatmapCalendario(contAdherenciaTiempo');
+afirmar(llamadaHeatmapAdherenciaTiempo.length > 0,
+  'debe existir la llamada Charts.heatmapCalendario(contAdherenciaTiempo...) en el código fuente');
+afirmar(/encabezadosDia\s*:\s*true/.test(llamadaHeatmapAdherenciaTiempo),
+  'la llamada Charts.heatmapCalendario de adherencia diaria debe pasar encabezadosDia: true (jera-5/data-5, Adendum R6 punto 2)');
+afirmar(/etiquetasFila\s*:/.test(llamadaHeatmapAdherenciaTiempo),
+  'la llamada Charts.heatmapCalendario de adherencia diaria debe pasar etiquetasFila (jera-5/data-5, Adendum R6 punto 2)');
+afirmar(/leyendaRampa\s*:\s*true/.test(llamadaHeatmapAdherenciaTiempo),
+  'la llamada Charts.heatmapCalendario de adherencia diaria debe pasar leyendaRampa: true (jera-5/data-5, Adendum R6 punto 2)');
+
+// -- DOM (TestDOM): el heatmap realmente monta encabezados de día, rótulos
+//    de fila y la leyenda de 5 swatches.
+var encabezadosDiaSup = contHeatmap.consultarTodo('.hz-heat-encabezado-dia');
+afirmar(encabezadosDiaSup.length === 7,
+  'el heatmap de adherencia diaria debe emitir 7 encabezados de día (uno por columna), encontró ' + encabezadosDiaSup.length);
+
+var etiquetasFilaSup = contHeatmap.consultarTodo('.hz-heat-fila-etiqueta');
+afirmar(etiquetasFilaSup.length === 4,
+  'el heatmap de adherencia diaria debe emitir exactamente 4 etiquetas de fila (S1, S4, S8, S12), encontró ' + etiquetasFilaSup.length);
+var textosFilaSup = etiquetasFilaSup.map(function (e) { return e.textContent; }).sort();
+afirmar(textosFilaSup.join(',') === 'S1,S12,S4,S8',
+  'las etiquetas de fila del heatmap deben ser exactamente S1, S4, S8, S12, encontró ' + textosFilaSup.join(', '));
+
+var leyendaHeatmapSup = contHeatmap.consultarTodo('.hz-legend')[0];
+afirmar(!!leyendaHeatmapSup, 'el heatmap de adherencia diaria debe emitir una .hz-legend (leyendaRampa)');
+var itemsLeyendaHeatmapSup = leyendaHeatmapSup ? leyendaHeatmapSup.consultarTodo('.hz-legend-item') : [];
+afirmar(itemsLeyendaHeatmapSup.length === 5,
+  'la leyenda del heatmap debe tener exactamente 5 swatches (uno por bucket --heat-1..5), encontró ' + itemsLeyendaHeatmapSup.length);
+afirmar(!!itemsLeyendaHeatmapSup[0] && itemsLeyendaHeatmapSup[0].textContent === '0-20',
+  'el primer swatch de la leyenda del heatmap debe cubrir el rango 0-20 (min=0, max=100 de la adherencia diaria)');
+afirmar(!!itemsLeyendaHeatmapSup[4] && itemsLeyendaHeatmapSup[4].textContent === '80-100',
+  'el último swatch de la leyenda del heatmap debe cubrir el rango 80-100 (min=0, max=100 de la adherencia diaria)');
+
+// -- DOM (TestDOM): la gráfica de barras muestra un valor con unidad "%"
+//    al final de CADA una de las barras (no solo la máxima).
+var etiquetasValorBarrasSup = contAdherenciaSup.consultarTodo('.hz-etiqueta-valor');
+afirmar(etiquetasValorBarrasSup.length === nSuplementos,
+  'la gráfica de adherencia por suplemento debe mostrar una etiqueta de valor por cada uno de los ' + nSuplementos + ' suplementos (valoresEnBarras), encontró ' + etiquetasValorBarrasSup.length);
+var todasEtiquetasValorConPorcentaje = etiquetasValorBarrasSup.every(function (e) { return /%$/.test(e.textContent); });
+afirmar(todasEtiquetasValorConPorcentaje,
+  'cada etiqueta de valor de la gráfica de adherencia por suplemento debe terminar en "%" (opciones.unidad)');
 
 // ---------------------------------------------------------------------
 // 5. D5 (QA ronda 1): ninguna .hz-chart-title interna duplica el heading

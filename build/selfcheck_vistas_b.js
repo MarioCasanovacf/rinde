@@ -48,6 +48,16 @@ Herzon.filters = {
   onRangeChange: function (cb) { listenersRango.push(cb); }
 };
 
+// prod-1 (Adendum R6 punto 4): Node no implementa addEventListener sobre
+// globalThis (a diferencia de un navegador real) -- se stubea con la MISMA
+// técnica que build/selfcheck_docs.js usa para dispatchEvent, solo para
+// capturar el listener que vista_metricas.js registre para
+// 'herzon:mediciones-importadas' y poder invocarlo directamente más abajo.
+var listenersEventoImportacion = [];
+globalThis.addEventListener = function (tipo, manejador) {
+  if (tipo === 'herzon:mediciones-importadas') { listenersEventoImportacion.push(manejador); }
+};
+
 require(VISTAS_PATH);
 
 var fuenteVistas = fs.readFileSync(VISTAS_PATH, 'utf8');
@@ -138,7 +148,7 @@ afirmar(heroResumenDelta.length >= 1 && /^[+-]/.test(heroResumenDelta[0].textCon
   'El número héroe de Resumen debe traer un delta con signo');
 
 var sparklineCirculosResumen = recolectarNodos(rootResumen).filter(function (n) { return (n.tagName || '').toLowerCase() === 'circle'; });
-afirmar(sparklineCirculosResumen.length === 12, 'El sparkline del heroe de Resumen debe tener exactamente 12 puntos');
+afirmar(sparklineCirculosResumen.length === 12, 'El sparkline del héroe de Resumen debe tener exactamente 12 puntos');
 
 afirmar(contarPorClase(rootResumen, 'hz-stat') >= 3, 'Vista Resumen debe tener al menos 3 .hz-stat');
 
@@ -187,14 +197,18 @@ function cardPorTitulo(titulo) {
   })[0];
 }
 var cardPeso = cardPorTitulo('Peso corporal');
-var cardComp = cardPorTitulo('Composición corporal');
+var cardMusculo = cardPorTitulo('Masa muscular (kg)');
+var cardGrasa = cardPorTitulo('Grasa corporal (%)');
 var cardCintura = cardPorTitulo('Circunferencia de cintura');
 var cardLabs = cardPorTitulo('Laboratorios en 3 cortes');
 var cardPlic = cardPorTitulo('Plicometría en 4 cortes');
-afirmar(!!cardPeso && !!cardComp && !!cardCintura && !!cardLabs && !!cardPlic, 'Vista Seguimiento debe traer las 5 tarjetas de gráficas esperadas (incluida Plicometría, R4)');
+afirmar(!!cardPeso && !!cardMusculo && !!cardGrasa && !!cardCintura && !!cardLabs && !!cardPlic,
+  'Vista Seguimiento debe traer las 6 tarjetas de gráficas esperadas (Composición corporal partida en Masa muscular y Grasa corporal, Adendum R6 punto 7)');
+afirmar(!cardPorTitulo('Composición corporal'),
+  'data-2 (Adendum R6 punto 7): ya no debe existir una card única "Composición corporal" con dos series en un eje compartido');
 
 // ---------------------------------------------------------------------
-// 5bis. R4 (esta tarea): el heroe de Seguimiento se recalcula contra el
+// 5bis. R4 (esta tarea): el héroe de Seguimiento se recalcula contra el
 // PRIMER punto del rango ACTIVO (4/8/12 semanas), no contra el inicio
 // absoluto de las 12 semanas -- esa lectura "desde el inicio" sigue siendo
 // exclusiva de Resumen (sin filtro). Se recalcula aquí mismo desde
@@ -252,10 +266,36 @@ var textosPeso = textosDe(cardPeso);
 afirmar(textosPeso.indexOf('55') !== -1 && textosPeso.indexOf('85') !== -1,
   'El eje Y de la línea de peso debe estar forzado literalmente a yMin=55 / yMax=85 (amplitud 30kg >= 10kg, regla de Mario)');
 
-var polyComp0 = polylinesDe(cardComp);
-afirmar(polyComp0.length === 2, 'La gráfica de composición corporal debe tener 2 series (músculo y grasa)');
-afirmar(polyComp0[0].style.stroke === 'var(--series-3)', 'Masa muscular debe pintarse con series-3 (asignación fija)');
-afirmar(polyComp0[1].style.stroke === 'var(--series-2)', 'Grasa corporal debe pintarse con series-2 (asignación fija)');
+// data-2 (Adendum R6 punto 7): Composición corporal partida en DOS gráficas
+// de una serie y un eje cada una -- kg y % nunca en el mismo eje. Con una
+// sola serie, Herzon.Charts.linea no dibuja caja de leyenda (regla 7).
+var polyMusculo0 = polylinesDe(cardMusculo);
+afirmar(polyMusculo0.length === 1, 'La gráfica de masa muscular debe tener una sola serie (línea), un eje propio en kg');
+afirmar(polyMusculo0[0].style.stroke === 'var(--series-3)', 'Masa muscular debe pintarse con series-3 (asignación fija)');
+afirmar(puntosDe(polyMusculo0[0]).length === 12, 'Con el rango inicial (12 semanas) la línea de masa muscular debe tener 12 puntos');
+afirmar(contarPorClase(cardMusculo, 'hz-legend') === 0, 'data-2: con una sola serie, la gráfica de masa muscular NO debe traer caja de leyenda');
+
+var polyGrasa0 = polylinesDe(cardGrasa);
+afirmar(polyGrasa0.length === 1, 'La gráfica de grasa corporal debe tener una sola serie (línea), un eje propio en %');
+afirmar(polyGrasa0[0].style.stroke === 'var(--series-2)', 'Grasa corporal debe pintarse con series-2 (asignación fija)');
+afirmar(puntosDe(polyGrasa0[0]).length === 12, 'Con el rango inicial (12 semanas) la línea de grasa corporal debe tener 12 puntos');
+afirmar(contarPorClase(cardGrasa, 'hz-legend') === 0, 'data-2: con una sola serie, la gráfica de grasa corporal NO debe traer caja de leyenda');
+
+var textosMusculo = textosDe(cardMusculo);
+afirmar(textosMusculo.indexOf('15') !== -1 && textosMusculo.indexOf('40') !== -1,
+  'El eje Y de masa muscular debe estar forzado a un rango completo propio (yMin=15 / yMax=40), no autoescalado sobre datos casi planos (regla de Mario)');
+var textosGrasa = textosDe(cardGrasa);
+afirmar(textosGrasa.indexOf('15') !== -1 && textosGrasa.indexOf('45') !== -1,
+  'El eje Y de grasa corporal debe estar forzado a un rango completo propio (yMin=15 / yMax=45), independiente del eje de masa muscular');
+
+// data-4/data-8 (consumo): unidad de HERZON_DATA.meta.unidades en la
+// etiqueta de punta de las líneas de seguimiento.
+afirmar(textosDe(cardPeso).join(' ').indexOf(DATA.meta.unidades.peso) !== -1,
+  'data-4: la línea de peso debe traer la unidad de HERZON_DATA.meta.unidades.peso en su etiqueta de punta');
+afirmar(textosMusculo.join(' ').indexOf(DATA.meta.unidades.peso) !== -1,
+  'data-4: la línea de masa muscular debe traer la unidad de HERZON_DATA.meta.unidades.peso en su etiqueta de punta');
+afirmar(textosDe(cardCintura).join(' ').indexOf(DATA.meta.unidades.cintura) !== -1,
+  'data-4: la línea de cintura debe traer la unidad de HERZON_DATA.meta.unidades.cintura en su etiqueta de punta');
 
 var polyCintura0 = polylinesDe(cardCintura);
 afirmar(polyCintura0.length === 1, 'La gráfica de cintura debe tener una sola serie (línea)');
@@ -265,6 +305,18 @@ var chartsLabs = recolectarNodos(cardLabs).filter(function (n) { return clasesDe
 afirmar(chartsLabs.length === DATA.labs.marcadores.length, 'Debe haber una gráfica de laboratorio por cada marcador, en los 3 cortes');
 var togglesLabs = contarPorClase(cardLabs, 'hz-table-toggle');
 afirmar(togglesLabs === DATA.labs.marcadores.length, 'Cada gráfica de laboratorio debe traer su toggle Ver tabla');
+
+// data-8 (consumo, Adendum R6 punto 2): referencia clínica {min,max} para
+// los marcadores que la traen en HERZON_DATA (hoy los 7): Herzon.Charts.barras
+// dibuja una hairline con la clase hz-referencia-linea cuando recibe
+// opciones.referencia con min y max numéricos.
+var marcadoresConReferencia = DATA.labs.marcadores.filter(function (m) {
+  return m.referencia && typeof m.referencia.min === 'number' && typeof m.referencia.max === 'number';
+});
+afirmar(marcadoresConReferencia.length === DATA.labs.marcadores.length,
+  'este selfcheck asume que HERZON_DATA.labs.marcadores trae referencia {min,max} en los 7 marcadores (si esto cambia, ajustar el conteo de abajo)');
+afirmar(contarPorClase(cardLabs, 'hz-referencia-linea') === marcadoresConReferencia.length * 2,
+  'data-8: cada gráfica de laboratorio con referencia clínica en los datos debe dibujar las hairlines de referencia (min y max, Adendum R6 punto 2)');
 
 // ---------------------------------------------------------------------
 // 5ter. Card de plicometría (R4): 4 series (sitios) con colores fijos del
@@ -309,11 +361,13 @@ afirmar(svgsPlic.length === 1, 'La card de plicometría debe tener UN solo gráf
 // filtro y sus series NO cambian de longitud al filtrar.
 // ---------------------------------------------------------------------
 afirmar(listenersRango.length === 1, 'Vista Seguimiento debe suscribirse UNA vez a Herzon.filters.onRangeChange');
+afirmar(listenersEventoImportacion.length === 1,
+  'prod-1: al montar rootSeg (esta sección), Vista Seguimiento debe registrar EXACTAMENTE un listener de herzon:mediciones-importadas');
 
 listenersRango[0](4);
 afirmar(puntosDe(polylinesDe(cardPeso)[0]).length === 4, 'Al filtrar a 4 semanas, la línea de peso debe tener 4 puntos');
-afirmar(polylinesDe(cardComp).every(function (p) { return puntosDe(p).length === 4; }),
-  'Al filtrar a 4 semanas, la composición corporal debe tener 4 puntos en AMBAS series');
+afirmar(puntosDe(polylinesDe(cardMusculo)[0]).length === 4, 'Al filtrar a 4 semanas, la línea de masa muscular debe tener 4 puntos');
+afirmar(puntosDe(polylinesDe(cardGrasa)[0]).length === 4, 'Al filtrar a 4 semanas, la línea de grasa corporal debe tener 4 puntos');
 afirmar(puntosDe(polylinesDe(cardCintura)[0]).length === 4, 'Al filtrar a 4 semanas, la línea de cintura debe tener 4 puntos');
 afirmarHeroPara(4);
 afirmar(polylinesDe(cardPlic).every(function (p) { return puntosDe(p).length === DATA.plicometria.cortes.length; }),
@@ -321,8 +375,8 @@ afirmar(polylinesDe(cardPlic).every(function (p) { return puntosDe(p).length ===
 
 listenersRango[0](8);
 afirmar(puntosDe(polylinesDe(cardPeso)[0]).length === 8, 'Al filtrar a 8 semanas, la línea de peso debe tener 8 puntos');
-afirmar(polylinesDe(cardComp).every(function (p) { return puntosDe(p).length === 8; }),
-  'Al filtrar a 8 semanas, la composición corporal debe tener 8 puntos en AMBAS series');
+afirmar(puntosDe(polylinesDe(cardMusculo)[0]).length === 8, 'Al filtrar a 8 semanas, la línea de masa muscular debe tener 8 puntos');
+afirmar(puntosDe(polylinesDe(cardGrasa)[0]).length === 8, 'Al filtrar a 8 semanas, la línea de grasa corporal debe tener 8 puntos');
 afirmar(puntosDe(polylinesDe(cardCintura)[0]).length === 8, 'Al filtrar a 8 semanas, la línea de cintura debe tener 8 puntos');
 afirmarHeroPara(8);
 afirmar(polylinesDe(cardPlic).every(function (p) { return puntosDe(p).length === DATA.plicometria.cortes.length; }),
@@ -352,13 +406,183 @@ afirmar(!textoTituloInternoDuplicaHeading(rootSeg),
   'la vista Seguimiento no debe pintar un .hz-chart-title que duplique el heading .hz-card-title de su card (D5)');
 
 // ---------------------------------------------------------------------
-// 8. Anti-regresión D1 (QA ronda 1): ninguna de estas palabras en español
+// 9. jera-2/data-1/fini-2 (Adendum R6, CAUSA RAÍZ): los contenedores que
+// reciben Herzon.Charts.barras (los 7 laboratorios) y Herzon.Charts.sparkline
+// (el sparkline del héroe de Resumen) deben estar YA conectados al árbol de
+// la vista en el instante EXACTO en que se invoca esa función -- en un
+// navegador real, si el contenedor está desconectado en ese momento,
+// `contenedorEl.clientWidth` es 0 y el chart cae al ancho de respaldo
+// comprimido (bug reproducido en las capturas de Justesse). TestDOM no
+// implementa clientWidth (comentario de build/charts.js), así que la
+// verificación aquí es estructural: se envuelve temporalmente
+// Herzon.Charts.barras/.sparkline para capturar, en cada llamada, si el
+// contenedorEl ya es descendiente del rootEl de la vista que lo montó.
+// ---------------------------------------------------------------------
+function esDescendienteDe(nodo, raiz) {
+  var actual = nodo;
+  while (actual) {
+    if (actual === raiz) { return true; }
+    actual = actual.parentNode;
+  }
+  return false;
+}
+
+var rootSegCausaRaiz = contenedorNuevo();
+var rootResumenCausaRaiz = contenedorNuevo();
+var conexionesBarrasAlMomentoDeLlamar = [];
+var conexionesSparklineAlMomentoDeLlamar = [];
+
+// T-033 (causa raíz REAL, corrige el bug que la sección 9 original -- solo
+// "descendiente de rootEl" -- no detectaba): en cada llamada a
+// Charts.barras se captura además cuántos hijos tiene YA el gridLabs
+// (contenedorEl.parentNode) en ese instante. Si el fix de dos fases es
+// correcto, gridLabs ya tiene sus 7 wraps adjuntos ANTES de la primera
+// llamada a Charts.barras, así que el conteo debe ser 7 en las 7 llamadas
+// (nunca 1, 2, 3... creciendo, que era la firma del bug de append+render
+// por ítem: Glucosa medía el grid con un solo hijo).
+var hijosGridLabsAlMomentoDeLlamar = [];
+
+var barrasOriginal = Herzon.Charts.barras;
+var sparklineOriginal = Herzon.Charts.sparkline;
+Herzon.Charts.barras = function (contenedorEl, opciones) {
+  conexionesBarrasAlMomentoDeLlamar.push(esDescendienteDe(contenedorEl, rootSegCausaRaiz));
+  var gridPadre = contenedorEl && contenedorEl.parentNode;
+  hijosGridLabsAlMomentoDeLlamar.push(gridPadre ? gridPadre.children.length : -1);
+  return barrasOriginal.apply(this, arguments);
+};
+Herzon.Charts.sparkline = function (contenedorEl, opciones) {
+  conexionesSparklineAlMomentoDeLlamar.push(esDescendienteDe(contenedorEl, rootResumenCausaRaiz));
+  return sparklineOriginal.apply(this, arguments);
+};
+
+Herzon.Views.seguimiento(rootSegCausaRaiz);
+Herzon.Views.resumen(rootResumenCausaRaiz);
+
+Herzon.Charts.barras = barrasOriginal;
+Herzon.Charts.sparkline = sparklineOriginal;
+
+afirmar(conexionesBarrasAlMomentoDeLlamar.length === DATA.labs.marcadores.length,
+  'Herzon.Charts.barras debe invocarse exactamente una vez por marcador de laboratorio');
+afirmar(conexionesBarrasAlMomentoDeLlamar.every(function (c) { return c === true; }),
+  'jera-2/data-1/fini-2 (causa raíz): los 7 contenedores de laboratorio deben estar YA montados en el DOM de la vista ANTES de invocar Herzon.Charts.barras (patrón de la card de plicometría)');
+afirmar(conexionesSparklineAlMomentoDeLlamar.length === 1 && conexionesSparklineAlMomentoDeLlamar[0] === true,
+  'jera-8/fini-6 (causa raíz): el contenedor del sparkline del héroe de Resumen debe estar YA montado en el DOM de la vista ANTES de invocar Herzon.Charts.sparkline');
+
+// ---------------------------------------------------------------------
+// 9bis. T-033 (montaje en DOS FASES del grid de laboratorios): la sección 9
+// de arriba solo probaba "conectado al DOM", que NO detectaba el bug real
+// (el wrapMarcador SÍ estaba adjunto a gridLabs antes de cada llamada
+// individual -- el problema era que sus 6 HERMANOS todavía no lo estaban).
+// Aquí se prueba directamente que gridLabs ya tiene TODOS sus hijos (7,
+// uno por marcador) en el instante de CADA una de las 7 llamadas a
+// Charts.barras: eso es lo que garantiza que el grid ya esté en su
+// geometría final de columnas -- y no en la fila completa de un hijo
+// único -- cuando se mide su ancho para dibujar el viewBox.
+// ---------------------------------------------------------------------
+afirmar(hijosGridLabsAlMomentoDeLlamar.length === DATA.labs.marcadores.length,
+  'T-033: debe haberse capturado un conteo de hijos de gridLabs por cada llamada a Charts.barras (una por marcador)');
+afirmar(hijosGridLabsAlMomentoDeLlamar.every(function (c) { return c === DATA.labs.marcadores.length; }),
+  'T-033 (causa raíz real, fase 1 antes que fase 2): gridLabs debe tener sus ' + DATA.labs.marcadores.length +
+  ' wraps YA adjuntos en el instante de CADA llamada a Charts.barras -- obtuvo la secuencia [' +
+  hijosGridLabsAlMomentoDeLlamar.join(',') + '] (si crece 1,2,3... es la firma del bug de append+render por ítem)');
+
+// Verificación estructural adicional (parseo de orden en el código fuente,
+// según pide el criterio de aceptación): en el texto de vista_metricas.js,
+// la ÚLTIMA vez que se adjunta un wrap a gridLabs (fase 1) debe ocurrir
+// ANTES de la PRIMERA llamada a Charts.barras (fase 2) -- es decir, ninguna
+// llamada Charts.barras puede aparecer entre dos "gridLabs.appendChild".
+var idxUltimoAppendGridLabs = fuenteVistas.lastIndexOf('gridLabs.appendChild(');
+var idxPrimeraLlamadaBarras = fuenteVistas.indexOf('Charts.barras(');
+afirmar(idxUltimoAppendGridLabs !== -1 && idxPrimeraLlamadaBarras !== -1,
+  'T-033: el fuente debe contener tanto "gridLabs.appendChild(" como "Charts.barras(" para poder verificar su orden');
+afirmar(idxUltimoAppendGridLabs < idxPrimeraLlamadaBarras,
+  'T-033 (estructural, dos fases en el código): la ÚLTIMA llamada a gridLabs.appendChild( debe aparecer en el fuente ANTES que la PRIMERA llamada a Charts.barras( -- fase 1 (adjuntar todo) completa antes de que arranque fase 2 (renderizar)');
+
+// ---------------------------------------------------------------------
+// 10. jera-7 (Adendum R6): jerarquía interna en cada fila de laboratorios
+// de Perfil -- nombre en peso regular / --text-secondary, valor en 600 /
+// --text-primary / tabular-nums, punto de estatus intacto, y 6-8px de
+// separación entre filas.
+// ---------------------------------------------------------------------
+var dotsPerfilNodos = recolectarNodos(rootPerfil).filter(function (n) { return clasesDe(n).indexOf('hz-status-dot') !== -1; });
+afirmar(dotsPerfilNodos.length === DATA.labs.marcadores.length, 'debe haber un punto de estatus por marcador en Perfil (regresión)');
+dotsPerfilNodos.forEach(function (dot, idxFila) {
+  var fila = dot.parentNode;
+  afirmar(fila.children.length === 3, 'jera-7: cada fila de laboratorio de Perfil debe tener 3 hijos (punto + nombre + valor), obtuvo ' + fila.children.length);
+  var nombreSpan = fila.children[1];
+  var valorSpan = fila.children[2];
+  afirmar(clasesDe(nombreSpan).indexOf('hz-status-label') === -1,
+    'jera-7: el span del nombre del marcador no debe llevar la clase de valor (jerarquía distinta dentro de la fila)');
+  afirmar(nombreSpan.style.color === 'var(--text-secondary)',
+    'jera-7: el nombre del marcador debe usar el token --text-secondary (peso regular, dato de apoyo)');
+  afirmar(clasesDe(valorSpan).indexOf('hz-status-label') !== -1,
+    'jera-7: el span del valor debe conservar la clase congelada hz-status-label (600, --text-primary)');
+  afirmar(valorSpan.style.fontVariantNumeric === 'tabular-nums',
+    'jera-7: el valor del marcador debe usar font-variant-numeric: tabular-nums');
+  if (idxFila > 0) {
+    var separacion = parseFloat(fila.style.marginTop || '0');
+    afirmar(separacion >= 6 && separacion <= 8,
+      'jera-7: la separación vertical entre filas de laboratorio debe ser de 6 a 8px, obtuvo "' + fila.style.marginTop + '"');
+  }
+});
+
+// ---------------------------------------------------------------------
+// 11. prod-1 (Adendum R6 punto 4): redibujar() debe releer
+// G.HERZON_DATA.series en CADA llamada (no un arreglo capturado una sola
+// vez al montar), y la vista debe escuchar 'herzon:mediciones-importadas'
+// para re-renderizar el rango activo. build/documentos.js hace merge de
+// mediciones REASIGNANDO `HERZON_DATA.series.<clave> = arregloNuevo`
+// (nunca in-place, ver mergeMediciones) -- se reproduce ese mismo patrón
+// aquí para probar que la vista YA MONTADA (rootSeg de la sección 5) capta
+// el cambio sin volver a montarse.
+// ---------------------------------------------------------------------
+// La sección 9 (causa raíz) montó una SEGUNDA instancia de la vista
+// (rootSegCausaRaiz) para instrumentar Herzon.Charts, así que
+// listenersEventoImportacion ya trae 2 entradas en este punto -- la [0] es
+// la de rootSeg (verificada arriba, en la sección 6, justo tras su único
+// montaje) y es la que corresponde a `cardPeso`/`cardMusculo`/etc. de más
+// arriba; se dispara esa.
+afirmar(listenersEventoImportacion.length === 2,
+  'prod-1: tras el montaje adicional de la sección de causa raíz debe haber 2 listeners acumulados (uno por cada montaje de Vista Seguimiento)');
+
+var pesoAntesDeImportar = DATA.series.peso_kg.slice();
+var semanasAntesDeImportar = DATA.series.semanas.slice();
+var totalSemanasAntes = semanasAntesDeImportar.length;
+
+// Reasigna los arreglos (no los muta in-place) -- mismo patrón que
+// mergeMediciones en build/documentos.js -- agregando una semana 13 nueva
+// con un peso de 69.5kg claramente distinto a cualquier valor existente.
+DATA.series.semanas = semanasAntesDeImportar.concat([totalSemanasAntes + 1]);
+DATA.series.peso_kg = pesoAntesDeImportar.concat([69.5]);
+DATA.series.grasa_pct = DATA.series.grasa_pct.concat([DATA.series.grasa_pct[DATA.series.grasa_pct.length - 1]]);
+DATA.series.musculo_kg = DATA.series.musculo_kg.concat([DATA.series.musculo_kg[DATA.series.musculo_kg.length - 1]]);
+DATA.series.cintura_cm = DATA.series.cintura_cm.concat([DATA.series.cintura_cm[DATA.series.cintura_cm.length - 1]]);
+
+afirmar(typeof listenersEventoImportacion[0] === 'function', 'prod-1: el listener capturado de herzon:mediciones-importadas debe ser una función invocable');
+listenersEventoImportacion[0]({ type: 'herzon:mediciones-importadas', detail: { agregadas: 1, actualizadas: 0, errores: 0 } });
+
+// Herzon.filters.getRange() de este selfcheck sigue fijo en 12 (el stub no
+// rastrea el último rango notificado por los botones): con 13 semanas
+// totales y un rango activo de 12, redibujar debe recortar a las últimas
+// 12 -- si la serie siguiera siendo la vieja capturada al montar (12
+// semanas), el conteo de puntos no cambiaría y el valor nuevo (69.5) jamás
+// aparecería en el texto de la card.
+afirmar(puntosDe(polylinesDe(cardPeso)[0]).length === 12,
+  'prod-1: tras disparar herzon:mediciones-importadas con una semana nueva, la línea de peso debe seguir mostrando 12 puntos (recorte contra el rango activo=12 sobre 13 semanas totales), evidencia de que SÍ releyó la serie');
+afirmar(textosDe(cardPeso).join(' ').indexOf('69.5') !== -1,
+  'prod-1: la línea de peso debe mostrar el valor recién importado (69.5) sin volver a montar la vista');
+afirmar(puntosDe(polylinesDe(cardMusculo)[0]).length === 12 && puntosDe(polylinesDe(cardGrasa)[0]).length === 12 && puntosDe(polylinesDe(cardCintura)[0]).length === 12,
+  'prod-1: masa muscular, grasa corporal y cintura también deben re-renderizarse con la serie importada (redibujar relee TODA G.HERZON_DATA.series, no solo peso)');
+
+// ---------------------------------------------------------------------
+// 12. Anti-regresión D1 (QA ronda 1): ninguna de estas palabras en español
 //    sin acento/eñe puede reaparecer en el CÓDIGO FUENTE de este módulo
 //    (comentarios incluidos). Coincidencia con límite de palabra.
 // ---------------------------------------------------------------------
 var PALABRAS_SIN_ACENTO_PROHIBIDAS = [
   'anos', 'Composicion', 'Calorias', 'Regimen', 'Probiotico', 'clinica',
-  'demostracion', 'sinteticos', 'ultimas', 'capsula'
+  'demostracion', 'sinteticos', 'ultimas', 'capsula', 'jerarquia', 'raiz',
+  'heroe', 'mecanica'
 ];
 for (var pa = 0; pa < PALABRAS_SIN_ACENTO_PROHIBIDAS.length; pa++) {
   var palabra = PALABRAS_SIN_ACENTO_PROHIBIDAS[pa];

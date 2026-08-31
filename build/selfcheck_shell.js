@@ -436,18 +436,34 @@ assert(!/Herzon\.Views\s*=/.test(runtimeSrc), 'hz-runtime no invade el namespace
 assert(!/HERZON_DATA\s*=/.test(runtimeSrc), 'hz-runtime no define HERZON_DATA (dueño T-001), solo lo lee si existe');
 
 // ---------------------------------------------------------------
-// 18. QA-R1 anti-regresión D4: grids con wrap (auto-fit/minmax ~300px,
-//     nunca 220px) y tablas con su propio overflow-x:auto.
+// 18. QA-R1 anti-regresión D4 (piso ACTUALIZADO por Adendum R6, fini-6):
+//     grids con wrap (auto-fit/minmax) y tablas con su propio
+//     overflow-x:auto.
+//
+//     R6 (fini-6, alcance shell de T-026) baja el piso de 300px a 260px
+//     para que las 4 stat tiles de Resumen (IMC / Grasa corporal / Cintura
+//     / Adherencia) quepan en UNA fila a 1240px sin dejar la última
+//     huérfana en su propia fila (con 300px solo entraban 3 por fila:
+//     3*300 + 2*16 = 932px de 1176px disponibles, la 4a se iba sola).
+//     Aritmética que preserva la garantía original de D4 ("nunca 5 cards
+//     forzadas en una fila a 1240px"): a 1240px el contenido disponible es
+//     1240 - 2*32 (padding lateral clamp(...,32px) de .hz-main) = 1176px;
+//     con piso 260px caben 4 columnas (4*260 + 3*16 = 1088 <= 1176) pero
+//     NUNCA 5 (5*260 + 4*16 = 1364 > 1176) -- D4 sigue sin poder regresar,
+//     solo se relaja lo suficiente para el caso de 4 tiles de fini-6. El
+//     piso previamente prohibido de 220px (el que sí permitía 5 en una
+//     fila) sigue prohibido.
 // ---------------------------------------------------------------
 var gridRuleBlock = extractBlock(cssText, '.hz-grid {');
 assert(gridRuleBlock.length > 0, '.hz-grid tiene una regla CSS con contenido (D4)');
 assert(/auto-fit/.test(gridRuleBlock), '.hz-grid usa auto-fit en grid-template-columns (D4: wrap en vez de forzar todas las cards en una fila)');
 assert(/minmax\(/.test(gridRuleBlock), '.hz-grid usa minmax() en grid-template-columns (D4)');
 assert(
-  /minmax\(\s*min\(\s*300px\s*,\s*100%\s*\)\s*,\s*1fr\s*\)/.test(gridRuleBlock),
-  '.hz-grid tiene piso de ~300px por columna (min(300px, 100%)) que colapsa a 100% del contenedor en viewports angostos (D4: nunca 5 cards en una fila a 1240px; D6: nunca desborda a <=420px)'
+  /minmax\(\s*min\(\s*260px\s*,\s*100%\s*\)\s*,\s*1fr\s*\)/.test(gridRuleBlock),
+  '.hz-grid tiene piso de 260px por columna (min(260px, 100%)) que colapsa a 100% del contenedor en viewports angostos (R6/fini-6: 4 stat tiles de Resumen caben en una fila a 1240px; D4: nunca 5 cards en una fila a 1240px; D6: nunca desborda a <=420px)'
 );
-assert(!/minmax\(\s*220px/.test(gridRuleBlock), '.hz-grid ya NO usa el piso previo de 220px que permitía 5 (o 4) cards forzadas en una sola fila a 1240px (regresión D4)');
+assert(!/minmax\(\s*220px/.test(gridRuleBlock), '.hz-grid ya NO usa el piso de 220px que permitía 5 cards forzadas en una sola fila a 1240px (regresión D4, ver aritmética arriba)');
+assert(!/minmax\(\s*min\(\s*300px/.test(gridRuleBlock), '.hz-grid ya NO usa el piso previo de 300px de R1-R5 (R6/fini-6 lo relaja a 260px a propósito para cerrar la huérfana de 4 stat tiles, ver justificación aritmética arriba)');
 
 var cardRuleBlockD4 = extractBlock(cssText, '.hz-card {');
 assert(/min-width:\s*0;/.test(cardRuleBlockD4), '.hz-card tiene min-width:0 (evita que el contenido de una card -- p.ej. una tabla ancha -- fuerce el track del grid a desbordar en vez de hacer scroll propio, D4)');
@@ -661,7 +677,129 @@ assert(/\.hz-doc-documento\s*\{\s*display:\s*none;\s*\}/.test(cssText), '.hz-doc
 // no se repite el escaneo aquí para no duplicar el mismo assert.
 
 // ---------------------------------------------------------------
-// Cierre
+// 23. Adendum R6 (T-026): refinamiento Justesse (modo preserve). Una
+//     aserción de presencia del selector + valor clave por cada regla
+//     nueva del alcance shell (plan.md 3.J: aserciones nuevas para cada
+//     regla agregada). Los 4 bloques de tokens no se tocan en esta
+//     sección (ya cubiertos por los checks 10-11 y 22.5 arriba).
 // ---------------------------------------------------------------
+
+// 23.1 jera-3/fini-3: el slider del recomendador dentro de un campo del
+// formulario deja de estirarse verticalmente.
+var recoSliderEnCampoBlock = extractBlock(cssText, '.hz-form-campo .hz-reco-slider {');
+assert(recoSliderEnCampoBlock.length > 0, '.hz-form-campo .hz-reco-slider (R6 jera-3/fini-3) tiene una regla CSS con contenido');
+assert(/flex:\s*0 0 auto;/.test(recoSliderEnCampoBlock), '.hz-form-campo .hz-reco-slider fija flex: 0 0 auto (R6 jera-3/fini-3: ya no se estira ~200px de alto en layout vertical)');
+assert(/width:\s*100%;/.test(recoSliderEnCampoBlock), '.hz-form-campo .hz-reco-slider fija width: 100% (R6 jera-3/fini-3: ocupa el ancho del campo)');
+assert(/min-width:\s*0;/.test(recoSliderEnCampoBlock), '.hz-form-campo .hz-reco-slider fija min-width: 0 (R6 jera-3/fini-3)');
+
+// 23.2 jera-4: reasignación de token en prosa secundaria (--text-muted ->
+// --text-secondary); --text-muted queda solo para ejes/labels de gráfica.
+var notaBlockR6 = extractBlock(cssText, '.hz-nota {');
+assert(notaBlockR6.length > 0, '.hz-nota (R6 jera-4) tiene una regla CSS con contenido');
+assert(/color:\s*var\(--text-secondary\);/.test(notaBlockR6), '.hz-nota usa color: var(--text-secondary) (R6 jera-4: prosa 4.5:1, ya no --text-muted)');
+assert(!/var\(--text-muted\)/.test(notaBlockR6), '.hz-nota ya NO referencia var(--text-muted) (R6 jera-4, anti-regresión)');
+
+var docPieBlockR6 = extractBlock(cssText, '.hz-doc-pie {');
+assert(docPieBlockR6.length > 0, '.hz-doc-pie (R6 jera-4) tiene una regla CSS con contenido');
+assert(/color:\s*var\(--text-secondary\);/.test(docPieBlockR6), '.hz-doc-pie usa color: var(--text-secondary) (R6 jera-4: prosa 4.5:1, ya no --text-muted)');
+assert(!/var\(--text-muted\)/.test(docPieBlockR6), '.hz-doc-pie ya NO referencia var(--text-muted) (R6 jera-4, anti-regresión)');
+
+var axisTickBlockR6 = extractBlock(cssText, '.hz-axis-tick {');
+assert(/var\(--text-muted\)|fill:\s*var\(--axis\)/.test(axisTickBlockR6) === true || /fill:\s*var\(--axis\)/.test(axisTickBlockR6), '.hz-axis-tick conserva su tinta de eje (anti-regresión R6 jera-4: --text-muted queda reservado para ejes/labels de gráfica, no se retira de ahí)');
+
+// 23.3 prod-7/fini-7: gramática de botones. Radius 8px en acciones
+// one-shot; píldora 999px reservada a .hz-badge y .hz-filtro-btn. Disabled
+// + hover/focus-visible garantizados en toda acción.
+var docBtnBlockR6 = extractBlock(cssText, '.hz-doc-btn {');
+assert(docBtnBlockR6.length > 0, '.hz-doc-btn tiene una regla CSS con contenido');
+assert(/border-radius:\s*8px;/.test(docBtnBlockR6), '.hz-doc-btn usa border-radius: 8px (R6 prod-7/fini-7: familia rectangular de acciones one-shot)');
+assert(!/border-radius:\s*999px;/.test(docBtnBlockR6), '.hz-doc-btn ya NO usa border-radius: 999px (R6 prod-7/fini-7: la píldora queda reservada a .hz-badge y .hz-filtro-btn)');
+
+// Needle anclado a inicio de línea: ".hz-doc-import-label {" también
+// aparece como sufijo del selector compuesto ".hz-doc-import:focus-within
+// .hz-doc-import-label {" (varias líneas antes); sin el "\n" inicial,
+// extractBlock encontraría ESE bloque primero por ser una simple
+// coincidencia de subcadena.
+var docImportLabelBlockR6 = extractBlock(cssText, '\n.hz-doc-import-label {');
+assert(docImportLabelBlockR6.length > 0, '.hz-doc-import-label tiene una regla CSS con contenido');
+assert(/border-radius:\s*8px;/.test(docImportLabelBlockR6), '.hz-doc-import-label usa border-radius: 8px (R6 prod-7/fini-7)');
+assert(!/border-radius:\s*999px;/.test(docImportLabelBlockR6), '.hz-doc-import-label ya NO usa border-radius: 999px (R6 prod-7/fini-7)');
+
+var badgeBlockR6 = extractBlock(cssText, '.hz-badge {');
+assert(/border-radius:\s*999px;/.test(badgeBlockR6), '.hz-badge conserva border-radius: 999px (R6 prod-7/fini-7: la píldora queda reservada a chips, anti-regresión)');
+var filtroBtnBlockR6 = extractBlock(cssText, '.hz-filtro-btn {');
+assert(/border-radius:\s*999px;/.test(filtroBtnBlockR6), '.hz-filtro-btn conserva border-radius: 999px (R6 prod-7/fini-7: la píldora queda reservada a filtros, anti-regresión)');
+
+var disabledBlockR6 = extractBlock(cssText, '.hz-doc-btn:disabled,');
+assert(disabledBlockR6.length > 0, 'existe una regla de estado disabled para .hz-doc-btn/.hz-doc-import-label/.hz-table-toggle (R6 prod-7/fini-7, Adendum R6 punto 6)');
+assert(/opacity:\s*0\.5;/.test(disabledBlockR6), 'la regla disabled (R6 prod-7/fini-7) fija opacity (atenúa la acción deshabilitada)');
+assert(/cursor:\s*default;/.test(disabledBlockR6), 'la regla disabled (R6 prod-7/fini-7) fija cursor: default');
+assert(/\.hz-table-toggle:disabled/.test(cssText), 'el selector combinado de disabled incluye .hz-table-toggle (R6: "garantizado en todas las acciones")');
+
+assert(/\.hz-doc-btn:hover/.test(cssText), '.hz-doc-btn conserva :hover (R6: hover garantizado en todas las acciones)');
+assert(/\.hz-doc-btn:focus-visible/.test(cssText), '.hz-doc-btn conserva :focus-visible (R6: focus-visible garantizado en todas las acciones)');
+assert(/\.hz-doc-import-label:hover/.test(cssText), '.hz-doc-import-label conserva :hover (R6: hover garantizado en todas las acciones)');
+assert(/\.hz-doc-import-label:focus-visible\s*\{/.test(cssText), '.hz-doc-import-label tiene :focus-visible propio (R6: focus-visible garantizado en todas las acciones)');
+assert(/\.hz-table-toggle:hover/.test(cssText), '.hz-table-toggle conserva :hover (anti-regresión, familia de acciones)');
+assert(/\.hz-table-toggle:focus-visible/.test(cssText), '.hz-table-toggle conserva :focus-visible (anti-regresión, familia de acciones)');
+
+// 23.4 fini-5/resp-2: color-scheme sigue al toggle en ambas direcciones.
+// Regla nueva ADITIVA con el MISMO selector que el bloque de tokens
+// (`:root[data-theme="dark"]`/`:root[data-theme="light"]` ya existen para
+// los hexes, congelados, sección 3); esta es una segunda declaración
+// independiente solo con `color-scheme`, así que se verifica por patrón
+// literal en cssText en vez de vía extractBlock (que devolvería el
+// PRIMER bloque -- el de tokens, sin tocar -- y no esta regla nueva).
+assert(
+  /:root\[data-theme="dark"\]\s*\{\s*color-scheme:\s*dark;\s*\}/.test(cssText),
+  'existe la regla nueva :root[data-theme="dark"] { color-scheme: dark; } (R6 fini-5/resp-2: la UI nativa -- p.ej. el track del slider -- cambia de tema con el toggle; no modifica el bloque de tokens congelado, es una regla aditiva independiente con el mismo selector)'
+);
+assert(
+  /:root\[data-theme="light"\]\s*\{\s*color-scheme:\s*light;\s*\}/.test(cssText),
+  'existe la regla nueva :root[data-theme="light"] { color-scheme: light; } (R6 fini-5/resp-2: espejo del lado claro, regla aditiva independiente)'
+);
+var htmlBaseBlockR6 = extractBlock(cssText, 'html {');
+assert(/color-scheme:\s*light dark;/.test(htmlBaseBlockR6), 'html conserva color-scheme: light dark como default SIN toggle (R6 fini-5/resp-2: el toggle solo gana cuando está activo, anti-regresión)');
+
+// 23.5 fini-8: las tabs no se desplazan al activarse -- peso constante.
+var tabBlockR6 = extractBlock(cssText, '.hz-tab {');
+assert(/font-weight:\s*600;/.test(tabBlockR6), '.hz-tab fija font-weight: 600 constante en todo estado (R6 fini-8: la métrica bold queda reservada, no salta al activar)');
+var tabActivoBlockR6 = extractBlock(cssText, '.hz-tab[aria-selected="true"] {');
+assert(tabActivoBlockR6.length > 0, '.hz-tab[aria-selected="true"] tiene una regla CSS con contenido');
+assert(!/font-weight/.test(tabActivoBlockR6), '.hz-tab[aria-selected="true"] ya NO declara font-weight propio (R6 fini-8: el peso es constante, viene de .hz-tab base, cero salto de ancho al activar)');
+assert(/border-bottom-color:\s*var\(--series-1\);/.test(tabActivoBlockR6), '.hz-tab[aria-selected="true"] conserva el subrayado con acento series-1 (R6 fini-8: se mantiene el indicador visual de estado activo)');
+assert(/color:\s*var\(--text-primary\);/.test(tabActivoBlockR6), '.hz-tab[aria-selected="true"] conserva el cambio de color a --text-primary (R6 fini-8)');
+
+// 23.6 resp-3: targets táctiles >=44px en pantallas táctiles o angostas.
+assert(html.indexOf('@media (pointer: coarse), (max-width: 640px)') > -1, 'existe literalmente @media (pointer: coarse), (max-width: 640px) (R6 resp-3)');
+var tactilBlockR6 = extractBlock(cssText, '@media (pointer: coarse), (max-width: 640px) {');
+assert(tactilBlockR6.length > 0, 'el bloque de media query táctil (R6 resp-3) tiene contenido');
+assert(/min-height:\s*44px;/.test(tactilBlockR6), 'el bloque táctil (R6 resp-3) fija min-height: 44px');
+['hz-filtro-btn', 'hz-doc-btn', 'hz-doc-import-label', 'hz-table-toggle'].forEach(function (cls) {
+  assert(hasClassSelector(tactilBlockR6, cls), 'el bloque táctil (R6 resp-3) incluye el selector .' + cls);
+});
+
+// 23.7 resp-4: reglas de salto de página dentro del @media print existente.
+assert(/\.hz-doc-seccion\s*>\s*p\s*\{\s*break-after:\s*avoid-page;\s*\}/.test(printOuterBlock), '@media print tiene ".hz-doc-seccion > p { break-after: avoid-page; }" (R6 resp-4: un párrafo de sección no queda solo al pie de página)');
+assert(/\.hz-doc-seccion\s+\.hz-table-wrap\s*\{\s*break-inside:\s*avoid-page;\s*overflow-x:\s*visible;\s*\}/.test(printOuterBlock), '@media print tiene ".hz-doc-seccion .hz-table-wrap { break-inside: avoid-page; overflow-x: visible; }" (R6 resp-4: tabla no se parte entre páginas y su scroll de pantalla no aplica al imprimir)');
+
+// 23.8 Adendum R6 punto 1: regla data-ancho="completo" (consumida por
+// T-028/T-029 vía setAttribute; primer consumidor: régimen de suplementos).
+assert(/\.hz-grid\s*>\s*\[data-ancho="completo"\]\s*\{\s*grid-column:\s*1\s*\/\s*-1;\s*\}/.test(cssText), 'existe la regla .hz-grid > [data-ancho="completo"] { grid-column: 1 / -1; } (Adendum R6 punto 1)');
+
+// 23.9 fini-6 (parte shell): verificación aritmética de que el piso NUEVO
+// de .hz-grid deja entrar 4 columnas a 1240px (contenido disponible =
+// 1240 - 2*32 de padding lateral clamp(...,32px) de .hz-main) pero NUNCA
+// 5 (D4 no regresa). Ligado al valor real extraído de la regla, no a un
+// número hardcodeado dos veces.
+var floorMatchR6 = /minmax\(\s*min\(\s*(\d+)px/.exec(gridRuleBlock);
+assert(floorMatchR6 !== null, 'se pudo extraer el piso numérico de .hz-grid para verificar la aritmética de fini-6');
+if (floorMatchR6 !== null) {
+  var floorPxR6 = parseInt(floorMatchR6[1], 10);
+  var contenidoA1240R6 = 1240 - 2 * 32;
+  assert(4 * floorPxR6 + 3 * 16 <= contenidoA1240R6, 'con el piso actual de .hz-grid (' + floorPxR6 + 'px), 4 columnas caben en una fila a 1240px (fini-6: 4*piso + 3*gap <= ' + contenidoA1240R6 + 'px de contenido disponible)');
+  assert(5 * floorPxR6 + 4 * 16 > contenidoA1240R6, 'con el piso actual de .hz-grid (' + floorPxR6 + 'px), 5 columnas NO caben en una fila a 1240px (D4 no regresa)');
+}
+
 console.log('checks ejecutados: ' + checks);
 process.exit(0);
