@@ -118,6 +118,51 @@
   }
 
   // -----------------------------------------------------------------------
+  // PR-05 (R9, decisión C6): nombres de exportables por modo + slug de
+  // cliente. `slugCliente(nombre)`: minúsculas, sin acentos (normalización
+  // NFD + descarte de marcas diacríticas), espacios y símbolos a guiones,
+  // solo `[a-z0-9-]`, sin guiones sobrantes al inicio/fin. Ej.:
+  // "María José" -> "maria-jose".
+  // -----------------------------------------------------------------------
+  function slugCliente(nombre) {
+    if (typeof nombre !== 'string') { return ''; }
+    var normalizado = nombre.normalize ? nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : nombre;
+    return normalizado
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  // Lectura defensiva del Almacén (PR-05): `G.Herzon.Almacen && Almacen.modo()`.
+  // Sin Almacén disponible, o con Almacén en modo no-real, se trata como
+  // demo (el nombre de archivo nunca debe insinuar que es un cliente real
+  // cuando no hay forma fiable de saberlo).
+  function almacenDisponible() {
+    var Almacen = G.Herzon && G.Herzon.Almacen;
+    return (Almacen && typeof Almacen.modo === 'function') ? Almacen : null;
+  }
+
+  function enModoReal() {
+    var Almacen = almacenDisponible();
+    return !!(Almacen && Almacen.modo() === 'real');
+  }
+
+  // nombreArchivoExportable(base, fecha, extension): 'rinde-<slug>-<base>-
+  // <fecha>.<extension>' en real (fallback 'rinde-<base>-<fecha>.<extension>'
+  // sin nombre de cliente disponible), 'rinde-demo-<base>-<fecha>.<extension>'
+  // en demo/sin Almacén.
+  function nombreArchivoExportable(base, fecha, extension) {
+    if (!enModoReal()) {
+      return 'rinde-demo-' + base + '-' + fecha + '.' + extension;
+    }
+    var Almacen = almacenDisponible();
+    var activo = (Almacen && typeof Almacen.clienteActivo === 'function') ? Almacen.clienteActivo() : null;
+    var slug = (activo && activo.nombre) ? slugCliente(activo.nombre) : '';
+    var prefijo = slug ? ('rinde-' + slug + '-') : 'rinde-';
+    return prefijo + base + '-' + fecha + '.' + extension;
+  }
+
+  // -----------------------------------------------------------------------
   // Herzon.planActivo() — Adendum R5 punto 4 + Adendum R6 punto 3: "la forma
   // REAL documentada en la cabecera de vista_dieta_supl.js ES el contrato".
   // Esa forma es { plan, kcalObjetivo, escalaPorciones, macros:{proteina_g,
@@ -644,13 +689,39 @@
     if (esError) { elEstado.classList.add('hz-delta-bad'); } else { elEstado.classList.remove('hz-delta-bad'); }
   }
 
-  function construirMensajeImportacion(resultado, resumenMerge) {
+  // -----------------------------------------------------------------------
+  // PR-07 (R9, decisión C8): textos EXACTOS por modo. Jamás prometer
+  // guardado que no ocurre: solo el texto 'real' afirma persistencia, y
+  // solo se usa cuando la importación de verdad enrutó por
+  // Herzon.Almacen.mergeMediciones (contextoImportacion() === 'real').
+  // -----------------------------------------------------------------------
+  var TEXTO_IMPORT_GUARDADO_REAL = 'Guardado en este dispositivo.';
+  var TEXTO_IMPORT_DEMO = 'En modo demo los datos importados no se guardan: se pierden al recargar la página.';
+  var TEXTO_IMPORT_SIN_ALMACEN = 'Estos datos importados NO se guardan: se pierden al recargar la página.';
+  var TEXTO_FORMATO_REAL = 'Los datos importados se guardan en este dispositivo.';
+  var TEXTO_FORMATO_DEMO = TEXTO_IMPORT_DEMO;
+  var TEXTO_FORMATO_SIN_ALMACEN = 'Los datos importados no se guardan: se pierden al recargar la página.';
+
+  // contextoImportacion(): 'real' | 'demo' | 'sin-almacen'. Lectura
+  // defensiva y EN VIVO (nunca cacheada): el modo puede cambiar dentro de
+  // la misma carga de página vía el selector de cliente o el botón de modo
+  // (Adendum R9 punto 3). 'sin-almacen' cubre tanto la ausencia de
+  // Herzon.Almacen como una versión sin mergeMediciones -- la advertencia
+  // honesta de no-persistencia de siempre.
+  function contextoImportacion() {
+    var Almacen = G.Herzon && G.Herzon.Almacen;
+    if (!Almacen || typeof Almacen.modo !== 'function' || typeof Almacen.mergeMediciones !== 'function') {
+      return 'sin-almacen';
+    }
+    return Almacen.modo() === 'real' ? 'real' : 'demo';
+  }
+
+  function construirMensajeImportacion(resultado, resumenMerge, contexto) {
     var partes = [];
     if (resumenMerge.agregadas || resumenMerge.actualizadas) {
-      partes.push(
-        'Importación completa: ' + resumenMerge.agregadas + ' semana(s) nueva(s), ' +
-        resumenMerge.actualizadas + ' actualizada(s).'
-      );
+      var base = 'Importación completa: ' + resumenMerge.agregadas + ' semana(s) nueva(s), ' +
+        resumenMerge.actualizadas + ' actualizada(s).';
+      partes.push(contexto === 'real' ? (base + ' ' + TEXTO_IMPORT_GUARDADO_REAL) : base);
     }
     if (resultado.errores.length) {
       var primeras = resultado.errores.slice(0, 3).map(function (e) { return e.mensaje; }).join(' | ');
@@ -660,7 +731,11 @@
       );
     }
     if (!partes.length) { partes.push('El archivo no contenía filas válidas para importar.'); }
-    partes.push('Estos datos importados NO se guardan: se pierden al recargar la página.');
+    if (contexto === 'demo') {
+      partes.push(TEXTO_IMPORT_DEMO);
+    } else if (contexto === 'sin-almacen') {
+      partes.push(TEXTO_IMPORT_SIN_ALMACEN);
+    }
     return partes.join(' ');
   }
 
@@ -679,22 +754,35 @@
 
   // Orquesta el pipeline completo (texto crudo -> parseo -> merge -> aviso
   // -> re-render -> evento), separado de FileReader para que sea testeable
-  // de forma directa desde el selfcheck.
+  // de forma directa desde el selfcheck. PR-07 (R9, decisión C8): en modo
+  // real enruta el merge por Herzon.Almacen.mergeMediciones (valida y
+  // PERSISTE sobre clientes[activoId]); ese camino ya dispara
+  // herzon:mediciones-importadas por su cuenta (Adendum R8 punto 1), así
+  // que este módulo NO lo vuelve a disparar para no duplicarlo. En
+  // demo/sin Almacén, el merge sigue siendo SOLO EN MEMORIA (Adendum R5
+  // punto 3), con el evento propio de siempre.
   function procesarImportacionCsv(HERZON_DATA, texto, elEstado, actualizarDocumentoCb) {
     var opcionesRango = rangoFechasDesdeInicio(HERZON_DATA);
     var resultado = parseCsvMediciones(texto, opcionesRango);
+    var contexto = contextoImportacion();
     var resumenMerge = { agregadas: 0, actualizadas: 0 };
+    var eventoDisparado = false;
     if (resultado.filasValidas.length) {
-      resumenMerge = mergeMediciones(HERZON_DATA, resultado.filasValidas);
+      if (contexto === 'real') {
+        var resAlmacen = G.Herzon.Almacen.mergeMediciones(resultado.filasValidas);
+        resumenMerge = { agregadas: resAlmacen.agregadas || 0, actualizadas: resAlmacen.actualizadas || 0 };
+        eventoDisparado = !!(resumenMerge.agregadas || resumenMerge.actualizadas);
+      } else {
+        resumenMerge = mergeMediciones(HERZON_DATA, resultado.filasValidas);
+        eventoDisparado = dispararEventoMediciones(resumenMerge, resultado.errores.length);
+      }
     }
-    var mensaje = construirMensajeImportacion(resultado, resumenMerge);
+    var mensaje = construirMensajeImportacion(resultado, resumenMerge, contexto);
     var esErrorTotal = resultado.filasValidas.length === 0 && resultado.errores.length > 0;
     mostrarEstadoImportacion(elEstado, mensaje, esErrorTotal);
 
-    var eventoDisparado = false;
-    if (resultado.filasValidas.length) {
-      if (typeof actualizarDocumentoCb === 'function') { actualizarDocumentoCb(); }
-      eventoDisparado = dispararEventoMediciones(resumenMerge, resultado.errores.length);
+    if (resultado.filasValidas.length && typeof actualizarDocumentoCb === 'function') {
+      actualizarDocumentoCb();
     }
     return { resultado: resultado, resumenMerge: resumenMerge, eventoDisparado: eventoDisparado };
   }
@@ -738,12 +826,12 @@
     botonDescargarPlan.addEventListener('click', function () {
       var payload = actualizarDocumento();
       var html = generarHtmlDescargable(payload);
-      descargarArchivo(doc, html, 'herzon-plan-' + payload.fechaGeneracion + '.html', 'text/html');
+      descargarArchivo(doc, html, nombreArchivoExportable('plan', payload.fechaGeneracion, 'html'), 'text/html');
     });
 
     botonDescargarDatos.addEventListener('click', function () {
       var csv = generarCsvDatos(HERZON_DATA);
-      descargarArchivo(doc, csv, 'herzon-datos-' + formatoFechaHoy(new Date()) + '.csv', 'text/csv');
+      descargarArchivo(doc, csv, nombreArchivoExportable('datos', formatoFechaHoy(new Date()), 'csv'), 'text/csv');
     });
 
     var elEstado = null;
@@ -763,16 +851,34 @@
       botonPlantilla.textContent = 'Plantilla CSV de mediciones';
       toolbar.appendChild(botonPlantilla);
       botonPlantilla.addEventListener('click', function () {
-        descargarArchivo(doc, generarPlantillaCsv(), 'herzon-plantilla-mediciones.csv', 'text/csv');
+        // Plantilla neutra (igual en ambos modos, decisión C6/PR-05): nunca
+        // lleva prefijo demo ni slug de cliente.
+        descargarArchivo(doc, generarPlantillaCsv(), 'rinde-plantilla-mediciones.csv', 'text/csv');
       });
 
       var elFormatoCsv = crearHTML(doc, 'p');
       elFormatoCsv.classList.add('hz-nota');
       elFormatoCsv.setAttribute('id', 'hz-doc-formato-csv');
-      elFormatoCsv.textContent =
-        'Formato esperado del CSV: ' + COLUMNAS_MEDICIONES.join(', ') +
-        ' (fecha en AAAA-MM-DD). Los datos importados no se guardan: se pierden al recargar la página.';
+      // actualizarNotaFormatoCsv(): relee contextoImportacion() EN VIVO y
+      // reescribe el nodo -- nunca cachea el modo al montar. Necesario
+      // porque el modo puede cambiar dentro de la misma carga de página
+      // (selector de cliente o botón "Usar mis datos"/"Ver demo") sin
+      // volver a llamar init(); jamás debe quedar prometiendo un guardado
+      // que ya no aplica (PR-07, Adendum R9 punto 3 -- mismo patrón que
+      // el listener herzon:modo-cambiado de vista_metricas.js/vista_dieta_supl.js).
+      function actualizarNotaFormatoCsv() {
+        var contextoFormato = contextoImportacion();
+        var textoPersistenciaFormato = (contextoFormato === 'real') ? TEXTO_FORMATO_REAL :
+          (contextoFormato === 'demo') ? TEXTO_FORMATO_DEMO : TEXTO_FORMATO_SIN_ALMACEN;
+        elFormatoCsv.textContent =
+          'Formato esperado del CSV: ' + COLUMNAS_MEDICIONES.join(', ') +
+          ' (fecha en AAAA-MM-DD). ' + textoPersistenciaFormato;
+      }
+      actualizarNotaFormatoCsv();
       toolbar.appendChild(elFormatoCsv);
+      if (typeof G.addEventListener === 'function') {
+        G.addEventListener('herzon:modo-cambiado', function () { actualizarNotaFormatoCsv(); });
+      }
 
       elEstado = crearHTML(doc, 'p');
       elEstado.classList.add('hz-nota');
@@ -812,6 +918,11 @@
     mergeMediciones: mergeMediciones,
     descargarArchivo: descargarArchivo,
     procesarImportacionCsv: procesarImportacionCsv,
+    // Aditivas R9 (PR-05/PR-07): expuestas para que el selfcheck las
+    // ejercite de forma directa además del flujo de UI completo.
+    slugCliente: slugCliente,
+    nombreArchivoExportable: nombreArchivoExportable,
+    contextoImportacion: contextoImportacion,
     init: init
   };
 

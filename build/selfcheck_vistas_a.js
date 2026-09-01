@@ -19,20 +19,74 @@ function afirmar(condicion, mensaje) {
 }
 
 // ---------------------------------------------------------------------
-// 0. Carga del modulo: DOM headless antes de require (plan.md 3.A), y stub
+// Mock de addEventListener/dispatchEvent EN MEMORIA (mismo patrón que
+// build/selfcheck_almacen.js): build/almacen.js usa G.dispatchEvent +
+// `new CustomEvent(...)` para notificar herzon:modo-cambiado, y
+// build/vista_dieta_supl.js (R9, MC-07) usa G.addEventListener para
+// escucharlo. Node trae CustomEvent global desde v18/19, pero NO trae
+// addEventListener/dispatchEvent en globalThis -- sin este mock, el
+// listener del módulo nunca se registra ni se dispara, y toda la
+// reactividad multi-cliente (sección 7) sería un falso verde silencioso.
+// ---------------------------------------------------------------------
+function instalarBusDeEventos() {
+  var listenersPorTipo = {};
+  globalThis.addEventListener = function (tipo, manejador) {
+    listenersPorTipo[tipo] = listenersPorTipo[tipo] || [];
+    listenersPorTipo[tipo].push(manejador);
+  };
+  globalThis.removeEventListener = function (tipo, manejador) {
+    var lista = listenersPorTipo[tipo] || [];
+    var idx = lista.indexOf(manejador);
+    if (idx !== -1) { lista.splice(idx, 1); }
+  };
+  globalThis.dispatchEvent = function (evento) {
+    var lista = listenersPorTipo[evento.type] || [];
+    for (var i = 0; i < lista.length; i++) { lista[i](evento); }
+    return true;
+  };
+}
+
+// Mock de localStorage EN MEMORIA (build/almacen.js lo usa para persistir
+// clientes reales; sin él, crearCliente/guardarPlan igual funcionan porque
+// almacen.js degrada con gracia, pero probar seleccionarCliente() tras
+// volverADemo() -- MC-07 "precarga desde planAplicado" -- necesita que el
+// remontaje lea lo mismo que se guardó).
+function crearLocalStorageMock() {
+  var almacen = {};
+  return {
+    getItem: function (clave) { return Object.prototype.hasOwnProperty.call(almacen, clave) ? almacen[clave] : null; },
+    setItem: function (clave, valor) { almacen[clave] = String(valor); },
+    removeItem: function (clave) { delete almacen[clave]; }
+  };
+}
+
+// ---------------------------------------------------------------------
+// 0. Carga del módulo: DOM headless antes de require (plan.md 3.A), y stub
 //    de Herzon.registerView que captura los registros (task T-004, criterio
 //    "instala un stub de Herzon.registerView que captura los registros").
 // ---------------------------------------------------------------------
 globalThis.window = globalThis;
+instalarBusDeEventos();
+globalThis.localStorage = crearLocalStorageMock();
 
 var TESTDOM_PATH = path.join(__dirname, 'testdom.js');
 var DATA_PATH = path.join(__dirname, 'data.js');
+var ALMACEN_PATH = path.join(__dirname, 'almacen.js');
 var CHARTS_PATH = path.join(__dirname, 'charts.js');
 var MOTOR_PATH = path.join(__dirname, 'motor_recomendacion.js');
 var VISTA_PATH = path.join(__dirname, 'vista_dieta_supl.js');
 
 require(TESTDOM_PATH);
 require(DATA_PATH);
+// R9 (T-045, orden de inyección real: data -> almacen -> charts -> vistas,
+// plan.md Adendum R8 punto 6): build/almacen.js NO conoce registerView (su
+// única API de UI es initUI, que este selfcheck no llama), así que
+// requerirlo antes del stub de abajo no interfiere con él. Se necesita
+// disponible ANTES de vista_dieta_supl.js porque ese módulo, al cargarse,
+// registra su listener de herzon:modo-cambiado (G.addEventListener, ya
+// mockeado arriba) y sus llamadas a G.Herzon.Almacen ocurren en tiempo de
+// interacción (sección 7), no al cargar.
+require(ALMACEN_PATH);
 require(CHARTS_PATH);
 // Adendum R5 (T-022): vista_dieta_supl.js consume Herzon.Motor (T-020) al
 // montar #reco-plan. build/motor_recomendacion.js NO toca document ni
@@ -173,7 +227,7 @@ afirmar(HERZON_DATA.paciente.pesoInicial_kg === 75 && HERZON_DATA.paciente.talla
 // 3. Vista "Plan de dieta": monta contra TestDOM, sin lanzar
 // ---------------------------------------------------------------------
 var rootPlan = doc.createElement('div');
-// Refleja EXACTAMENTE la marca estatica de build/shell.html (T-021): un
+// Refleja EXACTAMENTE la marca estática de build/shell.html (T-021): un
 // <div id="reco-plan" class="hz-card hz-reco-panel"> ya presente como
 // hermano de .hz-grid antes de que esta vista monte nada (plan.md Adendum
 // R5 punto 5). vista_dieta_supl.js debe REUTILIZAR este nodo, no duplicar
@@ -190,9 +244,9 @@ afirmar((function () {
 })(), 'Herzon.Views.plan (vía registerView) debe montar sin lanzar contra el TestDOM');
 
 afirmar(rootPlan.consultarTodo('.hz-reco-panel').length === 1,
-  'la vista Plan de dieta NO debe duplicar #reco-plan: debe reutilizar el nodo estatico de build/shell.html');
+  'la vista Plan de dieta NO debe duplicar #reco-plan: debe reutilizar el nodo estático de build/shell.html');
 afirmar(rootPlan.children.indexOf(recoPlanEstatico) !== -1,
-  'el #reco-plan estatico original debe seguir siendo el mismo nodo (reutilizado, no reemplazado)');
+  'el #reco-plan estático original debe seguir siendo el mismo nodo (reutilizado, no reemplazado)');
 
 afirmar(rootPlan.consultarTodo('.hz-hero').length === 1,
   'la vista Plan de dieta debe tener EXACTAMENTE un .hz-hero (regla 11)');
@@ -212,9 +266,22 @@ afirmar(chartsPlan.length === togglesPlan.length,
 var botonesRecoConTogglePlan = rootPlan.consultarTodo('.hz-table-toggle').filter(function (b) { return !b.hasAttribute('aria-expanded'); });
 afirmar(botonesRecoConTogglePlan.length === 6,
   'los botones del recomendador (Calcular + 5 "Usar este plan"/"Plan aplicado") deben reutilizar .hz-table-toggle (fini-4), tiene ' + botonesRecoConTogglePlan.length);
-botonesRecoConTogglePlan.forEach(function (boton) {
-  afirmar(Object.keys(boton.style).length === 0,
-    'los botones del recomendador no deben llevar propiedades de estilo inline (fini-4): usan .hz-table-toggle, no element.style');
+// R9 (LY-06b, decisión final): "Usar este plan"/"Plan aplicado" pasa a vivir
+// como último hijo de .hz-reco-razones, empujado a la derecha con
+// margin-left:auto -- ese ÚNICO estilo inline es el que autoriza el
+// hallazgo LY-06b (no hay clase reutilizable en shell.html para ese caso
+// puntual). El botón "Calcular necesidades" conserva la regla fini-4
+// original: cero estilo inline, solo .hz-table-toggle.
+var botonCalcularToggle = botonesRecoConTogglePlan.filter(function (b) { return b.getAttribute('data-accion') === 'calcular'; });
+var botonesUsarPlanToggle = botonesRecoConTogglePlan.filter(function (b) { return b.getAttribute('data-accion') === 'usar-plan'; });
+afirmar(botonCalcularToggle.length === 1 && botonesUsarPlanToggle.length === 5,
+  'debe haber exactamente 1 botón "Calcular necesidades" y 5 "Usar este plan"/"Plan aplicado" (uno por plantilla del ranking)');
+afirmar(Object.keys(botonCalcularToggle[0].style).length === 0,
+  'el botón "Calcular necesidades" no debe llevar propiedades de estilo inline (fini-4): usa .hz-table-toggle, no element.style');
+botonesUsarPlanToggle.forEach(function (boton) {
+  var clavesEstilo = Object.keys(boton.style);
+  afirmar(clavesEstilo.length === 1 && clavesEstilo[0] === 'marginLeft' && boton.style.marginLeft === 'auto',
+    'R9 (LY-06b): "Usar este plan"/"Plan aplicado" debe llevar SOLO marginLeft:auto inline (empuje a la derecha dentro de .hz-reco-razones), el resto del estilo viene de .hz-table-toggle');
 });
 afirmar(chartsPlan.length === 2,
   'la vista Plan de dieta debe tener exactamente 2 gráficas: macros por comida y calorías por día');
@@ -290,6 +357,58 @@ var barrasVisualesKcal = contarPorTagSinAtributo(contKcal, 'path', 'role');
 afirmar(barrasVisualesKcal.length === planActual.dias.length,
   'la gráfica de calorías por día debe tener una barra por cada uno de los ' + planActual.dias.length + ' días del plan');
 
+// ---------------------------------------------------------------------
+// R9 (DV-01): "Macronutrientes por comida" restringe las etiquetas de %
+// a la comida principal (la de mayor kcal, categoría "Comida") en vez de
+// rotular los 15 segmentos -- selectividad de saillance.
+// ---------------------------------------------------------------------
+var inicioLlamadaMacrosDV01 = fuenteVista.indexOf('Charts.apilada100(contMacros');
+var finLlamadaMacrosDV01 = fuenteVista.indexOf('});', inicioLlamadaMacrosDV01);
+var bloqueLlamadaMacrosDV01 = fuenteVista.slice(inicioLlamadaMacrosDV01, finLlamadaMacrosDV01);
+afirmar(/etiquetasSegmentoIndices\s*:/.test(bloqueLlamadaMacrosDV01),
+  'R9 (DV-01): la llamada a Charts.apilada100 de "Macronutrientes por comida" debe pasar etiquetasSegmentoIndices (selectividad: solo la comida principal conserva sus 3 %)');
+// Espejo LOCAL del mapa NOMBRES_MOMENTO de build/vista_dieta_supl.js (no se
+// importa: el selfcheck es Node puro y ese mapa vive en un closure privado
+// del módulo) -- solo para reconstruir qué categoría es "Comida" y así
+// predecir cuántas etiquetas de segmento debe dejar etiquetasSegmentoIndices.
+var NOMBRES_MOMENTO_TEST = {
+  desayuno: 'Desayuno',
+  colacion_manana: 'Colación matutina',
+  comida: 'Comida',
+  colacion_tarde: 'Colación vespertina',
+  cena: 'Cena'
+};
+var categoriasComidaActual = diaActual.comidas.map(function (c) { return NOMBRES_MOMENTO_TEST[c.momento] || c.momento; });
+var idxComidaPrincipalEsperado = categoriasComidaActual.indexOf('Comida');
+if (idxComidaPrincipalEsperado !== -1) {
+  var etiquetasSegmentoDV01 = contMacros.consultarTodo('.hz-etiqueta-segmento');
+  afirmar(etiquetasSegmentoDV01.length === 3,
+    'R9 (DV-01): con etiquetasSegmentoIndices restringido a la comida principal, deben quedar EXACTAMENTE 3 etiquetas de % visibles (una por macro de esa columna), tiene ' + etiquetasSegmentoDV01.length);
+}
+
+// ---------------------------------------------------------------------
+// R9 (DV-03): "Calorías por día" dibuja el objetivo de kcal aplicado como
+// umbral explícito (hairline var(--text-muted) + etiqueta "Objetivo"), no
+// solo el dato -- referencia: {valor, etiqueta} + unidad: 'kcal'.
+// ---------------------------------------------------------------------
+var inicioLlamadaKcalDV03 = fuenteVista.indexOf('Charts.barras(contKcal');
+var finLlamadaKcalDV03 = fuenteVista.indexOf('});', inicioLlamadaKcalDV03);
+var bloqueLlamadaKcalDV03 = fuenteVista.slice(inicioLlamadaKcalDV03, finLlamadaKcalDV03);
+afirmar(/referencia\s*:\s*\{\s*valor\s*:\s*activo\.kcalObjetivo\s*,\s*etiqueta\s*:\s*'Objetivo'\s*\}/.test(bloqueLlamadaKcalDV03),
+  'R9 (DV-03): la llamada a Charts.barras de "Calorías por día" debe pasar referencia: { valor: activo.kcalObjetivo, etiqueta: \'Objetivo\' } (el kcalObjetivo APLICADO, no un literal)');
+afirmar(/unidad\s*:\s*'kcal'/.test(bloqueLlamadaKcalDV03),
+  'R9 (DV-03): la llamada a Charts.barras de "Calorías por día" debe pasar unidad: \'kcal\'');
+
+var lineasReferenciaKcal = contKcal.consultarTodo('.hz-referencia-linea');
+afirmar(lineasReferenciaKcal.length === 1,
+  'R9 (DV-03): "Calorías por día" debe dibujar EXACTAMENTE una hairline de referencia (el objetivo de kcal), tiene ' + lineasReferenciaKcal.length);
+var etiquetasReferenciaKcal = contKcal.consultarTodo('.hz-referencia-etiqueta');
+afirmar(etiquetasReferenciaKcal.length === 1 && etiquetasReferenciaKcal[0].textContent === 'Objetivo',
+  'R9 (DV-03): la etiqueta de la hairline de referencia debe leer exactamente "Objetivo", tiene "' + (etiquetasReferenciaKcal[0] && etiquetasReferenciaKcal[0].textContent) + '"');
+var etiquetasValorKcalDV03 = contKcal.consultarTodo('.hz-etiqueta-valor');
+afirmar(etiquetasValorKcalDV03.length > 0 && etiquetasValorKcalDV03.every(function (e) { return /\skcal$/.test(e.textContent); }),
+  'R9 (DV-03): la etiqueta de valor de "Calorías por día" debe llevar la unidad "kcal" (opciones.unidad)');
+
 // --- R4 corrección (rechazo del verifier, intento 2): dos cambios
 //     estructurales para eliminar el hueco muerto que el verifier midió con
 //     getBoundingClientRect en Chrome headless a 1240px.
@@ -308,35 +427,46 @@ afirmar(barrasVisualesKcal.length === planActual.dias.length,
 //         el hueco muerto en anchos de pantalla donde el grid resuelve MÁS
 //         de 3 columnas (ej. 1366-1600px, donde min(300px,1fr) da 4
 //         columnas). Sacando el menú del grid, auto-fit SÍ colapsa
-//         cualquier columna sobrante en cualquier ancho >= 3 columnas. ---
+//         cualquier columna sobrante en cualquier ancho >= 3 columnas.
+//     R9 (LY-03) SUPERSEDE la pieza (a): "Gráficas del plan" ya NO es la
+//     3a card del grid superior -- sale a vivir como hermana de `grid`
+//     (mismo patrón bendecido que hz-menu-fila/#reco-plan), y el grid
+//     superior queda con EXACTAMENTE 2 hijos (hero + formulario), que a
+//     1240px resuelven 2 columnas de ~570px sin hueco muerto (la objeción
+//     de R4 era contra una 4a card suelta en un grid de 3 columnas; con 2
+//     hijos no aplica). La pieza (b) -- el menú del día fuera de todo
+//     .hz-grid -- se conserva intacta. ---
 var cardsPlan = rootPlan.consultarTodo('.hz-card');
 afirmar(cardsPlan.length === 5,
   'la vista Plan de dieta debe tener 5 .hz-card en total: #reco-plan (recomendador, T-022), hero, formulario, "Gráficas del plan" (agrupa macros+calorías) y menú del día, tiene ' + cardsPlan.length);
 
 // Adendum R5 (T-022): #reco-plan se suma como card de ancho completo, con
 // el mismo patrón ya usado por hz-menu-fila (hermana de .hz-grid, ver
-// build/shell.html comentario sobre #reco-plan).
-var cardsAnchoNormal = cardsPlan.filter(function (c) {
-  return c._clases.indexOf('hz-menu-fila') === -1 && c._clases.indexOf('hz-reco-panel') === -1;
-});
+// build/shell.html comentario sobre #reco-plan). R9 (LY-03): "Gráficas del
+// plan" se une a ese mismo patrón de hermana-de-grid, así que ya NO cuenta
+// como "ancho normal dentro del grid superior" -- se identifica aparte, por
+// título, no por exclusión de clase (no lleva hz-menu-fila ni hz-reco-panel,
+// pero tampoco vive dentro del grid superior).
 var cardsAnchoCompleto = cardsPlan.filter(function (c) {
   return c._clases.indexOf('hz-menu-fila') !== -1 || c._clases.indexOf('hz-reco-panel') !== -1;
 });
-afirmar(cardsAnchoNormal.length === 3,
-  'deben existir EXACTAMENTE 3 cards de ancho normal en el grid superior (hero, formulario, "Gráficas del plan"), para llenar sin hueco las 3 columnas del grid a 1240px sin dejar una card sola en su fila (corrección R4 tras rechazo del verifier por hueco muerto con 4 cards), tiene ' + cardsAnchoNormal.length);
 afirmar(cardsAnchoCompleto.length === 2,
   'deben existir EXACTAMENTE 2 cards de ancho completo (hz-reco-panel y hz-menu-fila), tiene ' + cardsAnchoCompleto.length);
 
-var cardGraficasPlan = cardsAnchoNormal[2];
-afirmar(!!cardGraficasPlan && cardGraficasPlan.consultarUno('.hz-card-title').textContent === 'Gráficas del plan',
-  'la tercera card de ancho normal debe ser "Gráficas del plan" (agrupa macros por comida y calorías por día en un grid anidado)');
+var cardGraficasPlan = cardsPlan.filter(function (c) {
+  var t = c.consultarUno('.hz-card-title');
+  return !!t && t.textContent === 'Gráficas del plan';
+})[0];
+afirmar(!!cardGraficasPlan, 'debe existir la card "Gráficas del plan" (agrupa macros por comida y calorías por día en un grid anidado)');
 var gridsAnidadosGraficas = cardGraficasPlan ? cardGraficasPlan.consultarTodo('.hz-grid') : [];
 afirmar(gridsAnidadosGraficas.length === 1,
-  'la card "Gráficas del plan" debe contener EXACTAMENTE un grid anidado (.hz-grid) que agrupa sus 2 gráficas, en vez de 2 cards sueltas en el grid superior');
+  'la card "Gráficas del plan" debe contener EXACTAMENTE un grid anidado (.hz-grid) que agrupa sus 2 gráficas, en vez de 2 cards sueltas');
 afirmar(!!gridsAnidadosGraficas[0] && gridsAnidadosGraficas[0].consultarTodo('.hz-chart').length === 2,
   'el grid anidado de "Gráficas del plan" debe contener las 2 gráficas (macros por comida y calorías por día)');
 
-// (b): la card del menú del día NO debe ser descendiente de ningún .hz-grid.
+// (b): ni el menú del día ni "Gráficas del plan" deben ser descendientes de
+// ningún .hz-grid que no sea el suyo propio (el grid superior de hero+
+// formulario, o cualquier otro grid ajeno).
 function esDescendienteDeAlgunGrid(nodo, grids) {
   var actual = nodo.parentNode;
   while (actual) {
@@ -349,6 +479,22 @@ var todosLosGridsDeLaVista = rootPlan.consultarTodo('.hz-grid');
 var cardMenuDelDia = cardsAnchoCompleto.filter(function (c) { return c._clases.indexOf('hz-menu-fila') !== -1; })[0];
 afirmar(!!cardMenuDelDia && !esDescendienteDeAlgunGrid(cardMenuDelDia, todosLosGridsDeLaVista),
   'la card del menú del día (hz-menu-fila) debe vivir FUERA de todo .hz-grid -- hermana de .hz-grid dentro de .hz-vista, no un ítem más del grid superior (corrección R4: evita que grid-column:1/-1 deje columnas usadas-en-otra-fila sin colapsar en anchos con más de 3 columnas)');
+
+// R9 (LY-03): el grid superior (el que contiene el héroe "Plan de dieta
+// actual" y "Personaliza tu plan") queda con EXACTAMENTE 2 hijos; "Gráficas
+// del plan" vive FUERA de él, hermana directa de ese grid bajo rootPlan --
+// el gridGraficas anidado (dentro de cardGraficasPlan, ya verificado arriba)
+// es un grid DISTINTO y no cuenta aquí.
+var gridSuperiorPlan = todosLosGridsDeLaVista.filter(function (g) {
+  return g !== gridsAnidadosGraficas[0];
+})[0];
+afirmar(!!gridSuperiorPlan && gridSuperiorPlan.children.length === 2,
+  'R9 (LY-03): el grid superior de la vista Plan (héroe + formulario) debe tener EXACTAMENTE 2 hijos, tiene ' + (gridSuperiorPlan ? gridSuperiorPlan.children.length : 'ningún grid encontrado'));
+afirmar(!!gridSuperiorPlan && !esDescendienteDeAlgunGrid(cardGraficasPlan, [gridSuperiorPlan]),
+  'R9 (LY-03): "Gráficas del plan" debe vivir FUERA del grid superior (hermana directa de `grid` bajo rootEl, patrón #reco-plan/hz-menu-fila), no como su 3a card');
+afirmar(!!gridSuperiorPlan && !!cardGraficasPlan && rootPlan.children.indexOf(gridSuperiorPlan) < rootPlan.children.indexOf(cardGraficasPlan) &&
+  rootPlan.children.indexOf(cardGraficasPlan) < rootPlan.children.indexOf(cardMenuDelDia),
+  'R9 (LY-03): el orden vertical de la vista debe ser grid héroe+formulario, luego "Gráficas del plan", luego "Menú del día"');
 
 // --- Menú del día (Adendum R4, T-017): el Detalle del día deja de ser
 //     tabla apretada y pasa a fila de ancho completo (.hz-menu-fila) con
@@ -827,9 +973,8 @@ afirmar(chartsSup.length === 2,
 
 var nSuplementos = HERZON_DATA.suplementos.length;
 var tablasSup = rootSup.consultarTodo('.hz-table');
-var filasRegimen = tablasSup[0].consultarTodo('tbody')[0].consultarTodo('tr');
-afirmar(filasRegimen.length === nSuplementos,
-  'la tabla de régimen debe tener exactamente ' + nSuplementos + ' filas (una por suplemento), tiene ' + filasRegimen.length);
+afirmar(tablasSup.length === 3,
+  'la vista Suplementos debe tener 3 tablas: barras (Ver tabla), heatmap (Ver tabla) y régimen, tiene ' + tablasSup.length);
 
 // R6 (jera-1/data-3/fini-1/resp-1): la card del régimen lleva
 // data-ancho="completo" (regla de T-026: .hz-grid > [data-ancho="completo"]
@@ -843,12 +988,53 @@ afirmar(!!cardRegimenSup, 'debe existir la card "Régimen de suplementos"');
 afirmar(!!cardRegimenSup && cardRegimenSup.getAttribute('data-ancho') === 'completo',
   'la card "Régimen de suplementos" debe llevar data-ancho="completo" (jera-1/data-3/fini-1/resp-1)');
 
-var columnasEncabezadoRegimen = tablasSup[0].consultarTodo('thead')[0].consultarTodo('th').map(function (th) { return th.textContent; });
+// R9 (LY-05): el régimen pasa a ser la ÚLTIMA card montada (fila 2, antes
+// era la segunda), así que su tabla ya NO es tablasSup[0] -- se ubica por
+// pertenencia a cardRegimenSup, no por índice de montaje.
+var tablaRegimen = cardRegimenSup.consultarTodo('.hz-table')[0];
+afirmar(!!tablaRegimen, 'la card "Régimen de suplementos" debe contener su propia .hz-table');
+var filasRegimen = tablaRegimen.consultarTodo('tbody')[0].consultarTodo('tr');
+afirmar(filasRegimen.length === nSuplementos,
+  'la tabla de régimen debe tener exactamente ' + nSuplementos + ' filas (una por suplemento), tiene ' + filasRegimen.length);
+
+var columnasEncabezadoRegimen = tablaRegimen.consultarTodo('thead')[0].consultarTodo('th').map(function (th) { return th.textContent; });
 afirmar(columnasEncabezadoRegimen.length === 5 &&
   columnasEncabezadoRegimen[0] === 'Suplemento' && columnasEncabezadoRegimen[1] === 'Dosis' &&
   columnasEncabezadoRegimen[2] === 'Horario' && columnasEncabezadoRegimen[3] === 'Momento' &&
   columnasEncabezadoRegimen[4] === 'Propósito',
   'la tabla de régimen debe tener las 5 columnas visibles, en orden Suplemento/Dosis/Horario/Momento/Propósito, obtuvo ' + columnasEncabezadoRegimen.join(','));
+
+// R9 (LY-05, decisión C4): reparto fila 1 = héroe(1) + barras con rótulos
+// cortos(1) + heatmap transpuesto data-ancho="doble"(2) = 4 pistas exactas;
+// fila 2 = régimen data-ancho="completo". Se verifica por título de card (no
+// por índice) porque el orden de montaje ya no coincide 1:1 con el orden de
+// .hz-table (las tablas "Ver tabla" de barras/heatmap preceden a la de
+// régimen, que ahora se monta al final).
+var gridSup = rootSup.consultarTodo('.hz-grid')[0];
+afirmar(!!gridSup && gridSup.children.length === 4,
+  'R9 (LY-05): el grid de Suplementos debe tener exactamente 4 cards (héroe, barras, heatmap, régimen)');
+function buscarCardPorTitulo(raizGrid, tituloExacto) {
+  return raizGrid.children.filter(function (c) {
+    var t = c.consultarUno && c.consultarUno('.hz-card-title');
+    return !!t && t.textContent === tituloExacto;
+  })[0];
+}
+var cardHeroSup = buscarCardPorTitulo(gridSup, 'Suplementos');
+var cardAdherenciaSupCard = buscarCardPorTitulo(gridSup, 'Adherencia por suplemento');
+var cardAdherenciaTiempoSup = buscarCardPorTitulo(gridSup, 'Adherencia diaria a suplementos en el tiempo');
+afirmar(!!cardHeroSup && !!cardAdherenciaSupCard && !!cardAdherenciaTiempoSup,
+  'deben existir las cards "Suplementos" (héroe), "Adherencia por suplemento" y "Adherencia diaria a suplementos en el tiempo"');
+afirmar(!cardHeroSup.getAttribute('data-ancho'),
+  'R9 (LY-05): la card héroe de Suplementos debe ocupar 1 pista (sin data-ancho)');
+afirmar(!cardAdherenciaSupCard.getAttribute('data-ancho'),
+  'R9 (LY-05/C3): la card "Adherencia por suplemento" debe ocupar 1 pista (sin data-ancho) -- los rótulos cortos la hacen legible a ese ancho');
+afirmar(cardAdherenciaTiempoSup.getAttribute('data-ancho') === 'doble',
+  'R9 (DV-05/C4): la card "Adherencia diaria a suplementos en el tiempo" debe llevar data-ancho="doble"');
+afirmar(gridSup.children.indexOf(cardHeroSup) === 0 &&
+  gridSup.children.indexOf(cardAdherenciaSupCard) === 1 &&
+  gridSup.children.indexOf(cardAdherenciaTiempoSup) === 2 &&
+  gridSup.children.indexOf(cardRegimenSup) === 3,
+  'R9 (LY-05): el orden vertical del grid debe ser héroe, barras, heatmap, régimen');
 
 var contAdherenciaSup = chartsSup[0];
 var barrasAdherenciaSup = contarPorTagSinAtributo(contAdherenciaSup, 'path', 'role');
@@ -880,9 +1066,15 @@ afirmar(soloTokensHeat, 'el heatmap de adherencia debe pintar sus celdas SOLO co
 function extraerLlamada(fuente, marcadorInicio) {
   var inicio = fuente.indexOf(marcadorInicio);
   if (inicio === -1) return '';
-  var fin = fuente.indexOf('\n    });', inicio);
-  if (fin === -1) return '';
-  return fuente.slice(inicio, fin);
+  var resto = fuente.slice(inicio);
+  // R9: la profundidad de indentación de los call sites cambió (montarVistaPlan/
+  // montarVistaSuplementos ganaron una render() interna para la reactividad
+  // multi-cliente de MC-07/MC-02), así que el cierre "});" ya no vive a un
+  // ancho fijo de indentación -- se busca por patrón, no por 4 espacios
+  // literales, para no volver a romperse con el próximo nivel de anidado.
+  var cierre = /\n[ \t]*\}\);/.exec(resto);
+  if (!cierre) return '';
+  return resto.slice(0, cierre.index);
 }
 
 // -- Estructural: las opciones nuevas aparecen en el texto de cada llamada.
@@ -897,25 +1089,49 @@ afirmar(/valoresEnBarras\s*:\s*true/.test(llamadaBarrasAdherenciaSup),
 var llamadaHeatmapAdherenciaTiempo = extraerLlamada(fuenteVista, 'Charts.heatmapCalendario(contAdherenciaTiempo');
 afirmar(llamadaHeatmapAdherenciaTiempo.length > 0,
   'debe existir la llamada Charts.heatmapCalendario(contAdherenciaTiempo...) en el código fuente');
-afirmar(/encabezadosDia\s*:\s*true/.test(llamadaHeatmapAdherenciaTiempo),
-  'la llamada Charts.heatmapCalendario de adherencia diaria debe pasar encabezadosDia: true (jera-5/data-5, Adendum R6 punto 2)');
+// R9 (DV-05, decisión C4): heatmap TRANSPUESTO -- el tiempo corre a lo largo
+// del eje x (semanas en columnas), no hacia abajo. encabezadosDia (días como
+// columnas) queda RETIRADO de esta llamada; encabezadosColumna toma su lugar
+// para rotular S1/S4/S8/S12 sobre las 12 columnas de semana, y etiquetasFila
+// pasa a nombrar los 7 días (L a D) como filas.
+afirmar(!/encabezadosDia\s*:/.test(llamadaHeatmapAdherenciaTiempo),
+  'R9 (DV-05): la llamada Charts.heatmapCalendario de adherencia diaria transpuesta NO debe pasar encabezadosDia (los días ya no son columnas, son filas)');
+afirmar(/encabezadosColumna\s*:/.test(llamadaHeatmapAdherenciaTiempo),
+  'R9 (DV-05): la llamada Charts.heatmapCalendario de adherencia diaria debe pasar encabezadosColumna (S1/S4/S8/S12 sobre las semanas)');
 afirmar(/etiquetasFila\s*:/.test(llamadaHeatmapAdherenciaTiempo),
-  'la llamada Charts.heatmapCalendario de adherencia diaria debe pasar etiquetasFila (jera-5/data-5, Adendum R6 punto 2)');
+  'la llamada Charts.heatmapCalendario de adherencia diaria debe pasar etiquetasFila (jera-5/data-5, Adendum R6 punto 2; R9: ahora L a D)');
+afirmar(/columnas\s*:\s*semanasHeatmap/.test(llamadaHeatmapAdherenciaTiempo),
+  'R9 (DV-05): la llamada debe pasar columnas: semanasHeatmap (12 semanas en x tras la transposición)');
 afirmar(/leyendaRampa\s*:\s*true/.test(llamadaHeatmapAdherenciaTiempo),
   'la llamada Charts.heatmapCalendario de adherencia diaria debe pasar leyendaRampa: true (jera-5/data-5, Adendum R6 punto 2)');
 
-// -- DOM (TestDOM): el heatmap realmente monta encabezados de día, rótulos
-//    de fila y la leyenda de 5 swatches.
+// -- DOM (TestDOM): el heatmap transpuesto realmente monta 12 columnas (S1,
+//    S4, S8, S12 visibles, el resto vacío), 7 filas L-D y la leyenda de 5
+//    swatches. encabezadosDia ya no se pasa, así que .hz-heat-encabezado-dia
+//    debe estar AUSENTE del DOM (no-regresión: si reapareciera significaría
+//    que la opción vieja sigue activa junto con la nueva).
 var encabezadosDiaSup = contHeatmap.consultarTodo('.hz-heat-encabezado-dia');
-afirmar(encabezadosDiaSup.length === 7,
-  'el heatmap de adherencia diaria debe emitir 7 encabezados de día (uno por columna), encontró ' + encabezadosDiaSup.length);
+afirmar(encabezadosDiaSup.length === 0,
+  'R9 (DV-05): el heatmap transpuesto NO debe emitir .hz-heat-encabezado-dia (encabezadosDia retirado), encontró ' + encabezadosDiaSup.length);
+
+var encabezadosColumnaSup = contHeatmap.consultarTodo('.hz-heat-encabezado-columna');
+afirmar(encabezadosColumnaSup.length === 4,
+  'R9 (DV-05): el heatmap transpuesto debe emitir exactamente 4 encabezados de columna no vacíos (S1, S4, S8, S12 de las 12 semanas), encontró ' + encabezadosColumnaSup.length);
+var textosColumnaSup = encabezadosColumnaSup.map(function (e) { return e.textContent; }).sort();
+afirmar(textosColumnaSup.join(',') === 'S1,S12,S4,S8',
+  'los encabezados de columna del heatmap deben ser exactamente S1, S4, S8, S12, encontró ' + textosColumnaSup.join(', '));
 
 var etiquetasFilaSup = contHeatmap.consultarTodo('.hz-heat-fila-etiqueta');
-afirmar(etiquetasFilaSup.length === 4,
-  'el heatmap de adherencia diaria debe emitir exactamente 4 etiquetas de fila (S1, S4, S8, S12), encontró ' + etiquetasFilaSup.length);
-var textosFilaSup = etiquetasFilaSup.map(function (e) { return e.textContent; }).sort();
-afirmar(textosFilaSup.join(',') === 'S1,S12,S4,S8',
-  'las etiquetas de fila del heatmap deben ser exactamente S1, S4, S8, S12, encontró ' + textosFilaSup.join(', '));
+afirmar(etiquetasFilaSup.length === 7,
+  'R9 (DV-05): el heatmap transpuesto debe emitir exactamente 7 etiquetas de fila (L, M, X, J, V, S, D -- un día por fila), encontró ' + etiquetasFilaSup.length);
+var textosFilaSup = etiquetasFilaSup.map(function (e) { return e.textContent; });
+afirmar(textosFilaSup.join(',') === 'L,M,X,J,V,S,D',
+  'las etiquetas de fila del heatmap transpuesto deben ser exactamente L, M, X, J, V, S, D en ese orden, encontró ' + textosFilaSup.join(', '));
+
+// R9 (DV-05/LY-05/C4): la card del heatmap transpuesto lleva data-ancho="doble"
+// (~570px) para que sus 12 columnas tengan celda digna.
+afirmar(cardAdherenciaTiempoSup.getAttribute('data-ancho') === 'doble',
+  'R9 (DV-05/C4): la card "Adherencia diaria a suplementos en el tiempo" debe llevar data-ancho="doble"');
 
 var leyendaHeatmapSup = contHeatmap.consultarTodo('.hz-legend')[0];
 afirmar(!!leyendaHeatmapSup, 'el heatmap de adherencia diaria debe emitir una .hz-legend (leyendaRampa)');
@@ -935,6 +1151,66 @@ afirmar(etiquetasValorBarrasSup.length === nSuplementos,
 var todasEtiquetasValorConPorcentaje = etiquetasValorBarrasSup.every(function (e) { return /%$/.test(e.textContent); });
 afirmar(todasEtiquetasValorConPorcentaje,
   'cada etiqueta de valor de la gráfica de adherencia por suplemento debe terminar en "%" (opciones.unidad)');
+
+// R9 (LY-05, decisión C3, final): "Adherencia por suplemento" pasa
+// categorías CORTAS de despliegue ('Omega-3', 'Vitamina D3', 'Magnesio',
+// 'Probiótico') en vez del nombre completo con dosis -- caben sin truncar
+// en el gutter a cualquier ancho de card, incluida 1 pista. El nombre
+// completo con dosis se conserva en la tabla "Régimen de suplementos"
+// (verificado más arriba, columna "Suplemento") Y TAMBIÉN en "Ver tabla" de
+// esta misma gráfica: charts.js (resolverEspecTabla, charts.js:618-623)
+// devuelve `opciones.tabla` TAL CUAL cuando trae columnas y filas completos
+// -- opción ya existente, cero cambios a charts.js -- así que la llamada
+// construye la espec de tabla a mano con s.nombre (completo) en vez de
+// dejar que 'tabla: true' la derive de `categorias` (rótulo corto). Lo
+// único que SÍ queda en rótulo corto, porque charts.js lo deriva de
+// `categorias` sin una opción separada para texto completo (fuera del
+// POSEE de T-041: requeriría una opción aditiva nueva en charts.js), es el
+// aria-label/tooltip de cada barra.
+var ETIQUETAS_CORTAS_ESPERADAS = ['Omega-3', 'Vitamina D3', 'Magnesio', 'Probiótico'];
+var textosSvgAdherenciaSup = contAdherenciaSup.consultarTodo('text');
+var etiquetasCategoriaCortaSup = textosSvgAdherenciaSup.filter(function (t) {
+  return ETIQUETAS_CORTAS_ESPERADAS.indexOf(t.textContent) !== -1;
+});
+afirmar(etiquetasCategoriaCortaSup.length === 4,
+  'R9 (LY-05/C3): deben aparecer las 4 categorías cortas exactas (Omega-3, Vitamina D3, Magnesio, Probiótico) como etiquetas de eje, encontró ' + etiquetasCategoriaCortaSup.length);
+etiquetasCategoriaCortaSup.forEach(function (t) {
+  afirmar(!t.hasAttribute('data-etiqueta-truncada'),
+    'R9 (LY-05/C3): con rótulos cortos ninguna etiqueta de categoría debe truncarse en el gutter (data-etiqueta-truncada ausente)');
+});
+// Nombres completos que DIFIEREN de su rótulo corto (excluye 'Vitamina D3',
+// cuyo nombre completo ya coincide con el corto -- no hay nada que truncar
+// ni ocultar ahí, así que no puede formar parte de una aserción de ausencia).
+var nombresCompletosConDosisSuplementos = HERZON_DATA.suplementos
+  .map(function (s) { return s.nombre; })
+  .filter(function (n) { return ETIQUETAS_CORTAS_ESPERADAS.indexOf(n) === -1; });
+var ningunNombreCompletoEnEjeSup = textosSvgAdherenciaSup.every(function (t) {
+  return nombresCompletosConDosisSuplementos.indexOf(t.textContent) === -1;
+});
+afirmar(ningunNombreCompletoEnEjeSup,
+  'R9 (LY-05/C3): ningún nombre completo con dosis debe aparecer como etiqueta de eje de "Adherencia por suplemento" (solo la tabla de régimen lo conserva)');
+
+// R9 (LY-05/C3, corrección post-verificación): "Ver tabla" de ESTA gráfica
+// (contAdherenciaSup) debe mostrar el nombre COMPLETO con dosis en su
+// columna "Suplemento" -- no el rótulo corto del eje -- porque la llamada
+// ahora pasa una espec de tabla explícita (tabla: {columnas, filas} con
+// s.nombre) en vez de dejar que 'tabla: true' la derive de `categorias`.
+var tablaAdherenciaSup = contAdherenciaSup.consultarTodo('.hz-table')[0];
+afirmar(!!tablaAdherenciaSup, 'la gráfica "Adherencia por suplemento" debe contener su propia .hz-table ("Ver tabla")');
+var filasTablaAdherenciaSup = tablaAdherenciaSup ? tablaAdherenciaSup.consultarTodo('tbody')[0].consultarTodo('tr') : [];
+afirmar(filasTablaAdherenciaSup.length === nSuplementos,
+  'la tabla "Ver tabla" de "Adherencia por suplemento" debe tener exactamente ' + nSuplementos + ' filas (una por suplemento), tiene ' + filasTablaAdherenciaSup.length);
+var nombresEnTablaAdherenciaSup = filasTablaAdherenciaSup.map(function (tr) {
+  var th = tr.consultarTodo('th')[0];
+  return th ? th.textContent : null;
+});
+var nombresCompletosEsperadosSup = HERZON_DATA.suplementos.map(function (s) { return s.nombre; });
+afirmar(nombresEnTablaAdherenciaSup.join('|') === nombresCompletosEsperadosSup.join('|'),
+  'R9 (LY-05/C3): la columna "Suplemento" de "Ver tabla" en "Adherencia por suplemento" debe mostrar el nombre COMPLETO con dosis de cada suplemento (no el rótulo corto del eje), encontró [' + nombresEnTablaAdherenciaSup.join(', ') + ']');
+nombresEnTablaAdherenciaSup.forEach(function (n) {
+  afirmar(ETIQUETAS_CORTAS_ESPERADAS.indexOf(n) === -1 || n === 'Vitamina D3',
+    'R9 (LY-05/C3): ningún rótulo corto (salvo "Vitamina D3", que ya coincide con su nombre completo) debe aparecer en la columna "Suplemento" de "Ver tabla", encontró "' + n + '"');
+});
 
 // ---------------------------------------------------------------------
 // 5. D5 (QA ronda 1): ninguna .hz-chart-title interna duplica el heading
@@ -965,9 +1241,9 @@ afirmar(!textoTituloInternoDuplicaHeading(rootSup),
   'la vista Suplementos no debe pintar un .hz-chart-title que duplique el heading .hz-card-title de su card (D5)');
 
 // ---------------------------------------------------------------------
-// 6. Anti-regresion D1 (QA ronda 1): ninguna de estas palabras en espanol
-//    sin acento/enie puede reaparecer en el CODIGO FUENTE de este modulo
-//    (comentarios incluidos). Coincidencia con limite de palabra.
+// 6. Anti-regresión D1 (QA ronda 1): ninguna de estas palabras en español
+//    sin acento/eñe puede reaparecer en el CÓDIGO FUENTE de este módulo
+//    (comentarios incluidos). Coincidencia con límite de palabra.
 // ---------------------------------------------------------------------
 var PALABRAS_SIN_ACENTO_PROHIBIDAS = [
   'anos', 'Composicion', 'Calorias', 'Regimen', 'Probiotico', 'clinica',
@@ -976,8 +1252,160 @@ var PALABRAS_SIN_ACENTO_PROHIBIDAS = [
 for (var pa = 0; pa < PALABRAS_SIN_ACENTO_PROHIBIDAS.length; pa++) {
   var palabra = PALABRAS_SIN_ACENTO_PROHIBIDAS[pa];
   var regexPalabra = new RegExp('\\b' + palabra + '\\b');
-  afirmar(!regexPalabra.test(fuenteVista), 'build/vista_dieta_supl.js contiene la palabra sin acento "' + palabra + '" (D1, QA ronda 1): revisar y corregir a espanol con acentos/enie');
+  afirmar(!regexPalabra.test(fuenteVista), 'build/vista_dieta_supl.js contiene la palabra sin acento "' + palabra + '" (D1, QA ronda 1): revisar y corregir a español con acentos/eñe');
 }
+
+// ---------------------------------------------------------------------
+// 7. R9 (Adendum R9 punto 3; MC-07; R8 punto 4 estados vacíos): reactividad
+//    multi-cliente sobre las vistas YA MONTADAS (rootPlan/rootSup de las
+//    secciones 3 y 4), contra el Herzon.Almacen REAL (T-045, no un mock) --
+//    la misma vía que usa la app. Todo lo de arriba (secciones 1-6) corrió
+//    en modo demo: es, en sí mismo, la línea base de no-regresión demo.
+// ---------------------------------------------------------------------
+var Almacen = Herzon.Almacen;
+afirmar(!!Almacen && typeof Almacen.crearCliente === 'function' && typeof Almacen.guardarPlan === 'function',
+  'Herzon.Almacen debe estar disponible con crearCliente/guardarPlan (T-045)');
+afirmar(Almacen.modo() === 'demo',
+  'antes de crear ningún cliente, Almacen debe seguir en modo demo (las secciones 1-6 son la línea base de no-regresión)');
+
+var textoVacioPlanEsperado = (/var TEXTO_VACIO_PLAN = '([^']*)';/.exec(fuenteVista) || [])[1];
+afirmar(!!textoVacioPlanEsperado, 'debe poder extraer TEXTO_VACIO_PLAN de la fuente (pin de literal, plan.md nota de PR-03/04/06)');
+var textoVacioSuplementosEsperado = (/var TEXTO_VACIO_SUPLEMENTOS = '([^']*)';/.exec(fuenteVista) || [])[1];
+afirmar(!!textoVacioSuplementosEsperado, 'debe poder extraer TEXTO_VACIO_SUPLEMENTOS de la fuente (pin de literal)');
+
+function tituloCard(c) {
+  var t = c.consultarUno('.hz-card-title');
+  return t ? t.textContent : null;
+}
+function buscarCardPorTituloEn(raiz, titulo) {
+  return raiz.consultarTodo('.hz-card').filter(function (c) { return tituloCard(c) === titulo; })[0];
+}
+
+// --- 7.1 Cliente 1: recién creado, SIN plantilla aplicada y SIN régimen de
+//     suplementos -- ambas vistas deben caer en su estado vacío (R8 punto 4)
+//     y el recomendador debe seguir SIEMPRE visible y funcional. ---
+var perfilCliente1 = { nombre: 'Cliente Selfcheck Uno', sexo: 'femenino', edad: 30, talla_cm: 165, pesoInicial_kg: 60, actividad: 'ligero', objetivo: 'Recomposición corporal' };
+var creacionCliente1 = Almacen.crearCliente(perfilCliente1);
+afirmar(creacionCliente1.ok === true, 'Almacen.crearCliente(perfilCliente1) debe crear el primer cliente real sin errores: ' + JSON.stringify(creacionCliente1.errores || []));
+var idCliente1 = creacionCliente1.id;
+afirmar(Almacen.modo() === 'real', 'tras crearCliente, Almacen.modo() debe ser "real"');
+afirmar(window.HERZON_DATA.planAplicado === null,
+  'un cliente recién creado debe montar HERZON_DATA.planAplicado === null (sin plantilla aplicada aún)');
+
+afirmar(!rootPlan.hasAttribute('data-plan-id'),
+  'R8/MC-07: sin plantilla aplicada en modo real, la vista Plan debe RETIRAR data-plan-id de su raíz');
+afirmar(rootPlan.consultarTodo('.hz-hero').length === 1,
+  'regla 11: incluso en estado vacío, la vista Plan debe conservar EXACTAMENTE un .hz-hero');
+afirmar(rootPlan.consultarTodo('.hz-hero')[0].consultarUno('.hz-hero-num').textContent === '—',
+  'R8: el héroe del Plan sin plantilla aplicada debe mostrar "—" en vez de un número inventado');
+
+var cardHeroPlanVacio = buscarCardPorTituloEn(rootPlan, 'Plan de dieta actual');
+afirmar(!!cardHeroPlanVacio, 'debe existir la card "Plan de dieta actual" incluso en estado vacío');
+var vaciosHeroPlan = cardHeroPlanVacio.consultarTodo('.hz-vacio');
+afirmar(vaciosHeroPlan.length === 1 && !vaciosHeroPlan[0].hasAttribute('hidden') && vaciosHeroPlan[0].textContent === textoVacioPlanEsperado,
+  'R8: la card héroe del Plan debe mostrar la nota .hz-vacio visible con TEXTO_VACIO_PLAN cuando no hay plantilla aplicada');
+
+afirmar(gridsAnidadosGraficas[0].hasAttribute('hidden'),
+  'R8/MC-07: sin plantilla aplicada, el grid anidado de "Gráficas del plan" debe quedar oculto (hidden)');
+var vaciosGraficasPlan = cardGraficasPlan.consultarTodo('.hz-vacio');
+afirmar(vaciosGraficasPlan.length === 1 && !vaciosGraficasPlan[0].hasAttribute('hidden') && vaciosGraficasPlan[0].textContent === textoVacioPlanEsperado,
+  'R8: la card "Gráficas del plan" debe mostrar su propia nota .hz-vacio visible cuando no hay plantilla aplicada');
+
+var listaMenuVacia = cardMenuDelDia.consultarTodo('.hz-menu-lista')[0];
+afirmar(!!listaMenuVacia && listaMenuVacia.hasAttribute('hidden'),
+  'R8/MC-07: sin plantilla aplicada, la lista del menú del día debe quedar oculta (hidden)');
+var vaciosMenu = cardMenuDelDia.consultarTodo('.hz-vacio');
+afirmar(vaciosMenu.length === 1 && !vaciosMenu[0].hasAttribute('hidden') && vaciosMenu[0].textContent === textoVacioPlanEsperado,
+  'R8: la card "Menú del día" debe mostrar su propia nota .hz-vacio visible cuando no hay plantilla aplicada');
+
+// El recomendador (#reco-plan) NUNCA se apaga por el estado vacío: sigue
+// SIEMPRE visible y funcional (spec T-041), con las 5 plantillas rankeadas
+// listas para elegir -- así el usuario tiene por dónde salir del vacío.
+afirmar(rootPlan.consultarTodo('.hz-reco-panel').length === 1,
+  'el recomendador (#reco-plan) debe seguir montado y visible incluso con la vista Plan en estado vacío');
+var listaRankingVacio = contenedorReco.consultarTodo('.hz-reco-lista')[0];
+afirmar(!!listaRankingVacio && listaRankingVacio.consultarTodo('.hz-reco-item').length === HERZON_DATA.planes.length,
+  'con la vista Plan en estado vacío, el recomendador debe seguir mostrando el ranking completo de plantillas (' + HERZON_DATA.planes.length + ')');
+
+var sinRegimenSup = window.HERZON_DATA.suplementos.length === 0;
+afirmar(sinRegimenSup, 'un cliente recién creado debe montar suplementos: [] (sin régimen)');
+afirmar(rootSup.getAttribute('data-suplementos-count') === '0',
+  'R8: la vista Suplementos de un cliente sin régimen debe exponer data-suplementos-count="0"');
+afirmar(rootSup.consultarTodo('.hz-hero').length === 1,
+  'regla 11: incluso sin régimen, la vista Suplementos debe conservar EXACTAMENTE un .hz-hero');
+afirmar(rootSup.consultarTodo('.hz-hero')[0].consultarUno('.hz-hero-num').textContent === '—',
+  'R8: el héroe de Suplementos sin régimen debe mostrar "—" (0% de adherencia a 0 suplementos sería un dato falso)');
+var vaciosSup = rootSup.consultarTodo('.hz-vacio');
+afirmar(vaciosSup.length === 1 && vaciosSup[0].textContent === textoVacioSuplementosEsperado,
+  'R8: la vista Suplementos sin régimen debe mostrar la nota .hz-vacio con TEXTO_VACIO_SUPLEMENTOS');
+afirmar(rootSup.consultarTodo('.hz-chart').length === 0,
+  'R8: sin régimen, la vista Suplementos no debe intentar dibujar ninguna gráfica (0 suplementos)');
+
+// --- 7.2 MC-07: aplicar una plantilla en modo real debe invocar
+//     Almacen.guardarPlan -- se verifica por EFECTO observable (no hay hook
+//     de espía sin tocar el módulo bajo prueba): HERZON_DATA.planAplicado
+//     queda fijado de inmediato Y sobrevive una recarga simulada
+//     (Almacen.cargar() vuelve a leer el localStorage mock desde cero). ---
+var listaRankingParaAplicar = contenedorReco.consultarTodo('.hz-reco-lista')[0].consultarTodo('.hz-reco-item');
+afirmar(listaRankingParaAplicar.length === HERZON_DATA.planes.length, 'el ranking del cliente 1 debe listar las ' + HERZON_DATA.planes.length + ' plantillas');
+var itemParaAplicarC1 = listaRankingParaAplicar[0];
+var idPlanAplicadoC1 = itemParaAplicarC1.getAttribute('data-plan-id');
+var botonUsarC1 = buscarPorAtributo(itemParaAplicarC1, 'data-accion', 'usar-plan');
+afirmar(!!botonUsarC1 && !botonUsarC1.hasAttribute('disabled'), 'debe existir un botón "Usar este plan" habilitado en la primera fila del ranking del cliente 1');
+botonUsarC1.despachar('click');
+
+afirmar(window.HERZON_DATA.planAplicado !== null && window.HERZON_DATA.planAplicado.plantillaId === idPlanAplicadoC1,
+  'R9 (MC-07): al aplicar una plantilla en modo real, HERZON_DATA.planAplicado debe reflejar la elección de inmediato (Almacen.guardarPlan)');
+afirmar(rootPlan.hasAttribute('data-plan-id') && rootPlan.getAttribute('data-plan-id') === idPlanAplicadoC1,
+  'tras aplicar la plantilla, la vista Plan debe salir del estado vacío y mostrar el plan recién aplicado');
+afirmar(!gridsAnidadosGraficas[0].hasAttribute('hidden'),
+  'tras aplicar una plantilla, el grid de "Gráficas del plan" debe dejar de estar oculto');
+
+var reloadTrasAplicarC1 = Almacen.cargar();
+afirmar(reloadTrasAplicarC1 === 'real' && window.HERZON_DATA.planAplicado && window.HERZON_DATA.planAplicado.plantillaId === idPlanAplicadoC1,
+  'R9 (MC-07): el plan aplicado debe SOBREVIVIR una recarga simulada (Almacen.cargar() vuelve a leer el localStorage mock) -- prueba de persistencia real, no solo en memoria');
+
+// --- 7.3 MC-07: un SEGUNDO cliente recién creado NO debe heredar el plan
+//     del cliente 1 (cero contaminación cruzada); vuelve a caer en el
+//     estado vacío por sí mismo. ---
+var perfilCliente2 = { nombre: 'Cliente Selfcheck Dos', sexo: 'masculino', edad: 42, talla_cm: 178, pesoInicial_kg: 88, actividad: 'moderado', objetivo: 'Mantenimiento' };
+var creacionCliente2 = Almacen.crearCliente(perfilCliente2);
+afirmar(creacionCliente2.ok === true, 'Almacen.crearCliente(perfilCliente2) debe crear el segundo cliente real sin errores: ' + JSON.stringify(creacionCliente2.errores || []));
+var idCliente2 = creacionCliente2.id;
+afirmar(idCliente2 !== idCliente1, 'el segundo cliente debe tener un id distinto al primero');
+afirmar(window.HERZON_DATA.planAplicado === null,
+  'R9 (MC-07): el cliente 2, recién creado, debe montar planAplicado === null -- el plan del cliente 1 NO debe filtrarse aquí (cero contaminación cruzada)');
+afirmar(!rootPlan.hasAttribute('data-plan-id'),
+  'R9 (MC-07): al remontar sobre el cliente 2 (sin plan propio), la vista Plan YA MONTADA debe volver a caer en su estado vacío vía herzon:modo-cambiado, sin necesitar un remount completo');
+afirmar(gridsAnidadosGraficas[0].hasAttribute('hidden'), 'el grid de "Gráficas del plan" debe volver a ocultarse para el cliente 2 (sin plan propio)');
+afirmar(rootSup.getAttribute('data-suplementos-count') === '0', 'el cliente 2 (sin régimen propio) también debe caer en el estado vacío de Suplementos');
+
+// --- 7.4 MC-07: volver a seleccionar al cliente 1 debe PRECARGAR su plan ya
+//     aplicado automáticamente (HERZON_DATA.planAplicado -> planIdSeleccionado),
+//     sin que el usuario tenga que volver a elegir nada en el recomendador. ---
+Almacen.seleccionarCliente(idCliente1);
+afirmar(Almacen.clienteActivo() && Almacen.clienteActivo().id === idCliente1, 'Almacen.seleccionarCliente(idCliente1) debe montar de nuevo al cliente 1');
+afirmar(window.HERZON_DATA.planAplicado && window.HERZON_DATA.planAplicado.plantillaId === idPlanAplicadoC1,
+  'al remontar el cliente 1, HERZON_DATA.planAplicado debe seguir siendo el plan que aplicó antes');
+afirmar(rootPlan.getAttribute('data-plan-id') === idPlanAplicadoC1,
+  'R9 (MC-07): al remontar el cliente 1, la vista Plan debe PRECARGAR automáticamente su plan ya aplicado (data-plan-id), sin estado vacío y sin click adicional');
+var listaRankingC1DeVuelta = contenedorReco.consultarTodo('.hz-reco-lista')[0].consultarTodo('.hz-reco-item');
+var itemAplicadoC1DeVuelta = listaRankingC1DeVuelta.filter(function (it) { return it.getAttribute('data-plan-id') === idPlanAplicadoC1; })[0];
+afirmar(!!itemAplicadoC1DeVuelta && itemAplicadoC1DeVuelta.getAttribute('data-seleccionado') === 'true',
+  'R9 (MC-07): al remontar el cliente 1, su fila en el ranking del recomendador debe reaparecer marcada data-seleccionado="true" (precarga desde planAplicado)');
+
+// --- 7.5 No-regresión demo: volver a demo no debe dejar rastro del modo
+//     real -- el plan automático (ranking por defecto) vuelve a gobernar, y
+//     el badge/­selector de Almacen no forman parte del alcance de este
+//     módulo (T-041 solo posee vista_dieta_supl.js/selfcheck_vistas_a.js). ---
+Almacen.volverADemo();
+afirmar(Almacen.modo() === 'demo', 'Almacen.volverADemo() debe restaurar el modo demo');
+afirmar(window.HERZON_DATA.planAplicado === undefined,
+  'en modo demo, HERZON_DATA (el catálogo sintético) no debe exponer planAplicado (clave ADITIVA exclusiva de clientes reales)');
+afirmar(!!rootPlan.getAttribute('data-plan-id'),
+  'R9 (MC-07): de vuelta en demo, la vista Plan debe volver a resolver un plan por el ranking automático (data-plan-id presente, sin estado vacío) -- comportamiento demo intacto');
+afirmar(rootSup.getAttribute('data-suplementos-count') === String(HERZON_DATA.suplementos.length),
+  'R9: de vuelta en demo, la vista Suplementos debe volver a mostrar el régimen sintético completo (' + HERZON_DATA.suplementos.length + ' suplementos), sin rastro de los clientes reales de esta sección');
 
 // ---------------------------------------------------------------------
 console.log('checks ejecutados: ' + contador);

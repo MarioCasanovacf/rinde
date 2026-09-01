@@ -361,6 +361,40 @@ for (var su = 0; su < DATA.supuestos.length; su++) {
 }
 
 // -----------------------------------------------------------------------
+// 14-bis. PR-04 (R9): los 5 supuestos EXACTOS de "Acerca del modo demo"
+//         reemplazan el array anterior íntegro (el título lo monta la
+//         vista, T-040; aquí solo se pinnea el contenido de data.js). El
+//         supuesto 5 anterior ("esta demo no persiste información") era
+//         falso desde R8 y no puede reaparecer.
+// -----------------------------------------------------------------------
+var SUPUESTOS_DEMO_R9_ESPERADOS = [
+  'Estás viendo el modo demo: un caso de ejemplo (Daniela Reyes Cortez) cuyos datos no corresponden a una paciente real.',
+  'Los planes de dieta son plantillas pre-armadas; el recomendador las ordena y ajusta según los datos capturados, no genera planes nuevos.',
+  'Las series de seguimiento del ejemplo (peso, composición corporal, laboratorios) ilustran una tendencia plausible de recomposición corporal; no son un caso clínico validado.',
+  'El régimen de suplementos del ejemplo es ilustrativo y no constituye una recomendación médica.',
+  'El modo demo no guarda cambios; con el botón Usar mis datos, la información capturada sí se guarda en este dispositivo.'
+];
+assert(DATA.supuestos.length === SUPUESTOS_DEMO_R9_ESPERADOS.length, 'PR-04: supuestos debe traer EXACTAMENTE ' + SUPUESTOS_DEMO_R9_ESPERADOS.length + ' entradas (el array nuevo de R9), tiene ' + DATA.supuestos.length);
+for (var sd = 0; sd < SUPUESTOS_DEMO_R9_ESPERADOS.length; sd++) {
+  assert(DATA.supuestos[sd] === SUPUESTOS_DEMO_R9_ESPERADOS[sd], 'PR-04: supuestos[' + sd + '] debe ser EXACTAMENTE el texto nuevo de R9, es: "' + DATA.supuestos[sd] + '"');
+}
+assert(DATA.supuestos.join(' ').indexOf('Esta demo no persiste') === -1, 'PR-04: el supuesto falso anterior ("esta demo no persiste información") no debe reaparecer -- Herzon.Almacen sí persiste en modo real desde R8');
+
+// -----------------------------------------------------------------------
+// 14-ter. PR-06 (R9): meta.nota/meta.generado de MODO DEMO, textos EXACTOS.
+//         La nota del cliente real vive en build/almacen.js (NOTA_META_REAL,
+//         verificada en T-045) y sobrescribe esta al montar un cliente
+//         real -- fuera del alcance de este archivo.
+// -----------------------------------------------------------------------
+assert(DATA.meta.generado === 'sintetico', "PR-06: meta.generado del catálogo demo debe seguir siendo 'sintetico' (solo el cliente real, en almacen.js, lo sobrescribe a 'real')");
+assert(
+  DATA.meta.nota === 'Documento generado en modo demo con datos de ejemplo; no representa a una paciente real ni debe usarse para decisiones clínicas.',
+  'PR-06: meta.nota del catálogo demo debe ser EXACTAMENTE el texto nuevo de modo demo, es: "' + DATA.meta.nota + '"'
+);
+assert(DATA.meta.nota.indexOf('sintetic') === -1, 'PR-06: la nueva meta.nota de modo demo no debe repetir la palabra "sintetico(s)" del texto anterior');
+assert(DATA.meta.nota.indexOf('clínica') !== -1, 'PR-06: la nueva meta.nota de modo demo debe conservar el disclaimer clínico (nunca debe usarse para decisiones clínicas)');
+
+// -----------------------------------------------------------------------
 // 15. Sin emojis en ningún string del objeto completo.
 // -----------------------------------------------------------------------
 var totalStringsRevisados = 0;

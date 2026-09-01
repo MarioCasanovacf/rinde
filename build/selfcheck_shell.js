@@ -49,7 +49,7 @@ var sm;
 while ((sm = scriptRe.exec(html))) {
   scriptBlocks.push({ attrs: sm[1], body: sm[2] });
 }
-assert(scriptBlocks.length === 2, 'hay exactamente 2 bloques <script> (hz-runtime y hz-boot)', 'encontrados=' + scriptBlocks.length);
+assert(scriptBlocks.length === 3, 'hay exactamente 3 bloques <script> (hz-runtime, hz-boot y hz-sw-registro, Adendum R8)', 'encontrados=' + scriptBlocks.length);
 
 for (var si = 0; si < scriptBlocks.length; si++) {
   (function (idx) {
@@ -68,12 +68,15 @@ for (var si = 0; si < scriptBlocks.length; si++) {
 
 var runtimeBlock = null;
 var bootBlock = null;
+var swRegistroBlock = null;
 for (var bi = 0; bi < scriptBlocks.length; bi++) {
   if (/id\s*=\s*["']hz-runtime["']/.test(scriptBlocks[bi].attrs)) { runtimeBlock = scriptBlocks[bi]; }
   if (/id\s*=\s*["']hz-boot["']/.test(scriptBlocks[bi].attrs)) { bootBlock = scriptBlocks[bi]; }
+  if (/id\s*=\s*["']hz-sw-registro["']/.test(scriptBlocks[bi].attrs)) { swRegistroBlock = scriptBlocks[bi]; }
 }
 assert(runtimeBlock !== null, 'existe <script id="hz-runtime">');
 assert(bootBlock !== null, 'existe <script id="hz-boot">');
+assert(swRegistroBlock !== null, 'existe <script id="hz-sw-registro"> (Adendum R8 punto 2)');
 
 var runtimeSrc = runtimeBlock ? runtimeBlock.body : '';
 
@@ -89,9 +92,10 @@ assert(/<title>[^<]*Rinde[^<]*<\/title>/.test(html), '<title> menciona Rinde');
 // ---------------------------------------------------------------
 assert(/<header class="hz-header">/.test(html), 'existe <header class="hz-header">');
 assert(/<span class="hz-header-nombre">Rinde<\/span>/.test(html), 'el header muestra el nombre Rinde');
-assert(/id="hz-paciente-nombre"/.test(html), 'el header tiene el contenedor del paciente activo (#hz-paciente-nombre)');
+assert(/<select id="hz-cliente-selector" class="hz-selector-cliente" aria-label="Cliente activo"><\/select>/.test(html), 'el header tiene el selector de cliente activo (#hz-cliente-selector, Adendum R9/MC-03; reemplaza al span #hz-paciente-nombre, sin options ni lógica aquí -- las puebla T-045)');
+assert(!/id="hz-paciente-nombre"/.test(html), 'el header ya NO tiene el span #hz-paciente-nombre (MC-03: reemplazado por el select #hz-cliente-selector)');
 assert(/id="hz-periodo"/.test(html) && /12 semanas/.test(html), 'el header tiene el período de 12 semanas (#hz-periodo)');
-assert(/id="hz-badge-sintetico"[^>]*>[^<]*[Ss]int[eé]tic/.test(html), 'el header tiene una etiqueta visible de datos sintéticos (acepta con o sin tilde en la "e")');
+assert(/id="hz-modo-datos"[^>]*>Modo demo</.test(html), 'el header tiene el badge de modo demo (#hz-modo-datos, texto inicial "Modo demo", Adendum R9/PR-02, decisión C1: supersede "Datos sintéticos"/"DATOS SINTETICOS")');
 assert(/id="toggle-tema"/.test(html), 'existe el toggle de tema #toggle-tema');
 
 // ---------------------------------------------------------------
@@ -383,8 +387,15 @@ assert(html.indexOf('<link rel="stylesheet"') === -1, 'cero "<link rel=\\"styles
 assert(html.indexOf('@import') === -1, 'cero @import en el documento');
 assert(html.indexOf('url(http') === -1, 'cero url(http en el documento');
 assert(html.indexOf('fetch(') === -1, 'cero fetch( en el documento');
-assert(html.indexOf('http://') === -1, 'cero http:// en el documento');
-assert(html.indexOf('https://') === -1, 'cero https:// en el documento');
+// El namespace XML de SVG (xmlns='http://www.w3.org/2000/svg', requerido por
+// el estándar SVG en CUALQUIER <svg>, incluido el favicon inline del
+// Adendum R8) es texto inerte -- nunca una petición de red -- así que se
+// descuenta explícitamente antes de buscar http(s):// reales en el resto
+// del documento (cero red sigue siendo la regla; esto no la debilita).
+var htmlSinNamespaceSvg = html.split("xmlns='http://www.w3.org/2000/svg'").join('');
+assert(html.split("http://www.w3.org/2000/svg").length - 1 === (html.match(/xmlns=['"]http:\/\/www\.w3\.org\/2000\/svg['"]/g) || []).length, 'toda ocurrencia de "http://www.w3.org/2000/svg" en el documento es un xmlns de SVG (namespace inerte, no red)');
+assert(htmlSinNamespaceSvg.indexOf('http://') === -1, 'cero http:// en el documento (fuera del xmlns inerte de SVG)');
+assert(htmlSinNamespaceSvg.indexOf('https://') === -1, 'cero https:// en el documento (fuera del xmlns inerte de SVG)');
 assert(html.indexOf('stroke-dasharray') === -1, 'cero stroke-dasharray en el documento (grid hairline solida)');
 
 var EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE0F}]/u;
@@ -491,17 +502,30 @@ PADDED_CHROME_BLOCKS.forEach(function (item) {
 });
 
 // ---------------------------------------------------------------
-// 20. QA-R1 anti-regresión D1: español con tildes en los 2 strings
-//     visibles de shell.html (badge sintético y nota del footer).
+// 20. QA-R1 anti-regresión D1 (pin actualizado en Adendum R9/PR-02/PR-03):
+//     español con tildes en los 2 strings visibles de shell.html (badge de
+//     modo demo y nota del footer). El id del badge pasó de
+//     hz-badge-sintetico a hz-modo-datos en el Adendum R8 (contrato punto
+//     2); en el Adendum R9 el texto pasa de "Datos sintéticos" a
+//     "Modo demo" (PR-02, decisión C1) y el footer deja de autodenominar
+//     la app "prototipo" (PR-03), conservando el disclaimer clínico.
 // ---------------------------------------------------------------
 assert(
-  /id="hz-badge-sintetico"[^>]*>Datos sintéticos</.test(html),
-  'el badge #hz-badge-sintetico dice "Datos sintéticos" con tilde (D1, anti-regresión)'
+  /id="hz-modo-datos"[^>]*>Modo demo</.test(html),
+  'el badge #hz-modo-datos dice "Modo demo" (Adendum R9/PR-02, decisión C1: supersede "Datos sintéticos")'
 );
 assert(
-  /id="hz-nota-prototipo">Acerca de este prototipo: interfaz de demostración con datos sintéticos generados con fines ilustrativos; no sustituye valoración clínica ni nutriológica real\.<\/p>/.test(html),
-  'la nota del footer #hz-nota-prototipo usa español con tildes completas (demostración, sintéticos, valoración, clínica, nutriológica) (D1, anti-regresión)'
+  /id="hz-nota-prototipo">Rinde es una herramienta de apoyo al seguimiento nutricional del CECAD; no sustituye la valoración clínica ni nutriológica de un profesional\.<\/p>/.test(html),
+  'la nota del footer #hz-nota-prototipo usa el texto exacto de PR-03 (Adendum R9), con tildes completas (nutricional, valoración, clínica, nutriológica) y sin las palabras prototipo/demostración/sintéticos'
 );
+var notaPrototipoTextoMatch = /id="hz-nota-prototipo">([^<]*)<\/p>/.exec(html);
+assert(notaPrototipoTextoMatch !== null, 'prerrequisito: se pudo extraer el texto visible de #hz-nota-prototipo');
+if (notaPrototipoTextoMatch) {
+  assert(
+    !/prototipo|demostraci[oó]n|sint[eé]tic/i.test(notaPrototipoTextoMatch[1]),
+    'el texto visible de #hz-nota-prototipo ya no menciona "prototipo", "demostración" ni "sintéticos" en ninguna forma (PR-03: de-prototipo, disclaimer clínico permanente; el id se conserva por namespace congelado)'
+  );
+}
 
 // ---------------------------------------------------------------
 // 21. Adendum R4 (T-017): layout del menú del día (Plan de dieta).
@@ -572,30 +596,39 @@ DOC_CLASSES_R5.forEach(function (cls) {
   assert(hasClassSelector(cssText, cls), 'clase nueva .' + cls + ' (Adendum R5, documentos) tiene una regla CSS definida en build/shell.html');
 });
 
-// 22.1 Cero clases nuevas fuera de hz-reco-/hz-doc-: se enumeran TODOS
-// los selectores de clase del bloque <style> (comentarios fuera, para no
-// confundir "shell.html" o "vista_dieta_supl.js" en la prosa de un
-// comentario con un selector real) y cada uno debe pertenecer al set
-// previamente congelado (frozen + menu R4 + utilidades de chrome) o
-// empezar con hz-reco- / hz-doc-.
+// 22.1 Cero clases nuevas fuera de hz-reco-/hz-doc- salvo las autorizadas
+// explícitamente por Adendums posteriores (R8: .hz-vacio, plan.md contrato
+// punto 2): se enumeran TODOS los selectores de clase del bloque <style>
+// (comentarios fuera, para no confundir "shell.html" o
+// "vista_dieta_supl.js" en la prosa de un comentario con un selector real)
+// y cada uno debe pertenecer al set previamente congelado (frozen + menu
+// R4 + utilidades de chrome + R8) o empezar con hz-reco- / hz-doc-.
 var CHROME_UTILITY_CLASSES = [
   'hz-axis-tick', 'hz-filtros-label', 'hz-footer', 'hz-header',
   'hz-header-brand', 'hz-header-meta', 'hz-header-nombre', 'hz-main',
   'hz-tab', 'hz-tablist', 'hz-toggle-tema', 'hz-vista'
 ];
+// Adendum R8 punto 2: única clase nueva fuera de hz-reco-/hz-doc-,
+// explícitamente autorizada por el contrato ("clase .hz-vacio ... para
+// estados vacíos de cards").
+var R8_CLASSES = ['hz-vacio'];
+// Adendum R9 punto 1 (T-044): dos clases nuevas fuera de hz-reco-/hz-doc-,
+// explícitamente autorizadas por el contrato (.hz-grid-pares para LY-04,
+// .hz-selector-cliente para MC-03).
+var R9_CLASSES = ['hz-grid-pares', 'hz-selector-cliente'];
 var cssTextSinComentarios = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
 var classSelectorRe = /\.([a-zA-Z][a-zA-Z0-9-]*)/g;
 var classesEnCss = {};
 var cmSel;
 while ((cmSel = classSelectorRe.exec(cssTextSinComentarios))) { classesEnCss[cmSel[1]] = true; }
 var KNOWN_PREEXISTING = {};
-FROZEN_CLASSES.concat(MENU_CLASSES_R4).concat(CHROME_UTILITY_CLASSES).forEach(function (c) { KNOWN_PREEXISTING[c] = true; });
+FROZEN_CLASSES.concat(MENU_CLASSES_R4).concat(CHROME_UTILITY_CLASSES).concat(R8_CLASSES).concat(R9_CLASSES).forEach(function (c) { KNOWN_PREEXISTING[c] = true; });
 Object.keys(classesEnCss).sort().forEach(function (cls) {
   var esConocida = !!KNOWN_PREEXISTING[cls];
   var esRecoODoc = (cls.indexOf('hz-reco-') === 0) || (cls.indexOf('hz-doc-') === 0);
-  assert(esConocida || esRecoODoc, 'la clase .' + cls + ' definida en build/shell.html es previamente conocida o lleva prefijo hz-reco-/hz-doc- (cero clases nuevas fuera de esos dos prefijos, Adendum R5)');
+  assert(esConocida || esRecoODoc, 'la clase .' + cls + ' definida en build/shell.html es previamente conocida (incluye .hz-vacio de R8 y .hz-grid-pares/.hz-selector-cliente de R9) o lleva prefijo hz-reco-/hz-doc- (cero clases nuevas fuera de ese set, Adendum R5+R8+R9)');
 });
-assert(Object.keys(classesEnCss).length >= 78, 'el bloque <style> define al menos 78 selectores de clase distintos (frozen + menú R4 + chrome + reco + doc)', 'encontrados=' + Object.keys(classesEnCss).length);
+assert(Object.keys(classesEnCss).length >= 81, 'el bloque <style> define al menos 81 selectores de clase distintos (frozen + menú R4 + chrome + reco + doc + .hz-vacio de R8 + .hz-grid-pares/.hz-selector-cliente de R9)', 'encontrados=' + Object.keys(classesEnCss).length);
 
 // 22.2 Contenedor #reco-plan: dentro de #vista-plan, hz-card + hz-reco-panel, vacío.
 assert(/<div id="reco-plan" class="hz-card hz-reco-panel"><\/div>/.test(html), '#reco-plan existe, vacío, con clases "hz-card hz-reco-panel"');
@@ -628,14 +661,20 @@ assert(/<label for="hz-doc-input-importar" class="hz-doc-import-label">Importar 
 assert(/<input type="file" id="hz-doc-input-importar" accept="\.csv,text\/csv">/.test(html), 'input[type=file] #hz-doc-input-importar existe con accept=".csv,text/csv"');
 
 // 22.4 Contenedor #documento-plan: al final del body, DESPUÉS de hz-boot,
-// clase hz-doc-documento, vacío (T-023 lo llena vía JS).
+// clase hz-doc-documento, vacío (T-023 lo llena vía JS). Desde el Adendum
+// R8 el ÚLTIMO elemento literal del body es <script id="hz-sw-registro">
+// (registro del service worker, contrato punto 2: "al final del body");
+// #documento-plan sigue siendo el último NODO DE CONTENIDO, justo antes.
 var bootScriptCloseIdx = html.indexOf('</script>', bootTagIdx);
 var documentoPlanIdx = html.indexOf('<div id="documento-plan"');
 var bodyCloseIdx = html.indexOf('</body>');
 assert(documentoPlanIdx > -1 && documentoPlanIdx > bootScriptCloseIdx, '#documento-plan aparece DESPUÉS del cierre de <script id="hz-boot">');
 assert(bodyCloseIdx > -1 && documentoPlanIdx < bodyCloseIdx, '#documento-plan aparece ANTES de </body>');
 var tailDespuesDeDocumento = html.slice(documentoPlanIdx);
-assert(/^<div id="documento-plan" class="hz-doc-documento"><\/div>\s*<\/body>\s*<\/html>\s*$/.test(tailDespuesDeDocumento), '#documento-plan es literalmente el ÚLTIMO elemento del body (vacío, clase hz-doc-documento, nada más entre él y </body>)');
+assert(
+  /^<div id="documento-plan" class="hz-doc-documento"><\/div>\s*<!--[\s\S]*?-->\s*<script id="hz-sw-registro">[\s\S]*?<\/script>\s*<\/body>\s*<\/html>\s*$/.test(tailDespuesDeDocumento),
+  '#documento-plan es el último NODO DE CONTENIDO del body (vacío, clase hz-doc-documento); solo <script id="hz-sw-registro"> (Adendum R8) va después, y nada más entre él y </body>'
+);
 
 // 22.5 Bloque @media print: existe, aparece DESPUÉS de los 4 bloques de
 // tokens y contiene la regla que oculta todo menos #documento-plan.
@@ -727,6 +766,7 @@ assert(!/border-radius:\s*999px;/.test(docImportLabelBlockR6), '.hz-doc-import-l
 
 var badgeBlockR6 = extractBlock(cssText, '.hz-badge {');
 assert(/border-radius:\s*999px;/.test(badgeBlockR6), '.hz-badge conserva border-radius: 999px (R6 prod-7/fini-7: la píldora queda reservada a chips, anti-regresión)');
+assert(/\.hz-badge\[hidden\]\s*\{\s*display:\s*none;\s*\}/.test(cssText), 'existe la regla .hz-badge[hidden] { display: none; } (R9-fix T-046: el atributo hidden de #hz-modo-datos debe ocultarlo en modo real, igual que .hz-vista[hidden]/.hz-filtros[hidden])');
 var filtroBtnBlockR6 = extractBlock(cssText, '.hz-filtro-btn {');
 assert(/border-radius:\s*999px;/.test(filtroBtnBlockR6), '.hz-filtro-btn conserva border-radius: 999px (R6 prod-7/fini-7: la píldora queda reservada a filtros, anti-regresión)');
 
@@ -800,6 +840,150 @@ if (floorMatchR6 !== null) {
   assert(4 * floorPxR6 + 3 * 16 <= contenidoA1240R6, 'con el piso actual de .hz-grid (' + floorPxR6 + 'px), 4 columnas caben en una fila a 1240px (fini-6: 4*piso + 3*gap <= ' + contenidoA1240R6 + 'px de contenido disponible)');
   assert(5 * floorPxR6 + 4 * 16 > contenidoA1240R6, 'con el piso actual de .hz-grid (' + floorPxR6 + 'px), 5 columnas NO caben en una fila a 1240px (D4 no regresa)');
 }
+
+// 23.10 Adendum R9 punto 1 (T-044): CSS aditivo de reparto — regla
+// data-ancho="doble" (LY-01 pieza 1, consumida por LY-01/LY-05/DV-05 en
+// sus vistas vía setAttribute) y clase .hz-grid-pares (LY-04, Seguimiento).
+// Se implementan UNA sola vez en shell.html.
+var dobleMediaBlock = extractBlock(html, '@media (min-width: 600px) {');
+assert(dobleMediaBlock.length > 0, 'existe el bloque @media (min-width: 600px) { ... } (Adendum R9 punto 1: la regla doble solo aplica desde 600px)');
+assert(
+  /\.hz-grid\s*>\s*\[data-ancho="doble"\]\s*\{\s*grid-column:\s*span\s*2;\s*\}/.test(dobleMediaBlock),
+  'dentro de @media (min-width: 600px) existe ".hz-grid > [data-ancho=\\"doble\\"] { grid-column: span 2; }" (Adendum R9 punto 1 / LY-01 pieza 1)'
+);
+assert(
+  html.indexOf('[data-ancho="completo"]') < html.indexOf('@media (min-width: 600px)') && html.indexOf('@media (min-width: 600px)') < html.lastIndexOf('</style>'),
+  'la regla data-ancho="doble" está junto a la regla data-ancho="completo" existente, dentro del mismo bloque <style> (Adendum R9 punto 1)'
+);
+assert(hasClassSelector(cssText, 'hz-grid-pares'), 'clase .hz-grid-pares (Adendum R9 punto 1 / LY-04) tiene una regla CSS definida en build/shell.html');
+var gridParesBlock = extractBlock(cssText, '.hz-grid-pares {');
+assert(gridParesBlock.length > 0, '.hz-grid-pares tiene una regla CSS con contenido');
+assert(
+  /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(480px,\s*100%\),\s*1fr\)\);/.test(gridParesBlock),
+  '.hz-grid-pares tiene "grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));" (LY-04: piso de 480px, exactamente 2 columnas entre ~1000-1500px)'
+);
+
+// 23.11 LY-06a: .hz-reco-resumen pasa de flex-wrap a grid auto-fit, sin
+// tocar tipografía/tokens/contenido (reparto interno de la calculadora).
+var recoResumenBlock = extractBlock(cssText, '.hz-reco-resumen {');
+assert(recoResumenBlock.length > 0, '.hz-reco-resumen tiene una regla CSS con contenido');
+assert(/display:\s*grid;/.test(recoResumenBlock), '.hz-reco-resumen usa display: grid (LY-06a: ya no flex-wrap)');
+assert(!/flex-wrap/.test(recoResumenBlock), '.hz-reco-resumen ya no declara flex-wrap (LY-06a)');
+assert(
+  /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(150px,\s*100%\),\s*1fr\)\);/.test(recoResumenBlock),
+  '.hz-reco-resumen tiene "grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));" (LY-06a: sin huérfanas de ancho fijo)'
+);
+assert(/gap:\s*12px;/.test(recoResumenBlock), '.hz-reco-resumen conserva gap: 12px (LY-06a)');
+
+// 23.12 MC-03 markup: selector de cliente del header con tokens SOLO del
+// Adendum R9 punto 1 (cero hexes nuevos, paleta congelada).
+assert(hasClassSelector(cssText, 'hz-selector-cliente'), 'clase .hz-selector-cliente (Adendum R9 punto 1 / MC-03) tiene una regla CSS definida en build/shell.html');
+var selectorClienteBlock = extractBlock(cssText, '.hz-selector-cliente {');
+assert(selectorClienteBlock.length > 0, '.hz-selector-cliente tiene una regla CSS con contenido');
+assert(/border:\s*1px solid var\(--border\);/.test(selectorClienteBlock), '.hz-selector-cliente usa border: 1px solid var(--border) (token existente, MC-03)');
+assert(/border-radius:\s*8px;/.test(selectorClienteBlock), '.hz-selector-cliente usa border-radius: 8px (MC-03)');
+assert(/background:\s*var\(--surface-1\);/.test(selectorClienteBlock), '.hz-selector-cliente usa background: var(--surface-1) (token existente, MC-03)');
+assert(/color:\s*var\(--text-primary\);/.test(selectorClienteBlock), '.hz-selector-cliente usa color: var(--text-primary) (token existente, MC-03)');
+assert(!/#[0-9a-fA-F]{3,8}/.test(selectorClienteBlock), '.hz-selector-cliente no declara ningún hex nuevo (paleta congelada, solo tokens)');
+var selectorClienteFocusBlock = extractBlock(cssText, '.hz-selector-cliente:focus-visible {');
+assert(selectorClienteFocusBlock.length > 0, '.hz-selector-cliente:focus-visible tiene una regla CSS con contenido (MC-03)');
+assert(
+  /outline:\s*2px solid var\(--series-1\);/.test(selectorClienteFocusBlock) && /outline-offset:\s*2px;/.test(selectorClienteFocusBlock),
+  '.hz-selector-cliente:focus-visible tiene outline: 2px solid var(--series-1) y outline-offset: 2px (token existente, MC-03)'
+);
+
+// ---------------------------------------------------------------
+// 24. Adendum R8 punto 2 (T-038): capa PWA del <head> + contenedores de
+//     modo real. Contratos congelados en plan.md Adendum R8.
+// ---------------------------------------------------------------
+var headBlockMatch = /<head>([\s\S]*?)<\/head>/.exec(html);
+var headText = headBlockMatch ? headBlockMatch[1] : '';
+
+// 24.1 link al manifest, junto a index.html (T-037 lo coloca).
+assert(/<link rel="manifest" href="\.\/manifest\.webmanifest">/.test(headText), 'el <head> tiene <link rel="manifest" href="./manifest.webmanifest">');
+
+// 24.2 favicon inline SVG data URI (para file://): rel=icon, tipo svg,
+//      fondo --series-1 (#2a78d6, mismo hex ya validado en la sección 11)
+//      y monograma blanco -- ningún hex fuera de tokens/spec del Adendum.
+var svgFaviconRe = /<link rel="icon" type="image\/svg\+xml" href="data:image\/svg\+xml,([^"]+)">/;
+var svgFaviconMatch = svgFaviconRe.exec(headText);
+assert(svgFaviconMatch !== null, 'el <head> tiene un favicon inline <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,..."> (para file://)');
+if (svgFaviconMatch) {
+  var svgFaviconSrc = svgFaviconMatch[1];
+  assert(/%3Csvg[^%]*xmlns='http:\/\/www\.w3\.org\/2000\/svg'/.test(svgFaviconSrc), 'el favicon inline es un <svg> bien formado (xmlns presente, escapado como data URI)');
+  assert(svgFaviconSrc.indexOf('%232a78d6') !== -1, 'el favicon inline usa el hex de --series-1 (%232a78d6 = #2a78d6, contrato sec. 2 y Adendum R8 punto 3) como fondo del monograma');
+  assert(/fill='white'|stroke='white'/.test(svgFaviconSrc), 'el favicon inline dibuja el monograma en blanco (sin hex fuera de tokens/spec)');
+  assert(svgFaviconSrc.indexOf('#') === -1, 'el favicon inline no lleva "#" sin escapar (evita que el navegador lo lea como fragmento de la data URI)');
+}
+
+// 24.3 link icon 32x32 a PNG + apple-touch-icon 180 (T-037 los coloca junto
+//      a index.html; el sitio publicado los usa, no file://).
+assert(/<link rel="icon" sizes="32x32" href="\.\/favicon-32\.png">/.test(headText), 'el <head> tiene <link rel="icon" sizes="32x32" href="./favicon-32.png">');
+assert(/<link rel="apple-touch-icon" href="\.\/icon-180\.png">/.test(headText), 'el <head> tiene <link rel="apple-touch-icon" href="./icon-180.png">');
+
+// 24.4 meta theme-color x2 (claro/oscuro), hexes == --surface-1 ya
+//      validado en la sección 11 (tokenDeclared), autorizados SOLO aquí.
+var surfaceTok = TOKENS.filter(function (t) { return t.name === '--surface-1'; })[0];
+assert(surfaceTok !== undefined, 'el token --surface-1 está en la lista TOKENS (prerrequisito de 24.4)');
+if (surfaceTok) {
+  var themeColorLightRe = new RegExp('<meta name="theme-color" content="' + surfaceTok.light.replace('#', '#') + '" media="\\(prefers-color-scheme: light\\)">');
+  var themeColorDarkRe = new RegExp('<meta name="theme-color" content="' + surfaceTok.dark.replace('#', '#') + '" media="\\(prefers-color-scheme: dark\\)">');
+  assert(themeColorLightRe.test(headText), 'el <head> tiene <meta name="theme-color" content="' + surfaceTok.light + '" media="(prefers-color-scheme: light)"> (== --surface-1 claro)');
+  assert(themeColorDarkRe.test(headText), 'el <head> tiene <meta name="theme-color" content="' + surfaceTok.dark + '" media="(prefers-color-scheme: dark)"> (== --surface-1 oscuro)');
+}
+
+// 24.5 registro del service worker GUARDEADO al final del body: solo con
+//      'serviceWorker' in navigator Y protocolo http/https (jamás file://,
+//      así corre QA), catch silencioso, registra ./sw.js.
+assert(swRegistroBlock !== null, 'prerrequisito 24.5: existe <script id="hz-sw-registro">');
+if (swRegistroBlock) {
+  var swSrc = swRegistroBlock.body;
+  assert(swSrc.indexOf("'serviceWorker' in navigator") !== -1, 'hz-sw-registro comprueba \'serviceWorker\' in navigator antes de registrar');
+  assert(/\/\^https\?:\$\/\.test\(location\.protocol\)/.test(swSrc), 'hz-sw-registro guardea el protocolo con /^https?:$/.test(location.protocol) (jamás intenta registrar en file://)');
+  assert(/&&/.test(swSrc), 'hz-sw-registro combina ambas condiciones (serviceWorker Y protocolo) con &&');
+  assert(swSrc.indexOf("navigator.serviceWorker.register('./sw.js')") !== -1, 'hz-sw-registro registra "./sw.js" (relativo, mismo origen que T-037 coloca)');
+  assert(/catch/.test(swSrc), 'hz-sw-registro tiene manejo de error (catch silencioso, nunca rompe el arranque)');
+  assert(html.indexOf('</body>') > html.lastIndexOf('<script id="hz-sw-registro">'), 'hz-sw-registro es el último bloque de script antes de </body> (Adendum R8: registro al final del body)');
+}
+
+// 24.6 badge #hz-modo-datos junto a #hz-btn-modo, y #hz-btn-modo junto a
+//      #toggle-tema (mismo estilo .hz-toggle-tema, sin lógica: la cablea
+//      T-039/almacen.js). Texto inicial 'Usar mis datos' intacto.
+var headerBlockMatch = /<header class="hz-header">([\s\S]*?)<\/header>/.exec(html);
+var headerText = headerBlockMatch ? headerBlockMatch[1] : '';
+assert(headerBlockMatch !== null, 'prerrequisito 24.6: existe <header class="hz-header">...</header>');
+assert(
+  /<button type="button" id="hz-btn-modo" class="hz-toggle-tema" aria-pressed="false">Usar mis datos<\/button>/.test(headerText),
+  'existe el botón #hz-btn-modo con clase .hz-toggle-tema (mismo estilo que "Cambiar tema") y texto inicial "Usar mis datos"'
+);
+assert(
+  headerText.indexOf('id="hz-btn-modo"') < headerText.indexOf('id="toggle-tema"'),
+  '#hz-btn-modo está en el header junto a #toggle-tema (Cambiar tema), inmediatamente antes'
+);
+var hzBtnModoTagMatch = /<button type="button" id="hz-btn-modo"[^>]*>/.exec(headerText);
+var hzBtnModoTag = hzBtnModoTagMatch ? hzBtnModoTagMatch[0] : '';
+assert(!/onclick|addEventListener/.test(hzBtnModoTag), '#hz-btn-modo no lleva lógica cableada en el markup del shell (la cablea T-039/almacen.js)');
+
+// 24.7 contenedor #captura-mediciones vacío, al inicio de la vista
+//      Seguimiento (T-040 lo llena).
+var vistaSeguimientoMatch = /<section id="vista-seguimiento"[^>]*>([\s\S]*?)<\/section>\s*<section id="vista-suplementos"/.exec(html);
+assert(vistaSeguimientoMatch !== null, 'prerrequisito 24.7: existe <section id="vista-seguimiento">...</section>');
+if (vistaSeguimientoMatch) {
+  var vistaSeguimientoBody = vistaSeguimientoMatch[1];
+  assert(/<section id="captura-mediciones"><\/section>/.test(vistaSeguimientoBody), 'existe <section id="captura-mediciones"></section> vacío dentro de la vista Seguimiento');
+  var idxCaptura = vistaSeguimientoBody.indexOf('id="captura-mediciones"');
+  var idxDocHerramientas = vistaSeguimientoBody.indexOf('id="doc-herramientas"');
+  assert(idxCaptura !== -1 && idxDocHerramientas !== -1 && idxCaptura < idxDocHerramientas, '#captura-mediciones está al inicio de la vista Seguimiento, antes de #doc-herramientas');
+}
+
+// 24.8 clase .hz-vacio (estados vacíos, modo real sin datos): basada en
+//      .hz-nota, centrada, con padding vertical generoso.
+var vacioBlock = extractBlock(cssText, '.hz-vacio {');
+assert(vacioBlock.length > 0, '.hz-vacio tiene una regla CSS con contenido');
+assert(/color:\s*var\(--text-secondary\);/.test(vacioBlock), '.hz-vacio usa var(--text-secondary) como .hz-nota (tinta por token, sin hex)');
+assert(/text-align:\s*center;/.test(vacioBlock), '.hz-vacio está centrada (text-align: center)');
+var vacioPaddingMatch = /padding:\s*(\d+)px/.exec(vacioBlock);
+assert(vacioPaddingMatch !== null && parseInt(vacioPaddingMatch[1], 10) >= 24, '.hz-vacio tiene padding vertical generoso (>=24px)');
 
 console.log('checks ejecutados: ' + checks);
 process.exit(0);

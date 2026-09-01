@@ -22,7 +22,14 @@
 // <!-- INJECT:charts --> en build/shell.html, el resultado final respeta
 // el orden pedido usando solo los archivos que T-024 POSEE.
 //
-// Idempotente por construcción: cada corrida lee los siete fuentes de
+// Adendum R8 punto 6 (T-042): mismo patrón de bloques múltiples, ahora
+// sobre el marcador <!-- INJECT:data -->: build/almacen.js (T-039/T-045,
+// dueño Herzon.Almacen) entra como SEGUNDO bloque <script id="hz-almacen">,
+// DESPUÉS de data.js y ANTES de charts/vistas -- su cargar() corre en
+// cuanto se define, así que el boot de vistas ya ve el modo (demo/real) y
+// el cliente activo correctos.
+//
+// Idempotente por construcción: cada corrida lee los ocho fuentes de
 // disco desde cero y no conserva estado entre invocaciones, así que dos
 // corridas consecutivas producen el mismo prototype/index.html byte a
 // byte mientras los fuentes no cambien.
@@ -62,18 +69,24 @@ function bloquesScript(lista) {
   return piezas.join('\n');
 }
 
-// Ensambla el documento completo en memoria a partir de los siete fuentes
+// Ensambla el documento completo en memoria a partir de los ocho fuentes
 // en disco (cinco originales de T-006 + motor_recomendacion.js y
-// documentos.js de R5). Función pura respecto del sistema de archivos:
-// siempre lee, nunca escribe. Permite que build/checks.js la reutilice
-// para verificar idempotencia sin invocar un segundo proceso node.
+// documentos.js de R5 + almacen.js de R8/R9). Función pura respecto del
+// sistema de archivos: siempre lee, nunca escribe. Permite que
+// build/checks.js la reutilice para verificar idempotencia sin invocar un
+// segundo proceso node.
 function ensamblar() {
   var shellHtml = leerFuente('shell.html');
 
   var inyecciones = [
     {
+      // Adendum R8 punto 6 (T-042): almacen.js como segundo bloque, después
+      // de data.js -- ver nota arriba.
       marcador: '<!-- INJECT:data -->',
-      bloques: [{ idBloque: 'hz-data', contenido: leerFuente('data.js') }]
+      bloques: [
+        { idBloque: 'hz-data', contenido: leerFuente('data.js') },
+        { idBloque: 'hz-almacen', contenido: leerFuente('almacen.js') }
+      ]
     },
     {
       marcador: '<!-- INJECT:charts -->',

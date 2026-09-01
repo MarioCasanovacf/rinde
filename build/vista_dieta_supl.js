@@ -221,6 +221,39 @@
     bajo_en_carbohidratos: 'Preferencia baja en carbohidratos'
   };
 
+  // -----------------------------------------------------------------------
+  // R8 (Adendum R8 punto 4) + R9: estados vacíos en modo real. Textos
+  // exactos pinneados por este mismo selfcheck (build/selfcheck_vistas_a.js);
+  // si cambian, el pin se actualiza en el MISMO cambio.
+  // -----------------------------------------------------------------------
+  var TEXTO_VACIO_PLAN = 'Aún no tienes un plan aplicado. Usa el recomendador de aquí abajo para elegir y aplicar una plantilla a tu perfil.';
+  var TEXTO_VACIO_SUPLEMENTOS = 'Sin datos aún — no hay suplementos registrados en tu régimen.';
+
+  // -----------------------------------------------------------------------
+  // C3 (síntesis R9, hallazgo LY-05): rótulos cortos de despliegue para la
+  // gráfica de barras de adherencia por suplemento -- el nombre completo con
+  // dosis ya vive en la tabla "Régimen de suplementos" (cardRegimen, arriba
+  // de la gráfica en el DOM). Diccionario exacto para el catálogo sintético
+  // de build/data.js, con un fallback data-driven (recorta el calificador
+  // entre paréntesis y se queda con las 2 primeras palabras) para cualquier
+  // régimen futuro fuera de ese catálogo.
+  // -----------------------------------------------------------------------
+  var ETIQUETAS_CORTAS_SUPLEMENTO = {
+    'Omega-3 (aceite de pescado)': 'Omega-3',
+    'Vitamina D3': 'Vitamina D3',
+    'Magnesio quelado': 'Magnesio',
+    'Probiótico multiflora': 'Probiótico'
+  };
+
+  function etiquetaCortaSuplemento(nombreCompleto) {
+    if (Object.prototype.hasOwnProperty.call(ETIQUETAS_CORTAS_SUPLEMENTO, nombreCompleto)) {
+      return ETIQUETAS_CORTAS_SUPLEMENTO[nombreCompleto];
+    }
+    var sinCalificador = String(nombreCompleto || '').replace(/\s*\([^)]*\)\s*$/, '');
+    var palabras = sinCalificador.split(' ').filter(function (p) { return p.length > 0; });
+    return palabras.slice(0, 2).join(' ') || sinCalificador;
+  }
+
   // Deriva las opciones del formulario directamente de HERZON_DATA.planes
   // (plan.indicadoPara), sin lista clínica hardcodeada: P2 del coordinador
   // prohíbe un motor clínico real, y la selección "sale de plan.indicadoPara".
@@ -343,18 +376,42 @@
   function crearRecoEstadoInicial() {
     var HERZON_DATA = G.HERZON_DATA;
     var paciente = HERZON_DATA.paciente;
+    // R8 (Adendum R8 punto 4): en modo real, paciente.actividad es la clave
+    // ADITIVA que expone Herzon.Almacen (construirPacienteDesdePerfil) con
+    // el nivel de actividad REAL capturado en el alta/edición de perfil --
+    // se precarga aquí para no adivinar. En demo esa clave no existe (el
+    // paciente sintético de build/data.js no la trae) y el default sigue
+    // siendo 'ligero' (reproduce el ancla de verificación TMB 1432/GET 1969
+    // del Adendum R5, que no cambia).
+    var factorPrecargado = (paciente.actividad && HERZON_DATA.factoresActividad &&
+      Object.prototype.hasOwnProperty.call(HERZON_DATA.factoresActividad, paciente.actividad))
+      ? paciente.actividad
+      : 'ligero';
+    // MC-07 (Adendum R9 punto 3): HERZON_DATA.planAplicado es la clave
+    // ADITIVA que expone Herzon.Almacen al montar un cliente real, con el
+    // slot `plan` persistido de ESE cliente (null si aún no aplicó ninguna
+    // plantilla). Precargar la selección aquí evita que Herzon.planActivo()
+    // resuelva por accidente el plan de OTRO cliente/modo mientras el
+    // usuario no ha vuelto a elegir nada en este panel. En demo esa clave no
+    // existe (undefined) y planIdPrecargado cae en null -- comportamiento
+    // actual, sin cambios.
+    var planAplicadoPersistido = HERZON_DATA.planAplicado;
+    var planIdPrecargado = (planAplicadoPersistido && planAplicadoPersistido.plantillaId &&
+      planPorId(HERZON_DATA, planAplicadoPersistido.plantillaId))
+      ? planAplicadoPersistido.plantillaId
+      : null;
     return {
       perfil: {
         sexo: paciente.sexo,
         edad: paciente.edad,
         tallaCm: paciente.talla_cm,
         pesoKg: paciente.pesoInicial_kg,
-        factorClave: 'ligero',
+        factorClave: factorPrecargado,
         objetivo: objetivoMotorDesdeTexto(paciente.objetivo)
       },
       necesidades: null,      // { tmb, get, kcal, proteina_g, carbohidrato_g, grasa_g }
       ranking: null,          // [{ plan, score, razones[] }] descendente (Herzon.Motor.recomendar)
-      planIdSeleccionado: null, // id elegido a mano en el ranking, o null = automático (el mejor rankeado)
+      planIdSeleccionado: planIdPrecargado, // MC-07: precargado desde HERZON_DATA.planAplicado, o null = automático (el mejor rankeado)
       kcalManual: null,       // override manual del kcal objetivo mostrado, o null = usa el de la plantilla
       escalaPorciones: 1,     // 0.8 - 1.2
       // R6 (prod-2, claves ADITIVAS, plan.md Adendum R6 punto 3): la card
@@ -408,6 +465,16 @@
     return recoEstadoSingleton;
   }
 
+  // -----------------------------------------------------------------------
+  // R9 (Adendum R9 punto 3, MC-02/MC-07): referencias de re-montaje. Cada
+  // vista se monta UNA sola vez (Herzon.registerView, plan.md 3.C); toda
+  // reactividad a un cambio de cliente/modo posterior pasa por
+  // herzon:modo-cambiado (ver manejarRemontajeDatos, más abajo), que
+  // necesita poder volver a dibujar la vista YA montada.
+  // -----------------------------------------------------------------------
+  var refsMontajePlan = null;
+  var refsMontajeSuplementos = null;
+
   // R6 (fini-4): los botones del recomendador dejan de estilizarse con
   // element.style inline y pasan a la clase congelada .hz-table-toggle
   // (plan.md Adendum R6 punto 6: "botones del recomendador via clases
@@ -438,13 +505,13 @@
   // conserva el texto en minúsculas que ya produce Herzon.Motor), color
   // var(--text-secondary) y razones separadas por ' · ' -- ya NO chips
   // .hz-badge (ese queda reservado a rótulos cortos reales, plan.md
-  // Adendum R6 punto 6). El contenedor .hz-reco-razones es flex-wrap en
-  // build/shell.html (pensado para chips); se desactiva puntualmente a
-  // "block" vía element.style (regla 3.H) para que los fragmentos de texto
-  // fluyan como una sola línea en vez de separarse con el gap de la fila.
+  // Adendum R6 punto 6). R9 (LY-06b): .hz-reco-razones ya NO se fuerza a
+  // "block" -- se deja el flex-wrap nativo de build/shell.html para que el
+  // botón "Usar este plan" pueda vivir como último hijo de este mismo
+  // contenedor, empujado a la derecha con margin-left:auto (ver
+  // renderRanking, más abajo).
   function construirLineaRazones(doc, contenedorEl, razones) {
     limpiar(contenedorEl);
-    contenedorEl.style.display = 'block';
     contenedorEl.style.fontSize = '0.85rem';
     contenedorEl.style.color = 'var(--text-secondary)';
     for (var i = 0; i < razones.length; i++) {
@@ -701,13 +768,17 @@
         construirLineaRazones(doc, razones, entrada.razones);
         item.appendChild(razones);
 
-        var accionesItem = crearHTML(doc, 'div');
-        accionesItem.classList.add('hz-reco-acciones');
+        // R9 (LY-06b): "Usar este plan" ya NO vive en su propio
+        // .hz-reco-acciones (fila completa, banda vacía debajo de las
+        // razones) -- se monta como ÚLTIMO hijo de .hz-reco-razones (ya
+        // flex-wrap), empujado a la derecha con margin-left:auto, así
+        // comparte fila con el texto de razones.
         var botonUsar = crearHTML(doc, 'button');
         botonUsar.setAttribute('type', 'button');
         botonUsar.setAttribute('data-plan-id', entrada.plan.id);
         botonUsar.setAttribute('data-accion', 'usar-plan');
         botonUsar.classList.add('hz-table-toggle');
+        botonUsar.style.marginLeft = 'auto';
         if (esAplicado) {
           botonUsar.textContent = 'Plan aplicado';
           botonUsar.setAttribute('disabled', 'disabled');
@@ -725,12 +796,27 @@
           campoKcalManual.input.value = '';
           campoEscala.input.value = '1';
           actualizarEtiquetaEscala(1);
+          // MC-07 (Adendum R9 punto 3): en modo real, aplicar una plantilla
+          // la persiste en el cliente activo (Herzon.Almacen.guardarPlan) y
+          // expone HERZON_DATA.planAplicado de inmediato -- así el
+          // documento imprimible (build/documentos.js) y el estado vacío de
+          // esta misma vista (sinPlanAplicado en render(), ver
+          // montarVistaPlan) nunca leen el plan de OTRO cliente. En demo,
+          // Herzon.Almacen.modo() es 'demo' y este bloque no hace nada (sin
+          // cambios, no-regresión).
+          var AlmacenReco = G.Herzon.Almacen;
+          if (AlmacenReco && typeof AlmacenReco.modo === 'function' && AlmacenReco.modo() === 'real') {
+            var planElegidoParaGuardar = planPorId(HERZON_DATA, idElegido);
+            AlmacenReco.guardarPlan({
+              plantillaId: idElegido,
+              kcalObjetivo: planElegidoParaGuardar ? planElegidoParaGuardar.kcalObjetivo : null
+            });
+          }
           renderRanking();
           renderPlanAplicado();
           refrescarVistaPrincipal();
         });
-        accionesItem.appendChild(botonUsar);
-        item.appendChild(accionesItem);
+        razones.appendChild(botonUsar);
 
         listaRanking.appendChild(item);
       }
@@ -890,6 +976,14 @@
     var notaPlan = crearHTML(doc, 'p');
     notaPlan.classList.add('hz-nota');
     cardHero.appendChild(notaPlan);
+    // R8 punto 4 / R9 MC-07: estado vacío (modo real sin plantilla
+    // aplicada) -- nodo oculto por defecto; render() alterna la visibilidad
+    // contra notaPlan (nunca ambos visibles a la vez).
+    var notaVaciaHero = crearHTML(doc, 'p');
+    notaVaciaHero.classList.add('hz-vacio');
+    notaVaciaHero.setAttribute('hidden', '');
+    notaVaciaHero.textContent = TEXTO_VACIO_PLAN;
+    cardHero.appendChild(notaVaciaHero);
 
     // --- Formulario mínimo (.hz-form): objetivo + restricción/alergia ---
     var cardForm = crearCard(doc, grid, 'Personaliza tu plan');
@@ -916,12 +1010,16 @@
 
     // --- Gráficas: macros por comida (apilada100) y calorías por día (barras),
     // agrupadas en UNA sola card con grid anidado (mismo patrón que la card
-    // "Laboratorios en 3 cortes" de vista_metricas.js). Corrección R4 tras
-    // rechazo del verifier (intento 1): con 4 cards sueltas + 1 fila de ancho
-    // completo (hz-menu-fila), el grid superior a 1240px resuelve 3 columnas
-    // y la 4ª card queda sola dejando 2 columnas de hueco muerto. Con 3 cards
-    // (hero, formulario, gráficas) el grid llena la fila sin resto. ---
-    var cardGraficas = crearCard(doc, grid, 'Gráficas del plan');
+    // "Laboratorios en 3 cortes" de vista_metricas.js). R9 (LY-03): esta
+    // card sale del grid superior y se monta como HERMANA directa de `grid`
+    // bajo rootEl (mismo patrón ya bendecido de #reco-plan/hz-menu-fila),
+    // ANTES de "Menú del día" -- el grid superior queda con EXACTAMENTE 2
+    // hijos (héroe + formulario), que a 1240px resuelven 2 columnas de
+    // ~570px sin hueco muerto; el gridGraficas anidado de esta card resuelve
+    // 2 columnas propias (macros por comida y calorías por día lado a lado),
+    // en vez de comprimirse a 1 columna en la pista más angosta del grid
+    // superior (el defecto que LY-03 corrige). ---
+    var cardGraficas = crearCard(doc, rootEl, 'Gráficas del plan');
     var gridGraficas = crearHTML(doc, 'div');
     gridGraficas.classList.add('hz-grid');
     cardGraficas.appendChild(gridGraficas);
@@ -932,22 +1030,40 @@
     var contKcal = crearHTML(doc, 'div');
     gridGraficas.appendChild(contKcal);
 
+    // R8 punto 4 / R9 MC-07: estado vacío -- sustituye las 2 gráficas
+    // cuando el cliente real aún no tiene una plantilla aplicada.
+    var notaVaciaGraficas = crearHTML(doc, 'p');
+    notaVaciaGraficas.classList.add('hz-vacio');
+    notaVaciaGraficas.setAttribute('hidden', '');
+    notaVaciaGraficas.textContent = TEXTO_VACIO_PLAN;
+    cardGraficas.appendChild(notaVaciaGraficas);
+
     // --- Menú del día (Adendum R4): fila de ancho completo, el menú como
-    // protagonista de la vista (feedback ronda 4 de Mario). Corrección R4
-    // (intento 2, rechazo del verifier): vive FUERA del grid superior, como
-    // hermano directo de `grid` bajo rootEl (.hz-vista, ya congelado en
-    // shell.html: display:flex; flex-direction:column; gap:20px). Dentro de
-    // un CSS grid auto-fit, una card que abarca grid-column:1/-1 "usa" todas
-    // las columnas en su propia fila, así que ninguna queda vacía en TODAS
-    // las filas del grid y auto-fit no las colapsa -- eso es precisamente lo
-    // que dejaba una card sola con columnas vacías al lado (hueco muerto
-    // medido por el verifier). Como hermano de `grid` (no hijo), el menú no
-    // participa del cálculo de columnas del grid superior en ningún ancho. ---
+    // protagonista de la vista (feedback ronda 4 de Mario). Vive FUERA del
+    // grid superior, como hermano directo de `grid` bajo rootEl (.hz-vista,
+    // ya congelado en shell.html: display:flex; flex-direction:column;
+    // gap:20px), DESPUÉS de "Gráficas del plan" (R9, LY-03: orden vertical
+    // final de la vista: #reco-plan, grid héroe+formulario, gráficas, menú
+    // del día). Dentro de un CSS grid auto-fit, una card que abarca
+    // grid-column:1/-1 "usa" todas las columnas en su propia fila, así que
+    // ninguna queda vacía en TODAS las filas del grid y auto-fit no las
+    // colapsa -- eso es precisamente lo que dejaba una card sola con
+    // columnas vacías al lado (hueco muerto medido por el verifier de R4).
+    // Como hermano de `grid` (no hijo), el menú no participa del cálculo de
+    // columnas del grid superior en ningún ancho. ---
     var cardDetalle = crearCard(doc, rootEl, 'Menú del día');
     cardDetalle.classList.add('hz-menu-fila');
     var listaMenu = crearHTML(doc, 'div');
     listaMenu.classList.add('hz-menu-lista');
     cardDetalle.appendChild(listaMenu);
+
+    // R8 punto 4 / R9 MC-07: estado vacío -- sustituye el listado de comidas
+    // cuando el cliente real aún no tiene una plantilla aplicada.
+    var notaVaciaMenu = crearHTML(doc, 'p');
+    notaVaciaMenu.classList.add('hz-vacio');
+    notaVaciaMenu.setAttribute('hidden', '');
+    notaVaciaMenu.textContent = TEXTO_VACIO_PLAN;
+    cardDetalle.appendChild(notaVaciaMenu);
 
     function render() {
       // R6 (prod-2): hero, gráficas, filas del menú y total del día derivan
@@ -960,6 +1076,45 @@
       // la MISMA plantilla que resuelve la card "Personaliza tu plan"
       // (planSeleccionadoActivo, sincronizada más abajo).
       var recoEst = obtenerRecoEstado();
+
+      // R8 punto 4 / R9 MC-07: estado vacío -- en modo real, mientras el
+      // cliente activo no tenga una plantilla APLICADA (guardada vía
+      // Herzon.Almacen.guardarPlan, HERZON_DATA.planAplicado === null), no
+      // se muestra un plan "automático" como si fuera el suyo: se invita al
+      // recomendador (#reco-plan, que se mantiene SIEMPRE visible y
+      // funcional más abajo, fuera de este gate). En demo, Herzon.Almacen no
+      // existe o reporta 'demo' y HERZON_DATA.planAplicado nunca existe
+      // (undefined): esta rama nunca se toma, cero cambios de comportamiento.
+      var AlmacenPlan = G.Herzon.Almacen;
+      var enModoRealPlan = !!(AlmacenPlan && typeof AlmacenPlan.modo === 'function' && AlmacenPlan.modo() === 'real');
+      var sinPlanAplicado = enModoRealPlan && (G.HERZON_DATA.planAplicado === null || G.HERZON_DATA.planAplicado === undefined);
+
+      if (sinPlanAplicado) {
+        rootEl.removeAttribute('data-plan-id');
+        hero.num.textContent = '—';
+        limpiar(notaPlan);
+        notaPlan.setAttribute('hidden', '');
+        notaVaciaHero.removeAttribute('hidden');
+        notaPlantillaFijada.textContent = '';
+
+        gridGraficas.setAttribute('hidden', '');
+        notaVaciaGraficas.removeAttribute('hidden');
+        limpiar(contMacros);
+        limpiar(contKcal);
+
+        listaMenu.setAttribute('hidden', '');
+        notaVaciaMenu.removeAttribute('hidden');
+        limpiar(listaMenu);
+        return;
+      }
+
+      notaPlan.removeAttribute('hidden');
+      notaVaciaHero.setAttribute('hidden', '');
+      gridGraficas.removeAttribute('hidden');
+      notaVaciaGraficas.setAttribute('hidden', '');
+      listaMenu.removeAttribute('hidden');
+      notaVaciaMenu.setAttribute('hidden', '');
+
       var activo = G.Herzon.planActivo();
       var plan = activo.plan;
       var escala = activo.escalaPorciones;
@@ -1005,6 +1160,12 @@
         ' g, carbohidrato ' + formatearEntero(totalCarbohidratoEscalado) + ' g, grasa ' + formatearEntero(totalGrasaEscalada) + ' g).';
 
       var categoriasComida = comidasEscaladas.map(function (c) { return NOMBRES_MOMENTO[c.momento] || c.momento; });
+      // R9 (DV-01): índice de la comida principal ("Comida", la de mayor
+      // kcal del día) dentro de categoriasComida -- la única columna que
+      // conserva sus 3 etiquetas de % (saillance: una columna ejemplar en
+      // vez de 15 rótulos casi idénticos; leyenda + tooltip + "Ver tabla"
+      // cubren el resto).
+      var indiceComidaPrincipal = categoriasComida.indexOf('Comida');
 
       limpiar(contMacros);
       Charts.apilada100(contMacros, {
@@ -1027,7 +1188,12 @@
         // verificada en Charts.apilada100 (T-027): % en cada segmento con
         // alto >= 14px, tinta de texto vía var(--text-primary), jamás color
         // de serie. Cableado quirúrgico: solo esta opción, nada más.
-        etiquetasSegmento: true
+        etiquetasSegmento: true,
+        // R9 (DV-01): restringe las etiquetas de % a la comida principal.
+        // Ausente el índice (caso extremo sin ninguna comida "comida" en el
+        // día), se omite la opción y se conserva el comportamiento actual
+        // (todas las categorías elegibles).
+        etiquetasSegmentoIndices: indiceComidaPrincipal !== -1 ? [indiceComidaPrincipal] : undefined
       });
 
       limpiar(contKcal);
@@ -1040,7 +1206,13 @@
         categorias: plan.dias.map(function (d) { return 'Día ' + d.dia; }),
         series: [{ nombre: 'Calorías (kcal)', datos: plan.dias.map(function (d) { return d.totales.kcal * escala; }) }],
         etiquetaColumna: 'Día',
-        tabla: true
+        tabla: true,
+        // R9 (DV-03): dibuja el objetivo de kcal APLICADO (plantilla activa
+        // ya escalada, o el override manual del recomendador) como umbral
+        // explícito -- el reference exige dibujar el objetivo, no solo el
+        // dato. unidad ya era una opción existente (Adendum R6 punto 2).
+        referencia: { valor: activo.kcalObjetivo, etiqueta: 'Objetivo' },
+        unidad: 'kcal'
       });
 
       limpiar(listaMenu);
@@ -1116,6 +1288,13 @@
       rootEl.appendChild(contenedorReco);
     }
     montarPanelRecomendador(doc, contenedorReco, HERZON_DATA, render);
+
+    // R9 (Adendum R9 punto 3): referencia de re-montaje para
+    // manejarRemontajeDatos (herzon:modo-cambiado), que necesita poder
+    // volver a construir el panel del recomendador (perfil real) y
+    // repintar esta vista sin depender de que registerView la monte de
+    // nuevo (se monta UNA sola vez).
+    refsMontajePlan = { doc: doc, contenedorReco: contenedorReco, render: render };
   }
 
   // -----------------------------------------------------------------------
@@ -1130,95 +1309,189 @@
 
   function montarVistaSuplementos(rootEl) {
     var doc = rootEl.ownerDocument;
-    var HERZON_DATA = G.HERZON_DATA;
-    var Charts = G.Herzon.Charts;
-    var suplementos = HERZON_DATA.suplementos;
-    var adherenciaDiaria = HERZON_DATA.series.adherenciaDiaria;
 
-    var grid = crearHTML(doc, 'div');
-    grid.classList.add('hz-grid');
-    rootEl.appendChild(grid);
+    // R9 (Adendum R9 punto 3): render() propio (antes montaba una única vez
+    // sin función de repintado) -- lo necesita manejarRemontajeDatos para
+    // volver a dibujar esta vista ya montada cuando cambia el cliente/modo
+    // (herzon:modo-cambiado), sin depender de un segundo mountFn
+    // (registerView monta UNA sola vez, plan.md 3.C).
+    function render() {
+      var HERZON_DATA = G.HERZON_DATA;
+      var Charts = G.Herzon.Charts;
+      var Almacen = G.Herzon.Almacen;
+      var suplementos = HERZON_DATA.suplementos || [];
+      var adherenciaDiaria = (HERZON_DATA.series && HERZON_DATA.series.adherenciaDiaria) || [];
+      var enModoReal = !!(Almacen && typeof Almacen.modo === 'function' && Almacen.modo() === 'real');
+      var sinRegimen = enModoReal && suplementos.length === 0;
 
-    // --- Hero: exactamente UN número héroe por vista (regla 11) ---
-    var adherenciaPromedio = Math.round(promedio(suplementos.map(function (s) { return s.adherencia_pct; })));
-    var cardHero = crearCard(doc, grid, 'Suplementos');
-    var hero = crearHero(doc, cardHero, 'Adherencia promedio de suplementos (%)');
-    hero.num.textContent = formatearEntero(adherenciaPromedio) + '%';
-    var notaHero = crearHTML(doc, 'p');
-    notaHero.classList.add('hz-nota');
-    notaHero.textContent = suplementos.length + ' suplementos en el régimen actual.';
-    cardHero.appendChild(notaHero);
+      limpiar(rootEl);
+      var grid = crearHTML(doc, 'div');
+      grid.classList.add('hz-grid');
+      rootEl.appendChild(grid);
 
-    // --- Régimen (tabla siempre visible: dosis, horario, propósito) ---
-    // R6 (jera-1/data-3/fini-1/resp-1): ancho completo (regla de T-026,
-    // plan.md Adendum R6 punto 1) -- con 5 columnas, la card compartiendo
-    // fila con las otras dos cards recortaba "Horario"/"Momento"/"Propósito"
-    // fuera del viewport a 1240px. data-ancho="completo" la expande a las
-    // 1/-1 columnas del grid (CSS de build/shell.html, este módulo solo
-    // aplica el atributo).
-    var cardRegimen = crearCard(doc, grid, 'Régimen de suplementos');
-    cardRegimen.setAttribute('data-ancho', 'completo');
-    var columnasRegimen = ['Suplemento', 'Dosis', 'Horario', 'Momento', 'Propósito'];
-    var filasRegimen = suplementos.map(function (s) {
-      return [s.nombre, s.dosis, s.horario, s.momento, s.proposito];
-    });
-    construirTablaSimple(doc, cardRegimen, columnasRegimen, filasRegimen);
+      // R8 punto 4: estado vacío -- un cliente real sin régimen todavía no
+      // tiene NADA que graficar (ni siquiera un hero en 0%: 0% de adherencia
+      // a cero suplementos sería un dato falso). Se muestra un único hero
+      // con nota hz-vacio; regla 11 (exactamente un .hz-hero) se conserva.
+      if (sinRegimen) {
+        var cardVacio = crearCard(doc, grid, 'Suplementos');
+        var heroVacio = crearHero(doc, cardVacio, 'Adherencia promedio de suplementos (%)');
+        heroVacio.num.textContent = '—';
+        var notaVaciaSup = crearHTML(doc, 'p');
+        notaVaciaSup.classList.add('hz-vacio');
+        notaVaciaSup.textContent = TEXTO_VACIO_SUPLEMENTOS;
+        cardVacio.appendChild(notaVaciaSup);
+        rootEl.setAttribute('data-suplementos-count', '0');
+        return;
+      }
 
-    // --- Adherencia por suplemento (barras horizontales) ---
-    var cardAdherenciaSup = crearCard(doc, grid, 'Adherencia por suplemento');
-    var contAdherenciaSup = crearHTML(doc, 'div');
-    cardAdherenciaSup.appendChild(contAdherenciaSup);
-    Charts.barras(contAdherenciaSup, {
-      // D5: sin titulo interno (duplicaria el heading de cardAdherenciaSup).
-      tituloAccesible: 'Porcentaje de adherencia por cada suplemento del régimen en las últimas 12 semanas',
-      orientacion: 'horizontal',
-      categorias: suplementos.map(function (s) { return s.nombre; }),
-      series: [{ nombre: 'Adherencia (%)', datos: suplementos.map(function (s) { return s.adherencia_pct; }) }],
-      max: 100,
-      // R6 (data-6, Adendum R6 punto 2): serie única, 4 categorías (<=6) en
-      // horizontal -- unidad agrega el sufijo '%' a cada etiqueta y
-      // valoresEnBarras dibuja el valor al final de CADA barra (antes solo
-      // se etiquetaba la barra máxima).
-      unidad: '%',
-      valoresEnBarras: true,
-      etiquetaColumna: 'Suplemento',
-      tabla: true
-    });
+      // --- Hero: exactamente UN número héroe por vista (regla 11) ---
+      var adherenciaPromedio = Math.round(promedio(suplementos.map(function (s) { return s.adherencia_pct; })));
+      var cardHero = crearCard(doc, grid, 'Suplementos');
+      var hero = crearHero(doc, cardHero, 'Adherencia promedio de suplementos (%)');
+      hero.num.textContent = formatearEntero(adherenciaPromedio) + '%';
+      var notaHero = crearHTML(doc, 'p');
+      notaHero.classList.add('hz-nota');
+      notaHero.textContent = suplementos.length + ' suplementos en el régimen actual.';
+      cardHero.appendChild(notaHero);
 
-    // --- Adherencia en el tiempo (heatmap, rampa var(--heat-1..5)) ---
-    var cardAdherenciaTiempo = crearCard(doc, grid, 'Adherencia diaria a suplementos en el tiempo');
-    var contAdherenciaTiempo = crearHTML(doc, 'div');
-    cardAdherenciaTiempo.appendChild(contAdherenciaTiempo);
-    // R6 (jera-5/data-5, Adendum R6 punto 2): etiquetasFila rotula solo las
-    // filas S1/S4/S8/S12 (una por semana, 7 días por fila) del rango real de
-    // 12 semanas; el resto queda vacío para que heatmapCalendario omita el
-    // rótulo (comportamiento ya verificado en T-027, sección 22.8).
-    var filasAdherenciaTiempo = Math.ceil(adherenciaDiaria.length / 7);
-    var etiquetasFilaAdherenciaTiempo = [];
-    for (var efAdh = 0; efAdh < filasAdherenciaTiempo; efAdh++) {
-      etiquetasFilaAdherenciaTiempo.push(
-        (efAdh === 0 || efAdh === 3 || efAdh === 7 || efAdh === 11) ? 'S' + (efAdh + 1) : ''
-      );
+      // --- Adherencia por suplemento (barras horizontales). R9 (LY-05/C3):
+      // 2a pista de la fila 1, ANTES del heatmap y del régimen (nuevo orden
+      // vertical: héroe, barras, heatmap doble, régimen completo). Rótulos
+      // cortos de despliegue (C3): el nombre completo con dosis ya vive en
+      // la tabla "Régimen de suplementos" (cardRegimen, más abajo). ---
+      var cardAdherenciaSup = crearCard(doc, grid, 'Adherencia por suplemento');
+      var contAdherenciaSup = crearHTML(doc, 'div');
+      cardAdherenciaSup.appendChild(contAdherenciaSup);
+      Charts.barras(contAdherenciaSup, {
+        // D5: sin título interno (duplicaria el heading de cardAdherenciaSup).
+        tituloAccesible: 'Porcentaje de adherencia por cada suplemento del régimen en las últimas 12 semanas',
+        orientacion: 'horizontal',
+        categorias: suplementos.map(function (s) { return etiquetaCortaSuplemento(s.nombre); }),
+        series: [{ nombre: 'Adherencia (%)', datos: suplementos.map(function (s) { return s.adherencia_pct; }) }],
+        max: 100,
+        // R6 (data-6, Adendum R6 punto 2): serie única, <=6 categorías en
+        // horizontal -- unidad agrega el sufijo '%' a cada etiqueta y
+        // valoresEnBarras dibuja el valor al final de CADA barra (antes solo
+        // se etiquetaba la barra máxima).
+        unidad: '%',
+        valoresEnBarras: true,
+        // R9 (LY-05/C3, corrección post-verificación): el eje usa el rótulo
+        // corto (etiquetaCortaSuplemento) pero "Ver tabla" debe seguir
+        // mostrando el nombre completo con dosis -- resolverEspecTabla
+        // (charts.js) devuelve opciones.tabla TAL CUAL cuando trae columnas
+        // y filas completas, así que se construye la espec de tabla a mano
+        // con s.nombre (completo) en vez de dejar que 'tabla: true' derive
+        // las filas de 'categorias' (que ya son los rótulos cortos).
+        tabla: {
+          columnas: ['Suplemento', 'Adherencia (%)'],
+          filas: suplementos.map(function (s) { return [s.nombre, s.adherencia_pct]; })
+        }
+      });
+
+      // --- Adherencia en el tiempo (heatmap TRANSPUESTO, rampa
+      // var(--heat-1..5)). R9 (DV-05/LY-05/C4): 3a-4a pista de la fila 1,
+      // data-ancho="doble" (~570px) para que las 12 columnas (semanas)
+      // tengan celda digna. ---
+      var cardAdherenciaTiempo = crearCard(doc, grid, 'Adherencia diaria a suplementos en el tiempo');
+      cardAdherenciaTiempo.setAttribute('data-ancho', 'doble');
+      var contAdherenciaTiempo = crearHTML(doc, 'div');
+      cardAdherenciaTiempo.appendChild(contAdherenciaTiempo);
+
+      // R9 (DV-05): transponer -- el tiempo corre a lo largo del eje x
+      // (semanas en columnas), no hacia abajo. adherenciaDiaria viene en
+      // orden cronológico (semana 0 días 0-6, semana 1 días 7-13, ...); se
+      // reordena a orden por-día-de-semana (día 0 de cada semana, luego día
+      // 1 de cada semana...) para que Charts.heatmapCalendario (fila =
+      // i/columnas, columna = i%columnas, charts.js) dibuje 7 filas (L a D)
+      // x 12 columnas (S1..S12) en vez de 12 filas x 7 columnas.
+      var semanasHeatmap = Math.ceil(adherenciaDiaria.length / 7) || 1;
+      var valoresTranspuestos = [];
+      var etiquetasTranspuestas = [];
+      for (var filaDia = 0; filaDia < 7; filaDia++) {
+        for (var colSemana = 0; colSemana < semanasHeatmap; colSemana++) {
+          var entradaDia = adherenciaDiaria[colSemana * 7 + filaDia];
+          valoresTranspuestos.push(entradaDia ? entradaDia.suplementos_pct : null);
+          etiquetasTranspuestas.push(entradaDia ? entradaDia.fecha : '');
+        }
+      }
+      var encabezadosColumnaAdherenciaTiempo = [];
+      for (var ecAdh = 0; ecAdh < semanasHeatmap; ecAdh++) {
+        encabezadosColumnaAdherenciaTiempo.push(
+          (ecAdh === 0 || ecAdh === 3 || ecAdh === 7 || ecAdh === 11) ? 'S' + (ecAdh + 1) : ''
+        );
+      }
+      Charts.heatmapCalendario(contAdherenciaTiempo, {
+        // D5: sin título interno (duplicaria el heading de cardAdherenciaTiempo).
+        valores: valoresTranspuestos,
+        etiquetas: etiquetasTranspuestas,
+        columnas: semanasHeatmap,
+        min: 0,
+        max: 100,
+        nombreSerie: 'Adherencia suplementos (%)',
+        etiquetaColumna: 'Fecha',
+        // R9 (DV-05): etiquetasFila rotula las 7 filas (un día de la semana
+        // por fila, L a D); encabezadosColumna rotula S1/S4/S8/S12 sobre las
+        // columnas (semanas). encabezadosDia queda retirado: los días ya no
+        // son columnas, son filas.
+        etiquetasFila: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
+        encabezadosColumna: encabezadosColumnaAdherenciaTiempo,
+        leyendaRampa: true,
+        tabla: true
+      });
+
+      // --- Régimen (tabla siempre visible: dosis, horario, propósito). R9
+      // (LY-05): fila 2, ANCHO completo, ÚLTIMA en el orden vertical (antes
+      // era la segunda card montada). R6 (jera-1/data-3/fini-1/resp-1):
+      // ancho completo (regla de T-026, plan.md Adendum R6 punto 1) -- con
+      // 5 columnas, compartir fila con otra card recortaba
+      // "Horario"/"Momento"/"Propósito" fuera del viewport a 1240px.
+      // data-ancho="completo" la expande a las 1/-1 columnas del grid (CSS
+      // de build/shell.html, este módulo solo aplica el atributo). ---
+      var cardRegimen = crearCard(doc, grid, 'Régimen de suplementos');
+      cardRegimen.setAttribute('data-ancho', 'completo');
+      var columnasRegimen = ['Suplemento', 'Dosis', 'Horario', 'Momento', 'Propósito'];
+      var filasRegimen = suplementos.map(function (s) {
+        return [s.nombre, s.dosis, s.horario, s.momento, s.proposito];
+      });
+      construirTablaSimple(doc, cardRegimen, columnasRegimen, filasRegimen);
+
+      rootEl.setAttribute('data-suplementos-count', String(suplementos.length));
     }
-    Charts.heatmapCalendario(contAdherenciaTiempo, {
-      // D5: sin titulo interno (duplicaria el heading de cardAdherenciaTiempo).
-      valores: adherenciaDiaria.map(function (d) { return d.suplementos_pct; }),
-      etiquetas: adherenciaDiaria.map(function (d) { return d.fecha; }),
-      columnas: 7,
-      min: 0,
-      max: 100,
-      nombreSerie: 'Adherencia suplementos (%)',
-      etiquetaColumna: 'Fecha',
-      // R6 (jera-5/data-5): encabezadosDia agrega la fila de iniciales de día
-      // (L M X J V S D); etiquetasFila rotula S1/S4/S8/S12; leyendaRampa
-      // agrega los 5 swatches --heat-1..5 con el rango numérico de cada uno.
-      encabezadosDia: true,
-      etiquetasFila: etiquetasFilaAdherenciaTiempo,
-      leyendaRampa: true,
-      tabla: true
-    });
 
-    rootEl.setAttribute('data-suplementos-count', String(suplementos.length));
+    render();
+
+    // R9 (Adendum R9 punto 3): referencia de re-montaje para
+    // manejarRemontajeDatos (herzon:modo-cambiado).
+    refsMontajeSuplementos = { render: render };
+  }
+
+  // -----------------------------------------------------------------------
+  // R9 (Adendum R9 punto 3, MC-02/MC-07): reactividad multi-cliente. Tanto
+  // el panel del recomendador (perfil + plan aplicado) como los estados
+  // vacíos de esta vista dependen del cliente/modo MONTADO en G.HERZON_DATA,
+  // no del que estaba activo cuando la vista se montó por primera vez
+  // (Herzon.registerView monta cada vista UNA sola vez, plan.md 3.C). Este
+  // listener es el único mecanismo de repintado ante herzon:modo-cambiado
+  // (semántica de remontaje: demo<->real y cliente<->cliente): descarta el
+  // estado del recomendador del cliente/modo ANTERIOR (recoEstadoSingleton)
+  // y lo recalcula desde cero contra el HERZON_DATA ya remontado (perfil
+  // real + planIdSeleccionado precargado desde HERZON_DATA.planAplicado,
+  // ver crearRecoEstadoInicial); si alguna vista ya se montó, la repinta.
+  // -----------------------------------------------------------------------
+  function manejarRemontajeDatos() {
+    recoEstadoSingleton = null;
+    obtenerRecoEstado();
+    if (refsMontajePlan) {
+      montarPanelRecomendador(refsMontajePlan.doc, refsMontajePlan.contenedorReco, G.HERZON_DATA, refsMontajePlan.render);
+      refsMontajePlan.render();
+    }
+    if (refsMontajeSuplementos) {
+      refsMontajeSuplementos.render();
+    }
+  }
+  if (typeof G.addEventListener === 'function') {
+    G.addEventListener('herzon:modo-cambiado', manejarRemontajeDatos);
   }
 
   // -----------------------------------------------------------------------
@@ -1257,7 +1530,7 @@
   };
 
   // -----------------------------------------------------------------------
-  // Registro: namespaces disjuntos por tarea (plan.md 3.B). Este modulo SOLO
+  // Registro: namespaces disjuntos por tarea (plan.md 3.B). Este módulo SOLO
   // escribe Herzon.Views.plan y Herzon.Views.suplementos (nunca resumen,
   // perfil ni seguimiento: esos son de T-005).
   // -----------------------------------------------------------------------

@@ -528,6 +528,194 @@ afirmar(handleSinData === null, 'init(doc) sin window.HERZON_DATA cargado en run
 globalThis.HERZON_DATA = herzonDataOriginalGlobal;
 
 // ---------------------------------------------------------------------
+// 23-bis. PR-05 (R9, decisión C6) — slugCliente(nombre): minúsculas, sin
+//         acentos, espacios/símbolos a guion, defensivo con no-strings.
+// ---------------------------------------------------------------------
+afirmar(Docs.slugCliente('María José') === 'maria-jose', "PR-05/C6: slugCliente debe quitar acentos y unir con guion, 'María José' -> 'maria-jose'");
+afirmar(Docs.slugCliente('  Ana   Pérez  ') === 'ana-perez', 'slugCliente debe colapsar espacios/puntuación repetida en un solo guion y recortar los bordes');
+afirmar(Docs.slugCliente('Ñoño Muñoz') === 'nono-munoz', 'slugCliente debe normalizar la eñe (fuera de [a-z0-9-]) dentro del nombre de archivo');
+afirmar(Docs.slugCliente('') === '', 'slugCliente de un nombre vacío debe devolver string vacío');
+afirmar(Docs.slugCliente(null) === '', 'slugCliente defensivo: un valor no-string debe devolver string vacío sin lanzar');
+
+// ---------------------------------------------------------------------
+// 23-ter. PR-05 — nombreArchivoExportable(base, fecha, extension) por modo,
+//         lectura defensiva de Herzon.Almacen (G.Herzon.Almacen && modo()).
+// ---------------------------------------------------------------------
+var almacenOriginalPr05 = Herzon.Almacen;
+delete Herzon.Almacen;
+afirmar(Docs.nombreArchivoExportable('plan', '2026-06-01', 'html') === 'rinde-demo-plan-2026-06-01.html', 'PR-05: sin Herzon.Almacen disponible (lectura defensiva), nombreArchivoExportable debe usar el prefijo demo');
+
+Herzon.Almacen = { modo: function () { return 'demo'; } };
+afirmar(Docs.nombreArchivoExportable('datos', '2026-06-08', 'csv') === 'rinde-demo-datos-2026-06-08.csv', 'PR-05: en modo demo, nombreArchivoExportable debe usar el prefijo rinde-demo-*');
+
+Herzon.Almacen = {
+  modo: function () { return 'real'; },
+  clienteActivo: function () { return { id: 'c-1', nombre: 'María José' }; }
+};
+afirmar(Docs.nombreArchivoExportable('plan', '2026-06-01', 'html') === 'rinde-maria-jose-plan-2026-06-01.html', 'PR-05/C6: en modo real, nombreArchivoExportable debe incluir el slug del cliente activo (nombre acentuado sin acentos en el archivo)');
+
+Herzon.Almacen = { modo: function () { return 'real'; }, clienteActivo: function () { return null; } };
+afirmar(Docs.nombreArchivoExportable('datos', '2026-06-08', 'csv') === 'rinde-datos-2026-06-08.csv', 'PR-05: en modo real sin cliente activo disponible (clienteActivo null), nombreArchivoExportable debe caer al fallback sin slug');
+
+Herzon.Almacen = { modo: function () { return 'real'; }, clienteActivo: function () { return { id: 'c-2', nombre: '' }; } };
+afirmar(Docs.nombreArchivoExportable('plan', '2026-06-01', 'html') === 'rinde-plan-2026-06-01.html', 'PR-05: en modo real con nombre de cliente vacío, nombreArchivoExportable debe caer al fallback sin slug (sin guion doble)');
+
+Herzon.Almacen = almacenOriginalPr05;
+
+// ---------------------------------------------------------------------
+// 23-quater. PR-05 + PR-07 (integración completa vía UI, modo real): un
+//            fixture propio con Herzon.Almacen mockeado ANTES de init(doc)
+//            (modo real + clienteActivo + mergeMediciones espía). Se
+//            intercepta doc.createElement para capturar el <a download=...>
+//            real que dispara descargarArchivo, y se enruta la importación
+//            por Herzon.Almacen.mergeMediciones.
+// ---------------------------------------------------------------------
+var fixture3 = crearDocumentoDePrueba();
+var anclasCreadasFx3 = [];
+var crearElementoOriginalFx3 = fixture3.doc.createElement;
+fixture3.doc.createElement = function (tag) {
+  var el = crearElementoOriginalFx3(tag);
+  if (tag === 'a') { anclasCreadasFx3.push(el); }
+  return el;
+};
+
+var llamadasAlmacenMergeReal = [];
+Herzon.Almacen = {
+  modo: function () { return 'real'; },
+  clienteActivo: function () { return { id: 'c-3', nombre: 'Ana Ruiz' }; },
+  // Simula el comportamiento REAL de Herzon.Almacen.mergeMediciones
+  // (T-045, verificado): valida, PERSISTE y dispara su PROPIO
+  // herzon:mediciones-importadas -- documentos.js NUNCA debe volver a
+  // dispararlo (PR-07, decisión C8).
+  mergeMediciones: function (lista) {
+    llamadasAlmacenMergeReal.push(lista);
+    if (typeof globalThis.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+      globalThis.dispatchEvent(new CustomEvent('herzon:mediciones-importadas', { detail: { agregadas: 1, actualizadas: 0, errores: 0 } }));
+    }
+    return { ok: true, agregadas: 1, actualizadas: 0, errores: [] };
+  }
+};
+
+// PR-07/Adendum R9 punto 3: init(doc) debe registrar un listener de
+// herzon:modo-cambiado para refrescar #hz-doc-formato-csv ante un
+// remontaje sin reload (el botón #hz-btn-modo dispara este evento desde
+// build/almacen.js sin recargar la página) -- capturar el listener ANTES
+// de init(doc), mismo patrón que build/selfcheck_vistas_b.js.
+var listenersFx3 = {};
+globalThis.addEventListener = function (tipo, manejador) {
+  listenersFx3[tipo] = listenersFx3[tipo] || [];
+  listenersFx3[tipo].push(manejador);
+};
+
+var handleFx3 = Docs.init(fixture3.doc);
+afirmar(handleFx3 !== null, 'init(doc) con Herzon.Almacen ya presente en modo real debe seguir devolviendo un handle válido');
+
+var elFormatoFx3 = buscarPorId(fixture3.toolbar.consultarTodo('.hz-nota'), 'hz-doc-formato-csv');
+afirmar(elFormatoFx3.textContent.indexOf('Los datos importados se guardan en este dispositivo.') !== -1, 'PR-07: con Herzon.Almacen en modo real ya montado, la nota fija de formato del CSV debe usar el texto real exacto');
+
+afirmar((listenersFx3['herzon:modo-cambiado'] || []).length === 1, 'PR-07/Adendum R9 punto 3: init(doc) debe registrar UN listener de herzon:modo-cambiado para refrescar la nota de formato del CSV ante un remontaje sin reload');
+
+// Simular el remontaje real->demo SIN volver a llamar init(doc) (mismo
+// disparo que hace #hz-btn-modo en vivo, build/almacen.js volverADemo()
+// -- confirmado alcanzable desde UI en build/selfcheck_almacen.js). La
+// nota de formato debe repintarse sola: jamás debe quedar prometiendo un
+// guardado que ya no aplica (defecto detectado por el verificador).
+Herzon.Almacen.modo = function () { return 'demo'; };
+listenersFx3['herzon:modo-cambiado'][0]({ type: 'herzon:modo-cambiado', detail: { modo: 'demo', clienteId: null } });
+afirmar(elFormatoFx3.textContent.indexOf('En modo demo los datos importados no se guardan: se pierden al recargar la página.') !== -1, 'PR-07: tras herzon:modo-cambiado a demo (sin reload), la nota fija de formato del CSV debe repintarse con el texto EXACTO de modo demo');
+afirmar(elFormatoFx3.textContent.indexOf('Los datos importados se guardan en este dispositivo.') === -1, 'PR-07: tras el remontaje a demo, el texto viejo de guardado real no debe seguir mostrándose (nunca prometer guardado que no ocurre)');
+Herzon.Almacen.modo = function () { return 'real'; };
+listenersFx3['herzon:modo-cambiado'][0]({ type: 'herzon:modo-cambiado', detail: { modo: 'real', clienteId: 'c-3' } });
+afirmar(elFormatoFx3.textContent.indexOf('Los datos importados se guardan en este dispositivo.') !== -1, 'PR-07: tras volver a real vía herzon:modo-cambiado, la nota debe repintarse de vuelta al texto real');
+
+delete globalThis.addEventListener;
+
+fixture3.botonDescargarPlan.despachar('click');
+var ultimaAnclaFx3 = anclasCreadasFx3[anclasCreadasFx3.length - 1];
+afirmar(ultimaAnclaFx3.getAttribute('download').indexOf('rinde-ana-ruiz-plan-') === 0, 'PR-05: descargar plan en modo real con cliente activo debe nombrar el archivo rinde-<slug>-plan-<fecha>.html, obtuvo: ' + ultimaAnclaFx3.getAttribute('download'));
+afirmar(/\.html$/.test(ultimaAnclaFx3.getAttribute('download')), 'el archivo de descarga del plan debe terminar en .html');
+
+fixture3.botonDescargarDatos.despachar('click');
+ultimaAnclaFx3 = anclasCreadasFx3[anclasCreadasFx3.length - 1];
+afirmar(ultimaAnclaFx3.getAttribute('download').indexOf('rinde-ana-ruiz-datos-') === 0, 'PR-05: descargar datos en modo real con cliente activo debe nombrar el archivo rinde-<slug>-datos-<fecha>.csv, obtuvo: ' + ultimaAnclaFx3.getAttribute('download'));
+
+var botonesToolbarFx3 = fixture3.toolbar.consultarTodo('button');
+var botonPlantillaFx3 = null;
+for (var bp3 = 0; bp3 < botonesToolbarFx3.length; bp3++) {
+  if (botonesToolbarFx3[bp3].getAttribute('id') === 'hz-doc-btn-plantilla-csv') { botonPlantillaFx3 = botonesToolbarFx3[bp3]; }
+}
+afirmar(botonPlantillaFx3 !== null, 'fixture3 debe traer el botón de plantilla CSV creado por init(doc)');
+botonPlantillaFx3.despachar('click');
+ultimaAnclaFx3 = anclasCreadasFx3[anclasCreadasFx3.length - 1];
+afirmar(ultimaAnclaFx3.getAttribute('download') === 'rinde-plantilla-mediciones.csv', 'PR-05: la plantilla CSV debe descargar SIEMPRE con el nombre neutro rinde-plantilla-mediciones.csv, en cualquier modo');
+
+// contextoImportacion() se lee EN VIVO en cada click, no se cachea al
+// montar: cambiar Almacen.modo() tras init(doc) debe reflejarse de
+// inmediato en el siguiente nombre de archivo.
+Herzon.Almacen.modo = function () { return 'demo'; };
+fixture3.botonDescargarDatos.despachar('click');
+ultimaAnclaFx3 = anclasCreadasFx3[anclasCreadasFx3.length - 1];
+afirmar(ultimaAnclaFx3.getAttribute('download').indexOf('rinde-demo-datos-') === 0, 'PR-05: tras pasar a modo demo, la descarga de datos debe usar el prefijo rinde-demo-* (lectura en vivo del modo, no cacheada al montar)');
+Herzon.Almacen.modo = function () { return 'real'; };
+
+// Importación CSV en modo real: debe enrutar por Herzon.Almacen.mergeMediciones.
+globalThis.FileReader = FileReaderStub;
+var eventosImportFx3 = [];
+globalThis.dispatchEvent = function (evento) { eventosImportFx3.push(evento); };
+var archivoParaReal = { _contenidoTexto: 'semana,fecha,peso_kg,grasa_pct,musculo_kg,cintura_cm\n60,2026-05-04,64.0,21.0,28.0,77.0\n' };
+fixture3.inputImportar.value = 'C:\\fakepath\\real.csv';
+fixture3.inputImportar.files = [archivoParaReal];
+fixture3.inputImportar.despachar('change');
+
+afirmar(llamadasAlmacenMergeReal.length === 1, 'PR-07/C8: en modo real, la importación debe enrutar por Herzon.Almacen.mergeMediciones exactamente una vez');
+afirmar(llamadasAlmacenMergeReal[0][0].semana === 60, 'PR-07: Herzon.Almacen.mergeMediciones debe recibir las filas válidas parseadas del CSV (semana 60)');
+afirmar(eventosImportFx3.length === 1, 'PR-07/C8: en modo real, herzon:mediciones-importadas debe dispararse UNA sola vez (el que dispara Herzon.Almacen.mergeMediciones), nunca duplicado por documentos.js');
+
+var elEstadoFx3 = buscarPorId(fixture3.toolbar.consultarTodo('.hz-nota'), 'hz-doc-estado-importar');
+afirmar(elEstadoFx3.textContent.indexOf('Guardado en este dispositivo.') !== -1, 'PR-07: en modo real, el mensaje de estado tras importar debe afirmar textualmente el guardado ("Guardado en este dispositivo.")');
+afirmar(elEstadoFx3.textContent.toLowerCase().indexOf('no se guardan') === -1, 'PR-07: en modo real jamás debe aparecer un aviso de no-persistencia (nunca prometer guardado que no ocurre, ni negar uno que sí ocurrió)');
+
+delete globalThis.FileReader;
+delete globalThis.dispatchEvent;
+
+// ---------------------------------------------------------------------
+// 23-quinquies. PR-07 — importación CSV en modo demo: SOLO merge en
+//               memoria (Herzon.Almacen.mergeMediciones NUNCA se invoca) y
+//               el texto exacto de modo demo, en la nota fija y en el
+//               mensaje de estado tras importar.
+// ---------------------------------------------------------------------
+var fixture4 = crearDocumentoDePrueba();
+var llamadaAlmacenMergeEnDemo = false;
+Herzon.Almacen = {
+  modo: function () { return 'demo'; },
+  mergeMediciones: function () { llamadaAlmacenMergeEnDemo = true; return { ok: true, agregadas: 1, actualizadas: 0, errores: [] }; }
+};
+var handleFx4 = Docs.init(fixture4.doc);
+afirmar(handleFx4 !== null, 'init(doc) con Herzon.Almacen en modo demo debe seguir devolviendo un handle válido');
+
+var elFormatoFx4 = buscarPorId(fixture4.toolbar.consultarTodo('.hz-nota'), 'hz-doc-formato-csv');
+afirmar(elFormatoFx4.textContent.indexOf('En modo demo los datos importados no se guardan: se pierden al recargar la página.') !== -1, 'PR-07: con Herzon.Almacen en modo demo, la nota fija de formato del CSV debe usar el texto EXACTO de modo demo');
+
+globalThis.FileReader = FileReaderStub;
+var eventosImportFx4 = [];
+globalThis.dispatchEvent = function (evento) { eventosImportFx4.push(evento); };
+var archivoParaDemo = { _contenidoTexto: 'semana,fecha,peso_kg,grasa_pct,musculo_kg,cintura_cm\n61,2026-05-11,63.5,20.5,28.2,76.5\n' };
+fixture4.inputImportar.value = 'C:\\fakepath\\demo.csv';
+fixture4.inputImportar.files = [archivoParaDemo];
+fixture4.inputImportar.despachar('change');
+
+afirmar(llamadaAlmacenMergeEnDemo === false, 'PR-07: en modo demo, Herzon.Almacen.mergeMediciones NUNCA debe invocarse (el merge sigue siendo solo en memoria, Adendum R5 punto 3)');
+afirmar(eventosImportFx4.length === 1, 'en modo demo, la importación debe seguir disparando herzon:mediciones-importadas una sola vez (ruta local en memoria)');
+
+var elEstadoFx4 = buscarPorId(fixture4.toolbar.consultarTodo('.hz-nota'), 'hz-doc-estado-importar');
+afirmar(elEstadoFx4.textContent.indexOf('En modo demo los datos importados no se guardan: se pierden al recargar la página.') !== -1, 'PR-07: en modo demo, el mensaje de estado tras importar debe usar el texto EXACTO de modo demo');
+afirmar(elEstadoFx4.textContent.indexOf('Guardado en este dispositivo') === -1, 'PR-07: en modo demo jamás debe aparecer el texto de guardado real');
+
+delete globalThis.FileReader;
+delete globalThis.dispatchEvent;
+delete Herzon.Almacen;
+
+// ---------------------------------------------------------------------
 // 24. Cero innerHTML, cero red (fetch/XHR) en todo el módulo (no
 //     negociables de plan.md y criterio de aceptación T-023).
 // ---------------------------------------------------------------------

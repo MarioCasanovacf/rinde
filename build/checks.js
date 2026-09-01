@@ -170,7 +170,10 @@ for (var pi = 0; pi < PESTANAS.length; pi++) {
   assert(html.indexOf('id="' + idPestana + '"') !== -1, 'presencia de la pestaña #' + idPestana);
 }
 
-var ETIQUETAS_ES = ['Resumen', 'Perfil', 'Plan de dieta', 'Seguimiento', 'Suplementos', 'Ver tabla', 'Acerca de este prototipo'];
+// Adendum R9 punto 5 / PR-04 (T-042): la nota del Resumen se renombró de
+// "Acerca de este prototipo" a "Acerca del modo demo" (build/vista_metricas.js);
+// pin actualizado en el MISMO cambio que la propagación (regla de la tarea).
+var ETIQUETAS_ES = ['Resumen', 'Perfil', 'Plan de dieta', 'Seguimiento', 'Suplementos', 'Ver tabla', 'Acerca del modo demo'];
 for (var ei = 0; ei < ETIQUETAS_ES.length; ei++) {
   var etiqueta = ETIQUETAS_ES[ei];
   assert(html.indexOf(etiqueta) !== -1, 'presencia de la etiqueta en español "' + etiqueta + '"');
@@ -246,6 +249,9 @@ assert(html.indexOf('Herzon.theme') !== -1, 'presencia de Herzon.theme');
 assert(html.indexOf('Herzon.Motor') !== -1, 'presencia de Herzon.Motor (T-020, motor de recomendación)');
 assert(html.indexOf('Herzon.Docs') !== -1, 'presencia de Herzon.Docs (T-023, documentos)');
 assert(html.indexOf('Herzon.planActivo') !== -1, 'presencia de Herzon.planActivo (Adendum R5 punto 4, dueño vista_dieta_supl.js, consumida por Herzon.Docs)');
+// T-042 (R8/R9): namespace nuevo que assemble.js integra como segundo
+// bloque del marcador INJECT:data.
+assert(html.indexOf('Herzon.Almacen') !== -1, 'presencia de Herzon.Almacen (T-039/T-045, modo demo/real y multi-cliente)');
 
 var VISTAS_REGISTRADAS = ['plan', 'suplementos', 'resumen', 'perfil', 'seguimiento'];
 for (var vi = 0; vi < VISTAS_REGISTRADAS.length; vi++) {
@@ -257,11 +263,15 @@ for (var vi = 0; vi < VISTAS_REGISTRADAS.length; vi++) {
 // G. Cada bloque <script> compila con vm.Script (criterio de aceptación 14).
 //    T-024 (R5): el ensamble ahora inyecta motor_recomendacion.js y
 //    documentos.js entre charts y vistas-a (build/assemble.js, marcador
-//    <!-- INJECT:vistas-a --> resuelto en tres bloques), así que la cuenta
-//    sube de 6 a 8: runtime, data, charts, motor, docs, vistas-a, vistas-b,
-//    boot. (bloquesScript ya se extrajo arriba, antes de la sección A.)
+//    <!-- INJECT:vistas-a --> resuelto en tres bloques). T-038 (R8) agregó
+//    el registro guardeado del service worker como bloque estático propio
+//    de build/shell.html (hz-sw-registro, fuera de cualquier marcador
+//    INJECT). T-042 (R8/R9) agrega build/almacen.js como segundo bloque del
+//    marcador <!-- INJECT:data -->. La cuenta total: runtime, data,
+//    almacen, charts, motor, docs, vistas-a, vistas-b, boot, sw-registro =
+//    10. (bloquesScript ya se extrajo arriba, antes de la sección A.)
 // ---------------------------------------------------------------------
-assert(bloquesScript.length === 8, 'exactamente 8 bloques <script> inline (runtime, data, charts, motor, docs, vistas-a, vistas-b, boot); encontrados ' + bloquesScript.length);
+assert(bloquesScript.length === 10, 'exactamente 10 bloques <script> inline (runtime, data, almacen, charts, motor, docs, vistas-a, vistas-b, boot, sw-registro); encontrados ' + bloquesScript.length);
 
 for (var si = 0; si < bloquesScript.length; si++) {
   (function (indice) {
@@ -306,11 +316,24 @@ for (var si = 0; si < bloquesScript.length; si++) {
   var bloqueDocs = bloquePorId('hz-docs');
   var hexesEnDocs = bloqueDocs ? (bloqueDocs.contenido.match(HEX_REGEX) || []) : [];
 
+  // Adendum R8 punto 2 (T-038/T-042): el <head>, ANTES de que abra el
+  // <style>, trae los dos <meta name="theme-color"> (claro/oscuro) que el
+  // contrato autoriza explícitamente con los hexes de --surface-1, más el
+  // comentario de proveniencia del favicon/theme-color que documenta esos
+  // mismos tres valores (--series-1 y --surface-1 claro/oscuro) en prosa.
+  // Ninguno es un hex nuevo: los tres ya viven en <style> como custom
+  // properties; esto solo cuenta su aparición literal fuera de <style>,
+  // autorizada por el Adendum, en vez de tratarla como fuga de paleta.
+  var HEXES_PERMITIDOS_EN_HEAD = ['#2a78d6', '#fcfcfb', '#1a1a19'];
+  var idxStyle = html.indexOf('<style>');
+  var bloqueHead = idxStyle !== -1 ? html.slice(0, idxStyle) : '';
+  var hexesEnHead = bloqueHead.match(HEX_REGEX) || [];
+
   assert(hexesEnEstilo > 0, 'el bloque de tokens CSS (<style>) contiene hexes (sanity: la paleta está definida)');
   assert(
-    hexesEnDocumento === hexesEnEstilo + hexesEnDocs.length,
-    'todos los hexes del documento viven dentro del bloque de tokens CSS o del documento descargable de hz-docs (' +
-      hexesEnDocumento + ' totales vs ' + hexesEnEstilo + ' en <style> + ' + hexesEnDocs.length + ' en hz-docs)'
+    hexesEnDocumento === hexesEnEstilo + hexesEnDocs.length + hexesEnHead.length,
+    'todos los hexes del documento viven dentro del bloque de tokens CSS, del documento descargable de hz-docs o del <head> PWA autorizado por el Adendum R8 punto 2 (' +
+      hexesEnDocumento + ' totales vs ' + hexesEnEstilo + ' en <style> + ' + hexesEnDocs.length + ' en hz-docs + ' + hexesEnHead.length + ' en <head>)'
   );
 
   for (var hdi = 0; hdi < hexesEnDocs.length; hdi++) {
@@ -318,6 +341,14 @@ for (var si = 0; si < bloquesScript.length; si++) {
     assert(
       HEXES_PERMITIDOS_FUERA_DE_ESTILO.indexOf(hexEncontrado) !== -1,
       'el hex "' + hexesEnDocs[hdi] + '" dentro de hz-docs (documento descargable) pertenece a la lista validada del contrato de diseño sección 2 (' + HEXES_PERMITIDOS_FUERA_DE_ESTILO.join(', ') + ')'
+    );
+  }
+
+  for (var hhi = 0; hhi < hexesEnHead.length; hhi++) {
+    var hexEnHead = hexesEnHead[hhi].toLowerCase();
+    assert(
+      HEXES_PERMITIDOS_EN_HEAD.indexOf(hexEnHead) !== -1,
+      'el hex "' + hexesEnHead[hhi] + '" dentro del <head> (antes de <style>) pertenece a la lista autorizada por el Adendum R8 punto 2 (' + HEXES_PERMITIDOS_EN_HEAD.join(', ') + ')'
     );
   }
 
@@ -339,6 +370,7 @@ assert(html.indexOf('innerHTML') === -1, 'cero innerHTML en el documento (datos 
 // ---------------------------------------------------------------------
 var FUENTES = [
   { nombre: 'build/data.js', archivo: 'data.js' },
+  { nombre: 'build/almacen.js', archivo: 'almacen.js' },
   { nombre: 'build/charts.js', archivo: 'charts.js' },
   { nombre: 'build/motor_recomendacion.js', archivo: 'motor_recomendacion.js' },
   { nombre: 'build/documentos.js', archivo: 'documentos.js' },
@@ -361,34 +393,68 @@ for (var fi = 0; fi < FUENTES.length; fi++) {
 })();
 
 // ---------------------------------------------------------------------
-// J. Anti-regresión D1 (QA ronda 1, T-010) -- COMPLETA (T-024): la lista
-//    original de T-009 (10 palabras) cubría solo data/charts/vistas-a/b.
-//    Los módulos de R5 (T-020 motor, T-023 docs) traen sus propias listas
-//    de palabras sin acento en selfcheck_motor.js y selfcheck_docs.js; esta
-//    sección las UNE aquí para que el documento final ensamblado quede
-//    cubierto también contra esas dos, en vez de solo las 10 originales.
-//    Se excluye deliberadamente 'numero' de la unión: es palabra sin
-//    acento en la prosa de motor/docs, pero también existe como
-//    IDENTIFICADOR legítimo en build/charts.js (variable local `numero`
-//    dentro de statTile) -- verificado por inspección (grep con límite de
-//    palabra sobre los 7 fuentes: única colisión real). Mismo principio ya
-//    aplicado en selfcheck_docs.js ("seccion"/"recomposicion"/"proteina_g"
-//    quedan fuera por ser identificadores, no prosa) -- aquí se aplica al
-//    documento ensamblado completo, donde el código de TODOS los módulos
-//    convive. Coincidencia con límite de palabra (\b), aplicada al
-//    documento ya ensamblado como red de seguridad cruzada del ensamble.
+// J. Anti-regresión D1 (QA ronda 1, T-010) -- COMPLETA (T-024, extendida
+//    T-042/R8-R9): la lista original de T-009 (10 palabras) cubría solo
+//    data/charts/vistas-a/b. Los módulos de R5 (T-020 motor, T-023 docs)
+//    traen sus propias listas de palabras sin acento en selfcheck_motor.js
+//    y selfcheck_docs.js; T-042 (R8/R9) suma aquí las palabras nuevas de
+//    selfcheck_almacen.js (T-039/T-045) y de la lista ampliada de
+//    selfcheck_vistas_b.js (R9, vista_metricas.js) que aún no estaban en la
+//    unión, para que el documento final ensamblado -- que desde esta ronda
+//    incluye build/almacen.js como octavo fuente inyectado -- quede
+//    cubierto también contra esas dos listas.
+//    Se excluyen deliberadamente de la unión las palabras que colisionan
+//    con IDENTIFICADORES legítimos del código ya ensamblado (mismo
+//    principio que la exclusión original de 'numero', variable local en
+//    charts.js/statTile -- verificado por inspección con grep de límite de
+//    palabra sobre los 8 fuentes + build/shell.html):
+//      - 'catalogo': parámetro/variable local muy repetido en almacen.js
+//        (estructurasVaciasDesdeCatalogo, montarObjetoCompleto, montarDemo).
+//        Estaba en la unión desde T-024 (lista de selfcheck_motor.js, donde
+//        no colisiona) pero build/almacen.js es fuente NUEVA que T-042
+//        integra por primera vez al ensamble -- la colisión solo aparece
+//        aquí, contra el documento completo; selfcheck_motor.js sigue
+//        vigilando 'catalogo' correctamente dentro de su propio archivo.
+//      - 'invalidos': variable local en vista_dieta_supl.js/vista_metricas.js
+//        (validarCamposNumericos), preexistente a esta ronda.
+//      - 'vacio': coincide con el nombre de clase/identificador `hz-vacio`
+//        (Adendum R8 punto 2), usado en shell.html (regla CSS) y en
+//        classList.add('hz-vacio') de vista_dieta_supl.js/vista_metricas.js;
+//        las formas plural/femenino sin ese choque ('vacios', 'vacias') sí
+//        se incluyen abajo.
+//      - 'raiz': variable local muy repetida en charts.js/vista_dieta_supl.js
+//        (elemento raíz del contenedor de cada primitiva).
+//      - 'valido': clave de objeto `{valido: true/false}` en almacen.js
+//        (validarNombreCliente), interna a la validación de alta/renombrado.
+//    Todas las exclusiones se verificaron por inspección directa sobre
+//    prototype/index.html ya ensamblado (cero colisiones para el resto).
+//    Coincidencia con límite de palabra (\b), aplicada al documento ya
+//    ensamblado como red de seguridad cruzada del ensamble.
 // ---------------------------------------------------------------------
 (function verificarSinPalabrasSinAcentoD1() {
   var PALABRAS_SIN_ACENTO_PROHIBIDAS = [
     // Lista original T-009 (data.js, charts.js, vista_dieta_supl.js, vista_metricas.js).
     'anos', 'Composicion', 'Calorias', 'Regimen', 'Probiotico', 'clinica',
     'demostracion', 'sinteticos', 'ultimas', 'capsula',
-    // Lista propia de selfcheck_motor.js (T-020), sin 'numero' (ver nota arriba).
-    'funcion', 'preambulo', 'formulas', 'catalogo', 'segun', 'explicito',
+    // Lista propia de selfcheck_motor.js (T-020), sin 'numero' ni 'catalogo'
+    // (ver nota arriba: 'catalogo' colisiona con build/almacen.js, fuente
+    // nueva que T-042 suma al ensamble).
+    'funcion', 'preambulo', 'formulas', 'segun', 'explicito',
     'espanol', 'anios', 'invalido', 'invalida',
     // Lista propia de selfcheck_docs.js (T-023), palabras nuevas no ya listadas.
     'validacion', 'importacion', 'fisiologico', 'fisiologica',
-    'automatico', 'automatica', 'basica', 'basico', 'facil', 'metodo'
+    'automatico', 'automatica', 'basica', 'basico', 'facil', 'metodo',
+    // T-042 (R8/R9): palabras nuevas de selfcheck_almacen.js sin colisión
+    // de identificador ('invalidos', 'vacio', 'numero' quedan fuera, ver nota).
+    'modulo', 'vacios', 'vacias', 'sesion', 'sincrono', 'sincrona', 'logica',
+    'pagina', 'aqui', 'tambien', 'parametro', 'construccion', 'publicacion',
+    'confirmacion', 'cronologicamente', 'mutacion', 'formula', 'diseno',
+    'dialogos', 'unica', 'unico', 'ultima', 'ultimo', 'estan', 'clasico',
+    'clasica', 'aceptacion',
+    // T-042 (R8/R9): palabras nuevas de la lista ampliada de
+    // selfcheck_vistas_b.js sin colisión ('raiz', 'valido' quedan fuera).
+    'jerarquia', 'heroe', 'mecanica', 'edicion', 'creacion', 'eliminacion',
+    'seleccion'
   ];
   for (var pa = 0; pa < PALABRAS_SIN_ACENTO_PROHIBIDAS.length; pa++) {
     var palabra = PALABRAS_SIN_ACENTO_PROHIBIDAS[pa];
@@ -469,6 +535,106 @@ assert(html.indexOf(':root[data-theme="light"] { color-scheme: light; }') !== -1
   assert(/\bunidad\s*:/.test(contenidoVistas), 'opciones.unidad (Adendum R6 punto 2, línea/barras) aparece consumida por al menos una vista');
   assert(/\bleyendaRampa\s*:/.test(contenidoVistas), 'opciones.leyendaRampa (Adendum R6 punto 2, heatmapCalendario) aparece consumida por al menos una vista');
 })();
+
+// ---------------------------------------------------------------------
+// O. Adendum R8 punto 6 (T-042): bloque hz-almacen presente y ORDENADO --
+//    segundo bloque del marcador INJECT:data, después de hz-data y antes
+//    de hz-charts, para que Almacen.cargar() corra antes de que boot monte
+//    las vistas.
+// ---------------------------------------------------------------------
+(function verificarBloqueAlmacenPresenteYOrdenado() {
+  var indiceData = -1, indiceAlmacen = -1, indiceCharts = -1;
+  for (var bi = 0; bi < bloquesScript.length; bi++) {
+    if (bloquesScript[bi].atributos.indexOf('id="hz-data"') !== -1) { indiceData = bi; }
+    if (bloquesScript[bi].atributos.indexOf('id="hz-almacen"') !== -1) { indiceAlmacen = bi; }
+    if (bloquesScript[bi].atributos.indexOf('id="hz-charts"') !== -1) { indiceCharts = bi; }
+  }
+  assert(indiceAlmacen !== -1, 'el bloque <script id="hz-almacen"> existe en el documento ensamblado');
+  assert(indiceData !== -1 && indiceAlmacen === indiceData + 1, 'hz-almacen es EXACTAMENTE el bloque siguiente a hz-data (segundo bloque del marcador INJECT:data)');
+  assert(indiceCharts !== -1 && indiceAlmacen < indiceCharts, 'hz-almacen precede a hz-charts (Almacen.cargar() corre antes de que boot monte las vistas)');
+})();
+
+// ---------------------------------------------------------------------
+// P. Adendum R8 punto 2 (T-038/T-042): capa PWA en el head -- link
+//    manifest presente, registro del service worker GUARDEADO (nunca
+//    intenta registrar en file://). Verificar además que manifest.webmanifest
+//    y sw.js NO se inyectan al HTML (solo referencias: assemble.js no los
+//    toca, viven junto a index.html en prototype/).
+// ---------------------------------------------------------------------
+assert(html.indexOf('<link rel="manifest" href="./manifest.webmanifest">') !== -1, 'presencia literal de <link rel="manifest" href="./manifest.webmanifest"> en el head PWA');
+assert(
+  /'serviceWorker'\s+in\s+navigator\s*&&\s*\/\^https\?:\$\/\.test\(\s*location\.protocol\s*\)/.test(html),
+  'el registro del service worker está GUARDEADO por el test de protocolo (\'serviceWorker\' in navigator && /^https?:$/.test(location.protocol)); nunca intenta registrar abierto por file://'
+);
+(function verificarManifestYSwNoInyectados() {
+  var manifestPath = path.join(ROOT, 'prototype', 'manifest.webmanifest');
+  var swPath = path.join(ROOT, 'prototype', 'sw.js');
+  if (fs.existsSync(manifestPath)) {
+    var manifestContenido = fs.readFileSync(manifestPath, 'utf8');
+    assert(contarOcurrencias(html, manifestContenido) === 0, 'el contenido de prototype/manifest.webmanifest NO aparece inyectado dentro de prototype/index.html (solo referencia por <link>)');
+  }
+  if (fs.existsSync(swPath)) {
+    var swContenido = fs.readFileSync(swPath, 'utf8');
+    assert(contarOcurrencias(html, swContenido) === 0, 'el contenido de prototype/sw.js NO aparece inyectado dentro de prototype/index.html (solo referencia por navigator.serviceWorker.register)');
+  }
+})();
+
+// ---------------------------------------------------------------------
+// Q. De-prototipo (Adendum R9 punto 5, PR-01/PR-02/PR-03): title exacto,
+//    badge inicial 'Modo demo', footer SIN la palabra 'prototipo' (el
+//    disclaimer clínico se conserva, solo cambia el texto).
+// ---------------------------------------------------------------------
+assert(html.indexOf('<title>Rinde — Seguimiento nutricional del CECAD</title>') !== -1, 'presencia literal de <title>Rinde — Seguimiento nutricional del CECAD</title> (PR-01)');
+assert(/<span class="hz-badge" id="hz-modo-datos">Modo demo<\/span>/.test(html), 'el badge #hz-modo-datos arranca en el markup con el texto exacto "Modo demo" (PR-02, textoBadge() de almacen.js lo actualiza a MODO DEMO/oculto en runtime)');
+assert(
+  /\.hz-badge\[hidden\]\s*\{\s*display:\s*none;\s*\}/.test(html),
+  'presencia de la regla CSS .hz-badge[hidden] { display: none; } (Adendum R9 punto 4/C1, T-046: sin esta regla el atributo hidden que almacen.js aplica en modo real no tiene efecto visual porque .hz-badge fija display:inline-flex explícito)'
+);
+(function verificarFooterSinPrototipo() {
+  var mFooter = /<footer class="hz-footer">([\s\S]*?)<\/footer>/.exec(html);
+  assert(mFooter !== null, 'el <footer class="hz-footer"> existe en el documento');
+  var textoFooter = mFooter[1].replace(/<[^>]*>/g, '');
+  assert(textoFooter.toLowerCase().indexOf('prototipo') === -1, 'el texto visible del footer no contiene la palabra "prototipo" (PR-03: la app deja de autodenominarse prototipo)');
+  assert(textoFooter.indexOf('valoración clínica') !== -1, 'el disclaimer clínico permanece en el footer tras el cambio de texto (PR-03)');
+})();
+
+// ---------------------------------------------------------------------
+// R. Selector de cliente (Adendum R9 punto 4, MC-03): #hz-cliente-selector
+//    reemplaza al span estático #hz-paciente-nombre, que debe estar AUSENTE.
+// ---------------------------------------------------------------------
+assert(/<select id="hz-cliente-selector" class="hz-selector-cliente" aria-label="Cliente activo">/.test(html), 'presencia del <select id="hz-cliente-selector"> del header (MC-03)');
+assert(html.indexOf('hz-paciente-nombre') === -1, 'el span #hz-paciente-nombre (reemplazado por el selector de cliente) está AUSENTE del documento (MC-03)');
+
+// ---------------------------------------------------------------------
+// S. Exportables sin la marca vieja (PR-05/C6): cero 'herzon-' como
+//    prefijo de nombre de archivo descargado en todo el documento.
+// ---------------------------------------------------------------------
+assert(html.indexOf('herzon-') === -1, 'cero \'herzon-\' en el documento (PR-05: los tres exportables usan el prefijo rinde-/rinde-demo-/rinde-<slug>-, namespace interno Herzon.*/hz- congelado y sin ese prefijo)');
+
+// ---------------------------------------------------------------------
+// T. CSS aditivo Adendum R9 punto 1 (LY-01/LY-04/LY-05/DV-05, T-044):
+//    data-ancho="doble" y .hz-grid-pares presentes Y consumidos por al
+//    menos una vista.
+// ---------------------------------------------------------------------
+assert(
+  /\.hz-grid\s*>\s*\[data-ancho="doble"\]\s*\{\s*grid-column:\s*span 2;\s*\}/.test(html),
+  'presencia de la regla CSS .hz-grid > [data-ancho="doble"] { grid-column: span 2; } (Adendum R9 punto 1)'
+);
+assert(
+  /setAttribute\(\s*['"]data-ancho['"]\s*,\s*['"]doble['"]\s*\)/.test(html),
+  'al menos una vista consume data-ancho="doble" vía setAttribute (Adendum R9 punto 1, LY-01/LY-05/DV-05)'
+);
+assert(
+  /\.hz-grid-pares\s*\{\s*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(480px, 100%\), 1fr\)\);\s*\}/.test(html),
+  'presencia de la regla CSS .hz-grid-pares { grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); } (Adendum R9 punto 1, LY-04)'
+);
+assert(html.indexOf("'hz-grid-pares'") !== -1 || html.indexOf('"hz-grid-pares"') !== -1, 'la clase hz-grid-pares aparece consumida (classList/crear) por al menos una vista (LY-04, Seguimiento)');
+
+// ---------------------------------------------------------------------
+// U. Clase hz-vacio definida (Adendum R8 punto 2): estados vacíos de
+//    cards en modo real sin datos.
+// ---------------------------------------------------------------------
+assert(html.indexOf('.hz-vacio {') !== -1, 'presencia de la regla CSS .hz-vacio { ... } (Adendum R8 punto 2, estados vacíos)');
 
 // ---------------------------------------------------------------------
 // Cierre (plan.md 3.J).

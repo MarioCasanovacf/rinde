@@ -3,7 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rinde — Prototipo</title>
+<title>Rinde — Seguimiento nutricional del CECAD</title>
+<!-- Adendum R8 (T-038): capa PWA. El favicon inline es un SVG mínimo del
+     monograma para que el prototipo se vea igual abierto por file:// (el
+     ícono de disco de alta fidelidad lo rasteriza T-037 en favicon-32.png
+     / icon-180.png, junto a index.html, para el sitio publicado). Fondo
+     --series-1 (#2a78d6, contrato sec. 2 / Adendum R8 punto 3), monograma
+     blanco con la pierna en vector ascendente. -->
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Cpath d='M10 7 L10 25 M10 7 L16 7 A5 4 0 0 1 16 15 L10 15 M15 14 L24 6' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" sizes="32x32" href="./favicon-32.png">
+<link rel="apple-touch-icon" href="./icon-180.png">
+<!-- Adendum R8 punto 2: hexes de --surface-1 autorizados SOLO en estos dos
+     meta theme-color (contrato sec. 2: claro #fcfcfb / oscuro #1a1a19). -->
+<meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
 <style>
 /* ============================================================
    HERZON — hoja de estilos única (T-002, dueño único de TODO
@@ -329,6 +343,11 @@ button, input, select { font-family: inherit; }
 
 .hz-nota { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; max-width: 70ch; }
 
+/* Adendum R8 punto 2: .hz-vacio, basada en .hz-nota, para estados vacíos de
+   cards en modo real sin datos (T-040/T-041 la consumen; contenido vía
+   textContent). Centrada, con padding vertical generoso frente a .hz-nota. */
+.hz-vacio { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; max-width: 70ch; text-align: center; padding: 40px 16px; }
+
 .hz-form { display: flex; flex-direction: column; gap: 14px; max-width: 480px; }
 .hz-form-campo { display: flex; flex-direction: column; gap: 6px; }
 .hz-form-campo label { font-size: 0.85rem; color: var(--text-secondary); }
@@ -356,6 +375,7 @@ button, input, select { font-family: inherit; }
   background: var(--page);
   border: 1px solid var(--border);
 }
+.hz-badge[hidden] { display: none; }
 
 /* Ticks de eje de gráfica: única otra regla, además de .hz-table, con tabular-nums */
 .hz-axis-tick { font-variant-numeric: tabular-nums; fill: var(--axis); font-size: 0.72rem; }
@@ -446,8 +466,8 @@ button, input, select { font-family: inherit; }
 }
 
 .hz-reco-resumen {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   gap: 12px;
   margin-top: 12px;
 }
@@ -715,18 +735,50 @@ button, input, select { font-family: inherit; }
    .hz-grid; las vistas lo aplican vía setAttribute (primer consumidor: la
    card del régimen de suplementos, consumido en T-028/T-029). */
 .hz-grid > [data-ancho="completo"] { grid-column: 1 / -1; }
+
+/* Adendum R9 punto 1 (T-044): CSS aditivo. Regla data-ancho="doble" (junto
+   a "completo" de arriba, misma mecánica setAttribute) — consumida por
+   LY-01/LY-05/DV-05 en sus vistas, se implementa UNA sola vez aquí. Clase
+   .hz-grid-pares — consumida por LY-04 (Seguimiento). Selector de cliente
+   del header — consumido por MC-03; poblado y cableado en build/almacen.js
+   (T-045). Cero hexes nuevos: solo tokens ya congelados. */
+@media (min-width: 600px) {
+  .hz-grid > [data-ancho="doble"] { grid-column: span 2; }
+}
+
+.hz-grid-pares {
+  grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr));
+}
+
+.hz-selector-cliente {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.hz-selector-cliente:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+}
 </style>
 </head>
 <body>
 <header class="hz-header">
   <div class="hz-header-brand">
     <span class="hz-header-nombre">Rinde</span>
-    <span class="hz-badge" id="hz-badge-sintetico">Datos sintéticos</span>
+    <span class="hz-badge" id="hz-modo-datos">Modo demo</span>
   </div>
   <div class="hz-header-meta">
-    <span class="hz-header-paciente" id="hz-paciente-nombre">Paciente</span>
+    <select id="hz-cliente-selector" class="hz-selector-cliente" aria-label="Cliente activo"></select>
     <span class="hz-header-periodo" id="hz-periodo">Período de seguimiento: 12 semanas</span>
   </div>
+  <!-- Adendum R8 punto 2: solo markup y estilo (mismo .hz-toggle-tema que
+       "Cambiar tema"); la lógica de cambio de modo la cablea T-039
+       (build/almacen.js), que también actualiza el texto de #hz-modo-datos. -->
+  <button type="button" id="hz-btn-modo" class="hz-toggle-tema" aria-pressed="false">Usar mis datos</button>
   <button type="button" id="toggle-tema" class="hz-toggle-tema" aria-pressed="false">Cambiar tema</button>
 </header>
 
@@ -756,6 +808,10 @@ button, input, select { font-family: inherit; }
     <button type="button" class="hz-filtro-btn" data-weeks="12" aria-pressed="true">12 semanas</button>
   </div>
   <section id="vista-seguimiento" class="hz-vista" role="tabpanel" aria-labelledby="tab-seguimiento" hidden>
+    <!-- Adendum R8 punto 2 (T-038): contenedor vacío al inicio de la vista;
+         T-040 lo llena con el formulario de captura de mediciones (modo
+         real) y su cableado. -->
+    <section id="captura-mediciones"></section>
     <!-- Adendum R5 (T-021): fila de herramientas de documentos, arriba
          de las cards, consistente con #filtro-rango; T-023 cablea los
          eventos vía JS sobre estos ids fijos. -->
@@ -774,7 +830,7 @@ button, input, select { font-family: inherit; }
 </main>
 
 <footer class="hz-footer">
-  <p class="hz-nota" id="hz-nota-prototipo">Acerca de este prototipo: interfaz de demostración con datos sintéticos generados con fines ilustrativos; no sustituye valoración clínica ni nutriológica real.</p>
+  <p class="hz-nota" id="hz-nota-prototipo">Rinde es una herramienta de apoyo al seguimiento nutricional del CECAD; no sustituye la valoración clínica ni nutriológica de un profesional.</p>
 </footer>
 
 <script id="hz-runtime">
@@ -907,10 +963,9 @@ button, input, select { font-family: inherit; }
   function wireHeaderFromData() {
     if (!G.HERZON_DATA) { return; }
     var data = G.HERZON_DATA;
-    var pacienteEl = document.getElementById('hz-paciente-nombre');
-    if (pacienteEl && data.paciente && data.paciente.nombre) {
-      pacienteEl.textContent = data.paciente.nombre;
-    }
+    // MC-03 (Adendum R9): el nombre del cliente activo ya no lo escribe
+    // wireHeaderFromData; el select #hz-cliente-selector lo puebla y
+    // cablea build/almacen.js (T-045) dentro de initUI.
     var periodoEl = document.getElementById('hz-periodo');
     if (periodoEl && data.meta && data.meta.periodoSemanas) {
       periodoEl.textContent = 'Período de seguimiento: ' + data.meta.periodoSemanas + ' semanas';
@@ -964,5 +1019,20 @@ button, input, select { font-family: inherit; }
      T-023 (build/documentos.js) genera su contenido vía JS con
      Herzon.planActivo() (fallback al plan por defecto). -->
 <div id="documento-plan" class="hz-doc-documento"></div>
+
+<!-- Adendum R8 punto 2 (T-038): registro del service worker GUARDEADO al
+     final del body — SOLO si 'serviceWorker' existe en navigator y el
+     protocolo es http/https; JAMÁS intenta registrar abierto por file://
+     (así corre QA), catch silencioso. sw.js lo coloca T-037 junto a
+     index.html. -->
+<script id="hz-sw-registro">
+(function () {
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    try {
+      navigator.serviceWorker.register('./sw.js').catch(function () {});
+    } catch (e) {}
+  }
+})();
+</script>
 </body>
 </html>

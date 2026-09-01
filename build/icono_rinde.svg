@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Icono Rinde</title>
+  <defs>
+    <rect id="fondo" x="0" y="0" width="512" height="512" rx="100" fill="#2a78d6"/>
+    <!-- Monograma R: tallo + arco superior clásicos y pierna que arranca en el
+         cierre del arco con una curva que primero asciende (vector ascendente,
+         "R que rinde") antes de bajar al pie, sobre la misma línea base del
+         tallo. Variante estándar, usada en 512/192/180. Trazo con extremos
+         redondeados, sin relleno. -->
+    <g id="glifo-normal" fill="none" stroke="#ffffff" stroke-width="52" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M195,140 L195,385"/>
+      <path d="M195,140 Q296,140 296,197 Q296,254 195,254"/>
+      <path d="M195,254 C 258,232 300,254 340,388"/>
+    </g>
+    <!-- Variante mini: trazo más grueso y arco más abierto para que el
+         monograma siga legible al rasterizar a 32px (favicon). -->
+    <g id="glifo-mini" fill="none" stroke="#ffffff" stroke-width="78" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M195,130 L195,392"/>
+      <path d="M195,130 Q312,130 312,196 Q312,262 195,262"/>
+      <path d="M195,262 C 262,236 310,262 355,392"/>
+    </g>
+  </defs>
+  <use href="#fondo"/>
+  <use href="#glifo-normal"/>
+</svg>

@@ -73,6 +73,12 @@
   var INICIALES_DIA_POR_GETDAY = ['D', 'L', 'M', 'X', 'J', 'V', 'S'];
   var INICIALES_DIA_CANONICA = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
+  // R9 (DV-05 pieza 3): lado por defecto de celda del heatmap, usado también
+  // como la referencia autoconsistente para que anchoDeRenderizado reproduzca
+  // EXACTO el mismo ancho por defecto de antes cuando no hay layout real ni
+  // opciones.ancho/opciones.lado (ver derivarLadoCeldaHeatmap más abajo).
+  var LADO_HEATMAP_POR_DEFECTO = 16;
+
   // ---------------------------------------------------------------------
   // Utilidades internas puras (sin DOM)
   // ---------------------------------------------------------------------
@@ -165,6 +171,25 @@
     return rangos;
   }
 
+  // R9 (DV-05 pieza 3, fix interno sin API): deriva el lado de celda del
+  // heatmap a partir del ancho DISPONIBLE para celdas (ancho total del
+  // contenedor menos el gutter de etiquetasFila y los gaps fijos), en vez de
+  // un `lado` constante que el CSS width:100% del SVG termina reescalando de
+  // forma impredecible según la card (misma causa raíz que D3, ya corregida
+  // en las demás primitivas vía anchoDeRenderizado). Álgebra exacta: como
+  // ancho = margenIzquierdaFilas + columnas*(lado+gap) + gap, despejar lado
+  // de ese mismo ancho da anchoDisponibleCeldas/columnas === lado — así que
+  // sin layout real (TestDOM headless) y sin opciones.ancho/opciones.lado,
+  // donde anchoDeRenderizado devuelve el ancho por defecto calculado con
+  // LADO_HEATMAP_POR_DEFECTO, esta función recupera EXACTO ese mismo valor
+  // (no regresión). Piso de 8px para que la celda no colapse a 0 o negativo
+  // en contenedores extremadamente angostos.
+  function derivarLadoCeldaHeatmap(anchoTotal, margenIzquierdaFilas, gap, columnas) {
+    if (!(columnas > 0)) return LADO_HEATMAP_POR_DEFECTO;
+    var anchoDisponibleCeldas = anchoTotal - margenIzquierdaFilas - gap * (columnas + 1);
+    return Math.max(8, anchoDisponibleCeldas / columnas);
+  }
+
   // R6 (heatmapCalendario, encabezadosDia): inicial de día derivada de
   // opciones.etiquetas cuando es una fecha ISO parseable (YYYY-MM-DD...); si no,
   // cae al orden canónico de semana (lunes-primero) por posición de columna, para
@@ -246,6 +271,28 @@
       margenAbajo = Math.max(MARGEN_ABAJO_CATEGORIA_BASE, Math.min(130, Math.round(extensionVertical + 26)));
     }
     return { rotar: rotar, margenAbajo: margenAbajo };
+  }
+
+  // R9 (DV-02, fix interno sin API — mismo estatus que D2/D3/T-034): cuando
+  // calcularRotacionEtiquetasX decide rotar, la PRIMERA banda (xCentro más
+  // chico) es la más expuesta a que su etiqueta (text-anchor end, rotada)
+  // desborde hacia x negativa fuera del viewBox. El sobrante horizontal de
+  // esa etiqueta es su ancho estimado proyectado por cos(35°); si ese
+  // sobrante excede el margen izquierdo actual, se amplía el margen para
+  // cubrirlo exactamente (con tope proporcional al ancho total, mismo patrón
+  // que GUTTER_IZQUIERDO_PROPORCION_MAX de QA-R3 b). Con el margen igualado
+  // al sobrante, el borde izquierdo de la etiqueta rotada queda a
+  // anchoGrupo/2 del borde del viewBox — siempre > 0 — así que el resultado
+  // es seguro incluso sin resolver la geometría de anchoGrupo de forma
+  // exacta (que cambia al crecer el margen).
+  function calcularMargenIzquierdoRotado(categorias, anchoTotal, margenIzquierdaBase) {
+    if (!categorias || !categorias.length) return margenIzquierdaBase;
+    var radianes = ROTACION_ETIQUETA_X_GRADOS * Math.PI / 180;
+    var anchoPrimeraEtiqueta = estimarAnchoTexto(categorias[0], TAMANO_FUENTE_EJE);
+    var proyeccionHorizontal = anchoPrimeraEtiqueta * Math.cos(radianes);
+    var deseado = Math.max(margenIzquierdaBase, proyeccionHorizontal);
+    var tope = Math.max(margenIzquierdaBase, anchoTotal * GUTTER_IZQUIERDO_PROPORCION_MAX);
+    return Math.min(deseado, tope);
   }
 
   // Dibuja una etiqueta de categoría del eje X: centrada y horizontal cuando cabe; si no,
@@ -346,11 +393,27 @@
   // que la toca (nunca menos que `separacionMinima` respecto de la propia
   // hairline, que es la separación de la posición por defecto). Función pura
   // (sin DOM) para que el render y el selfcheck compartan el mismo cómputo.
-  function resolverPosicionEtiquetaReferencia(xEtiqueta, yHairline, texto, tamanoFuente, separacionMinima, obstaculos) {
+  // R9 (DV-03 + DV-04 combinados, fix de colisión): `limiteArriba` es
+  // OPCIONAL (backward-compatible: ausente, comportamiento idéntico a
+  // T-034). Con valoresEnBarras activo la primera categoría también es un
+  // obstáculo real (evidencia: "Laboratorios en 3 cortes" con referencia
+  // {min,max} Y valoresEnBarras a la vez, Basal cerca del techo del rango) —
+  // sin este piso, empujar la etiqueta por encima del obstáculo puede
+  // sacarla del área de trazo (y hasta del viewBox) y dejarla invisible, que
+  // es peor que la colisión que se quería evitar (texto ilegible = falla
+  // dura, mismo principio que D2/D3). Si el desplazamiento por colisión la
+  // deja por encima de `limiteArriba`, se re-ancla ahí como piso. Fix
+  // post-rechazo del verifier: el piso solo no basta — puede volver a caer
+  // sobre el propio obstáculo (mismo caso real), así que tras anclar al
+  // piso se revalida contra `obstaculos` y, si persiste la colisión, la
+  // etiqueta se corre en X más allá del obstáculo más ancho que la toca
+  // (nunca queda una caja final que intersecte una barra).
+  function resolverPosicionEtiquetaReferencia(xEtiqueta, yHairline, texto, tamanoFuente, separacionMinima, obstaculos, limiteArriba) {
     var anchoTexto = estimarAnchoTexto(texto, tamanoFuente);
     var y = yHairline - separacionMinima;
     var caja = { x0: xEtiqueta, x1: xEtiqueta + anchoTexto, y0: y - tamanoFuente, y1: y };
-    (obstaculos || []).forEach(function (o) {
+    var listaObstaculos = obstaculos || [];
+    listaObstaculos.forEach(function (o) {
       if (cajasIntersectan(caja, o)) {
         var yTecho = o.y0 - separacionMinima;
         if (yTecho < caja.y1) {
@@ -360,7 +423,38 @@
         }
       }
     });
-    return { x: xEtiqueta, y: caja.y1, ancho: anchoTexto, caja: caja };
+    if (typeof limiteArriba === 'number' && caja.y0 < limiteArriba) {
+      var deltaPiso = limiteArriba - caja.y0;
+      caja.y0 += deltaPiso;
+      caja.y1 += deltaPiso;
+      // R9 (fix post-rechazo verifier, evidencia "Laboratorios en 3 cortes"):
+      // el piso puede volver a caer sobre el MISMO obstáculo que la evasión
+      // vertical intentaba esquivar (ya no hay margen hacia arriba: está en
+      // el piso). La única salida sin dejar la etiqueta invisible ni tapada
+      // es correrla en X más allá del obstáculo más ancho que sigue
+      // tocándola, y repetir por si el nuevo sitio choca con otro obstáculo
+      // (p.ej. la barra Basal y luego la de Seguimiento). Cota dura: nunca
+      // más iteraciones que obstáculos hay, así que siempre termina.
+      var iteraciones = 0;
+      var colisionPersiste = true;
+      while (colisionPersiste && iteraciones < listaObstaculos.length) {
+        colisionPersiste = false;
+        var maxX1Colisionando = null;
+        listaObstaculos.forEach(function (o2) {
+          if (cajasIntersectan(caja, o2)) {
+            colisionPersiste = true;
+            if (maxX1Colisionando === null || o2.x1 > maxX1Colisionando) maxX1Colisionando = o2.x1;
+          }
+        });
+        if (colisionPersiste && maxX1Colisionando !== null) {
+          var nuevoX0 = maxX1Colisionando + separacionMinima;
+          caja.x0 = nuevoX0;
+          caja.x1 = nuevoX0 + anchoTexto;
+        }
+        iteraciones += 1;
+      }
+    }
+    return { x: caja.x0, y: caja.y1, ancho: anchoTexto, caja: caja };
   }
 
   // ---------------------------------------------------------------------
@@ -845,6 +939,15 @@
       var anchoGrupoPreVertical = categorias.length > 0 ? anchoPlot / categorias.length : anchoPlot;
       rotacionEtiquetasX = calcularRotacionEtiquetasX(categorias, anchoGrupoPreVertical);
       margen.abajo = rotacionEtiquetasX.margenAbajo;
+      // R9 (DV-02): al rotar, ampliar el margen izquierdo para que la
+      // primera etiqueta no se recorte contra el borde del viewBox (mismo
+      // fix que apilada100; aquí el margen base ya es 52 por el eje Y, así
+      // que solo crece si un label de categoría particularmente largo lo
+      // exige).
+      if (rotacionEtiquetasX.rotar) {
+        margen.izquierda = calcularMargenIzquierdoRotado(categorias, ancho, margen.izquierda);
+        anchoPlot = ancho - margen.izquierda - margen.derecha;
+      }
     }
     var altoPlot = alto - margen.arriba - margen.abajo;
 
@@ -859,18 +962,45 @@
     if (opciones.referencia && typeof opciones.referencia.max === 'number') {
       dataMax = Math.max(dataMax, opciones.referencia.max);
     }
+    // R9 (DV-03): mismo propósito para la variante {valor} — el umbral nunca
+    // debe quedar fuera del área de trazo aunque supere el dato más alto.
+    if (opciones.referencia && typeof opciones.referencia.valor === 'number') {
+      dataMax = Math.max(dataMax, opciones.referencia.valor);
+    }
     var valorMax = (typeof opciones.max === 'number') ? opciones.max : (dataMax || 1);
     if (valorMax <= 0) valorMax = 1;
     var tieneReferencia = !!(opciones.referencia && typeof opciones.referencia.min === 'number' && typeof opciones.referencia.max === 'number');
+    // R9 (DV-03): opciones.referencia { valor, etiqueta } — variante aditiva
+    // default-apagada de un UMBRAL de valor único (p.ej. el objetivo de
+    // kcal/día), distinta del rango {min,max} ya existente. Se dibuja UNA
+    // sola hairline en vez de dos; reutiliza resolverPosicionEtiquetaReferencia
+    // (T-034) para no colisionar con barras ni con la etiqueta de valor. Solo
+    // aplica cuando NO viene {min,max} (tieneReferencia gana si ambas formas
+    // llegaran a coexistir, para no ambigüar el contrato existente).
+    var tieneReferenciaValor = !!(opciones.referencia && !tieneReferencia && typeof opciones.referencia.valor === 'number');
 
     // R6: hairline 1px var(--text-muted) + etiqueta corta, misma anatomia que
     // la linea Meta de linea() (contrato Adendum R6 punto 2). Dibuja las DOS
     // fronteras (min y max) del rango de referencia sobre el eje recibido
     // (perpendicular a las barras) y una sola etiqueta junto a la frontera max.
+    // R9 (DV-03): con la variante {valor}, dibuja UNA sola hairline+etiqueta.
     function dibujarReferencia(esVertical, escalaValor, obstaculosEtiqueta) {
-      if (!tieneReferencia) return;
-      var yMin, yMax, xMin, xMax;
+      if (!tieneReferencia && !tieneReferenciaValor) return;
+      var yMin, yMax, xMin, xMax, yValor, xValor;
       if (esVertical) {
+        if (tieneReferenciaValor) {
+          yValor = alto - margen.abajo - escalaValor(opciones.referencia.valor);
+          var lineaRefValor = crearSVG(doc, 'line', { x1: margen.izquierda, x2: ancho - margen.derecha, y1: yValor, y2: yValor, 'stroke-width': '1', class: 'hz-referencia-linea' });
+          lineaRefValor.style.stroke = 'var(--text-muted)';
+          svg.appendChild(lineaRefValor);
+          var textoRefValor = opciones.referencia.etiqueta || 'Referencia';
+          var posicionRefValor = resolverPosicionEtiquetaReferencia(margen.izquierda, yValor, textoRefValor, TAMANO_FUENTE_EJE, 4, obstaculosEtiqueta, margen.arriba);
+          var etiquetaRefValor = crearSVG(doc, 'text', { x: posicionRefValor.x, y: posicionRefValor.y, 'text-anchor': 'start', 'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-referencia-etiqueta' });
+          etiquetaRefValor.style.fill = 'var(--text-muted)';
+          etiquetaRefValor.textContent = textoRefValor;
+          svg.appendChild(etiquetaRefValor);
+          return;
+        }
         yMin = alto - margen.abajo - escalaValor(opciones.referencia.min);
         yMax = alto - margen.abajo - escalaValor(opciones.referencia.max);
         [yMin, yMax].forEach(function (yRef) {
@@ -886,12 +1016,23 @@
         // posición derecha, R6 data-4), se desplaza verticalmente por encima
         // de la hairline con separación >= 4px del obstáculo más alto.
         var textoRef = opciones.referencia.etiqueta || 'Referencia';
-        var posicionRef = resolverPosicionEtiquetaReferencia(margen.izquierda, yMax, textoRef, TAMANO_FUENTE_EJE, 4, obstaculosEtiqueta);
+        var posicionRef = resolverPosicionEtiquetaReferencia(margen.izquierda, yMax, textoRef, TAMANO_FUENTE_EJE, 4, obstaculosEtiqueta, margen.arriba);
         var etiquetaRef = crearSVG(doc, 'text', { x: posicionRef.x, y: posicionRef.y, 'text-anchor': 'start', 'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-referencia-etiqueta' });
         etiquetaRef.style.fill = 'var(--text-muted)';
         etiquetaRef.textContent = textoRef;
         svg.appendChild(etiquetaRef);
       } else {
+        if (tieneReferenciaValor) {
+          xValor = margen.izquierda + escalaValor(opciones.referencia.valor);
+          var lineaRefValorH = crearSVG(doc, 'line', { x1: xValor, x2: xValor, y1: margen.arriba, y2: alto - margen.abajo, 'stroke-width': '1', class: 'hz-referencia-linea' });
+          lineaRefValorH.style.stroke = 'var(--text-muted)';
+          svg.appendChild(lineaRefValorH);
+          var etiquetaRefValorH = crearSVG(doc, 'text', { x: xValor, y: margen.arriba - 4, 'text-anchor': 'middle', 'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-referencia-etiqueta' });
+          etiquetaRefValorH.style.fill = 'var(--text-muted)';
+          etiquetaRefValorH.textContent = opciones.referencia.etiqueta || 'Referencia';
+          svg.appendChild(etiquetaRefValorH);
+          return;
+        }
         xMin = margen.izquierda + escalaValor(opciones.referencia.min);
         xMax = margen.izquierda + escalaValor(opciones.referencia.max);
         [xMin, xMax].forEach(function (xRef) {
@@ -964,6 +1105,17 @@
       // las cajas estimadas de CADA barra (valor máximo entre series por
       // categoría) y, con serie única, la de la etiqueta de valor del último
       // elemento — la misma geometría que este mismo bloque dibuja más abajo.
+      // R9 (fix post-rechazo verifier): la caja en X usa el ancho REALMENTE
+      // ocupado por las marcas (anchoOcupado, igual fórmula que el render de
+      // abajo), no el ancho completo del grupo (anchoGrupo, que incluye el
+      // padding entre categorías) — con la caja de grupo completa, una
+      // categoría con etiquetas largas (ancho de grupo grande) declaraba
+      // "ocupado" hasta el borde izquierdo del SIGUIENTE grupo aunque la
+      // barra real terminara mucho antes, y la evasión horizontal nueva (ver
+      // resolverPosicionEtiquetaReferencia) saltaba de más sin necesidad
+      // (evidencia: fixture 22.4d, Basal/Seguimiento/Final, la barra real
+      // termina en x=159.14 pero la caja de grupo llegaba hasta x=218.28).
+      var anchoOcupadoObstaculo = grosorBarra * nSer + GAP_SEPARADOR * (nSer - 1);
       var obstaculosEtiquetaRef = [];
       for (var oc = 0; oc < nCat; oc++) {
         var valorMaxCategoriaRef = null;
@@ -974,23 +1126,46 @@
           }
         }
         if (valorMaxCategoriaRef === null) continue;
-        var xCategoriaRef = margen.izquierda + oc * anchoGrupo;
+        var inicioGrupoRef = margen.izquierda + oc * anchoGrupo;
+        var xCategoriaRef = inicioGrupoRef + (anchoGrupo - anchoOcupadoObstaculo) / 2;
         obstaculosEtiquetaRef.push({
-          x0: xCategoriaRef, x1: xCategoriaRef + anchoGrupo,
+          x0: xCategoriaRef, x1: xCategoriaRef + anchoOcupadoObstaculo,
           y0: (alto - margen.abajo) - escalaAlt(valorMaxCategoriaRef), y1: alto - margen.abajo
         });
       }
       if (series.length === 1) {
         var datosUnicaRefPre = series[0].datos || [];
-        var idxUltimoRefPre = datosUnicaRefPre.length - 1;
-        if (idxUltimoRefPre >= 0 && typeof datosUnicaRefPre[idxUltimoRefPre] === 'number' && !isNaN(datosUnicaRefPre[idxUltimoRefPre])) {
-          var xCentroRefPre = margen.izquierda + idxUltimoRefPre * anchoGrupo + anchoGrupo / 2;
-          var anchoValorRefPre = estimarAnchoTexto(etiquetaConUnidad(datosUnicaRefPre[idxUltimoRefPre], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
-          var yCapRefPre = (alto - margen.abajo) - escalaAlt(datosUnicaRefPre[idxUltimoRefPre]);
-          obstaculosEtiquetaRef.push({
-            x0: xCentroRefPre - anchoValorRefPre / 2, x1: xCentroRefPre + anchoValorRefPre / 2,
-            y0: (yCapRefPre - 6) - TAMANO_FUENTE_ETIQUETA, y1: yCapRefPre - 6
-          });
+        // R9 (DV-04 + DV-03 combinados, evidencia real: "Laboratorios en 3
+        // cortes" ya trae referencia {min,max} y ahora valoresEnBarras): con
+        // valoresEnBarras activo, CADA barra dibuja su propia etiqueta de
+        // valor (no solo la última), así que la primera categoría —la más
+        // cercana al ancla izquierda de "Rango normal"— también es un
+        // obstáculo real. Fuera de esa condición se conserva intacto el
+        // único obstáculo previo (el de la etiqueta del ÚLTIMO valor, R6
+        // data-4), mismo comportamiento de siempre.
+        if (opciones.valoresEnBarras && categorias.length <= 6) {
+          for (var ivbRef = 0; ivbRef < datosUnicaRefPre.length; ivbRef++) {
+            var valorVBRef = datosUnicaRefPre[ivbRef];
+            if (typeof valorVBRef !== 'number' || isNaN(valorVBRef)) continue;
+            var xCentroVBRef = margen.izquierda + ivbRef * anchoGrupo + anchoGrupo / 2;
+            var anchoValorVBRef = estimarAnchoTexto(etiquetaConUnidad(valorVBRef, opciones.unidad), TAMANO_FUENTE_ETIQUETA);
+            var yCapVBRef = (alto - margen.abajo) - escalaAlt(valorVBRef);
+            obstaculosEtiquetaRef.push({
+              x0: xCentroVBRef - anchoValorVBRef / 2, x1: xCentroVBRef + anchoValorVBRef / 2,
+              y0: (yCapVBRef - 6) - TAMANO_FUENTE_ETIQUETA, y1: yCapVBRef - 6
+            });
+          }
+        } else {
+          var idxUltimoRefPre = datosUnicaRefPre.length - 1;
+          if (idxUltimoRefPre >= 0 && typeof datosUnicaRefPre[idxUltimoRefPre] === 'number' && !isNaN(datosUnicaRefPre[idxUltimoRefPre])) {
+            var xCentroRefPre = margen.izquierda + idxUltimoRefPre * anchoGrupo + anchoGrupo / 2;
+            var anchoValorRefPre = estimarAnchoTexto(etiquetaConUnidad(datosUnicaRefPre[idxUltimoRefPre], opciones.unidad), TAMANO_FUENTE_ETIQUETA);
+            var yCapRefPre = (alto - margen.abajo) - escalaAlt(datosUnicaRefPre[idxUltimoRefPre]);
+            obstaculosEtiquetaRef.push({
+              x0: xCentroRefPre - anchoValorRefPre / 2, x1: xCentroRefPre + anchoValorRefPre / 2,
+              y0: (yCapRefPre - 6) - TAMANO_FUENTE_ETIQUETA, y1: yCapRefPre - 6
+            });
+          }
         }
       }
       dibujarReferencia(true, escalaAlt, obstaculosEtiquetaRef);
@@ -1037,17 +1212,36 @@
 
       if (series.length === 1) {
         var datosUnica = series[0].datos || [];
-        // R6 (data-4): el label directo por default va en el ÚLTIMO valor (el
-        // actual), no en el máximo — antes de R6 aquí vivía indiceDelMaximo().
-        var idxUltimo = datosUnica.length - 1;
-        if (idxUltimo >= 0 && typeof datosUnica[idxUltimo] === 'number' && !isNaN(datosUnica[idxUltimo])) {
-          var xCentro = margen.izquierda + idxUltimo * anchoGrupo + anchoGrupo / 2;
-          var valorUltimoSel = datosUnica[idxUltimo];
-          var yCap = alto - margen.abajo - escalaAlt(valorUltimoSel);
-          var etiquetaValor = crearSVG(doc, 'text', { x: xCentro, y: yCap - 6, 'text-anchor': 'middle', class: 'hz-etiqueta-valor', 'font-size': String(TAMANO_FUENTE_ETIQUETA) });
-          etiquetaValor.style.fill = 'var(--text-primary)';
-          etiquetaValor.textContent = etiquetaConUnidad(valorUltimoSel, opciones.unidad);
-          svg.appendChild(etiquetaValor);
+        // R9 (DV-04): valoresEnBarras extendido a orientación vertical (hoy
+        // no-op ahí, opción ya existente en horizontal) — con serie única y
+        // <=6 categorías, valor encima de CADA barra (mismo guard que la
+        // rama horizontal, 22.6). Fuera de esas condiciones se conserva
+        // intacto el comportamiento default previo (R6 data-4: una sola
+        // etiqueta, la del ÚLTIMO valor).
+        if (opciones.valoresEnBarras && categorias.length <= 6) {
+          for (var vbV = 0; vbV < datosUnica.length; vbV++) {
+            var valorVBV = datosUnica[vbV];
+            if (typeof valorVBV !== 'number' || isNaN(valorVBV)) continue;
+            var xCentroVBV = margen.izquierda + vbV * anchoGrupo + anchoGrupo / 2;
+            var yCapVBV = alto - margen.abajo - escalaAlt(valorVBV);
+            var etiquetaVBV = crearSVG(doc, 'text', { x: xCentroVBV, y: yCapVBV - 6, 'text-anchor': 'middle', class: 'hz-etiqueta-valor', 'font-size': String(TAMANO_FUENTE_ETIQUETA) });
+            etiquetaVBV.style.fill = 'var(--text-primary)';
+            etiquetaVBV.textContent = etiquetaConUnidad(valorVBV, opciones.unidad);
+            svg.appendChild(etiquetaVBV);
+          }
+        } else {
+          // R6 (data-4): el label directo por default va en el ÚLTIMO valor (el
+          // actual), no en el máximo — antes de R6 aquí vivía indiceDelMaximo().
+          var idxUltimo = datosUnica.length - 1;
+          if (idxUltimo >= 0 && typeof datosUnica[idxUltimo] === 'number' && !isNaN(datosUnica[idxUltimo])) {
+            var xCentro = margen.izquierda + idxUltimo * anchoGrupo + anchoGrupo / 2;
+            var valorUltimoSel = datosUnica[idxUltimo];
+            var yCap = alto - margen.abajo - escalaAlt(valorUltimoSel);
+            var etiquetaValor = crearSVG(doc, 'text', { x: xCentro, y: yCap - 6, 'text-anchor': 'middle', class: 'hz-etiqueta-valor', 'font-size': String(TAMANO_FUENTE_ETIQUETA) });
+            etiquetaValor.style.fill = 'var(--text-primary)';
+            etiquetaValor.textContent = etiquetaConUnidad(valorUltimoSel, opciones.unidad);
+            svg.appendChild(etiquetaValor);
+          }
         }
       }
     } else {
@@ -1182,6 +1376,15 @@
     var anchoGrupo = nCat > 0 ? anchoPlot / nCat : anchoPlot;
     var rotacionEtiquetasX = calcularRotacionEtiquetasX(categorias, anchoGrupo);
     margen.abajo = rotacionEtiquetasX.margenAbajo;
+    // R9 (DV-02, fix interno sin API): al rotar, ampliar el margen izquierdo
+    // según la primera etiqueta (la más expuesta a desbordar hacia x
+    // negativa con text-anchor end) y recalcular anchoPlot/anchoGrupo con el
+    // margen ya corregido antes de posicionar ninguna columna.
+    if (rotacionEtiquetasX.rotar) {
+      margen.izquierda = calcularMargenIzquierdoRotado(categorias, ancho, margen.izquierda);
+      anchoPlot = ancho - margen.izquierda - margen.derecha;
+      anchoGrupo = nCat > 0 ? anchoPlot / nCat : anchoPlot;
+    }
     var altoPlot = alto - margen.arriba - margen.abajo;
 
     var raiz = crearHTML(doc, 'div');
@@ -1269,7 +1472,13 @@
         // R6: etiquetasSegmento — % SOLO en segmentos con alto >= 14px (regla
         // "segmentos angostos sin etiqueta, los cubre la tabla"). Tinta de
         // texto via tokens de texto, jamás color de serie (regla 8).
-        if (opciones.etiquetasSegmento && hSeg >= ALTURA_MINIMA_ETIQUETA_SEGMENTO) {
+        // R9 (DV-01): etiquetasSegmentoIndices — opción aditiva
+        // default-apagada que restringe el % a las CATEGORÍAS (columnas)
+        // cuyo índice está en la lista (saillance: una columna ejemplar en
+        // vez de 15 rótulos casi idénticos). Ausente, se conserva el
+        // comportamiento actual: todas las categorías son elegibles.
+        var categoriaElegibleSegmento = !opciones.etiquetasSegmentoIndices || opciones.etiquetasSegmentoIndices.indexOf(c) !== -1;
+        if (opciones.etiquetasSegmento && categoriaElegibleSegmento && hSeg >= ALTURA_MINIMA_ETIQUETA_SEGMENTO) {
           var etiquetaSegmento = crearSVG(doc, 'text', {
             x: xCentro, y: y + hSeg / 2, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
             class: 'hz-etiqueta-segmento', 'font-size': String(TAMANO_FUENTE_ETIQUETA)
@@ -1307,16 +1516,21 @@
     var valores = opciones.valores || [];
     var etiquetas = opciones.etiquetas || [];
     var columnas = opciones.columnas || 7;
-    var lado = opciones.lado || 16;
     var gap = 3;
     var filas = Math.ceil(valores.length / columnas) || 1;
 
-    // R6: encabezadosDia reserva una fila superior para las iniciales de día;
-    // etiquetasFila reserva una columna izquierda para las etiquetas de fila
-    // (p.ej. S1, S4, S8, S12). Ambas empiezan en 0 (sin cambio de render) y
-    // solo crecen cuando la opción viene activada, de modo que el viewBox por
-    // default sea exactamente el mismo de antes de R6.
-    var margenArribaEncabezados = opciones.encabezadosDia ? (TAMANO_FUENTE_EJE + 6) : 0;
+    // R6: encabezadosDia reserva una fila superior para las iniciales de día.
+    // R9 (DV-05 pieza 1): encabezadosColumna reserva la MISMA fila superior
+    // para rótulos de texto libre por columna (p.ej. S1/S4/S8/S12 cuando las
+    // columnas son semanas en vez de días — heatmap transpuesto). Ambas
+    // opciones son mutuamente excluyentes en uso normal (el llamador elige
+    // una según qué representa la columna); si llegaran a coexistir, ambas
+    // se dibujan sobre la misma fila. etiquetasFila reserva una columna
+    // izquierda para las etiquetas de fila (p.ej. L, M, X...). Las tres
+    // empiezan en 0 (sin cambio de render) y solo crecen cuando la opción
+    // viene activada, de modo que el viewBox por default sea exactamente el
+    // mismo de antes de R6/R9.
+    var margenArribaEncabezados = (opciones.encabezadosDia || opciones.encabezadosColumna) ? (TAMANO_FUENTE_EJE + 6) : 0;
     var margenIzquierdaFilas = 0;
     if (opciones.etiquetasFila) {
       for (var mf = 0; mf < opciones.etiquetasFila.length; mf++) {
@@ -1328,7 +1542,17 @@
       if (margenIzquierdaFilas > 0) margenIzquierdaFilas += PADDING_GUTTER_FILA_HEATMAP;
     }
 
-    var ancho = opciones.ancho || (margenIzquierdaFilas + columnas * (lado + gap) + gap);
+    // R9 (DV-05 pieza 3, fix interno sin API — mismo estatus que D3 en las
+    // demás primitivas): el ancho real usa anchoDeRenderizado (clientWidth
+    // del contenedor si hay layout real; si no, opciones.ancho o el cálculo
+    // por defecto que asume LADO_HEATMAP_POR_DEFECTO). `lado` se deriva del
+    // ancho disponible para celdas cuando opciones.lado no viene explícito;
+    // si viene, se respeta tal cual (sin cambio de API). Sin layout real y
+    // sin opciones.ancho/opciones.lado (TestDOM headless), el resultado es
+    // idéntico al de siempre — ver derivarLadoCeldaHeatmap.
+    var anchoPorDefecto = margenIzquierdaFilas + columnas * (LADO_HEATMAP_POR_DEFECTO + gap) + gap;
+    var ancho = anchoDeRenderizado(contenedorEl, opciones.ancho, anchoPorDefecto);
+    var lado = (typeof opciones.lado === 'number') ? opciones.lado : derivarLadoCeldaHeatmap(ancho, margenIzquierdaFilas, gap, columnas);
     var alto = opciones.alto || (margenArribaEncabezados + filas * (lado + gap) + gap);
 
     var todos = valores.filter(function (v) { return typeof v === 'number' && !isNaN(v); });
@@ -1390,6 +1614,24 @@
         etiquetaEncabezado.style.fill = 'var(--text-muted)';
         etiquetaEncabezado.textContent = inicialDia;
         svg.appendChild(etiquetaEncabezado);
+      }
+    }
+
+    // R9 (DV-05 pieza 1): encabezadosColumna — texto libre por columna (p.ej.
+    // 'S1','','','S4' cuando el heatmap va transpuesto y las columnas son
+    // semanas). Mismo patrón que etiquetasFila: SOLO se dibuja el rótulo de
+    // las entradas no vacías (el llamador decide qué columnas rotular).
+    if (opciones.encabezadosColumna) {
+      for (var ec = 0; ec < columnas; ec++) {
+        if (!opciones.encabezadosColumna[ec]) continue;
+        var xEncColumna = margenIzquierdaFilas + gap + ec * (lado + gap) + lado / 2;
+        var etiquetaEncColumna = crearSVG(doc, 'text', {
+          x: xEncColumna, y: margenArribaEncabezados - 4, 'text-anchor': 'middle',
+          'font-size': String(TAMANO_FUENTE_EJE), class: 'hz-heat-encabezado-columna'
+        });
+        etiquetaEncColumna.style.fill = 'var(--text-muted)';
+        etiquetaEncColumna.textContent = String(opciones.encabezadosColumna[ec]);
+        svg.appendChild(etiquetaEncColumna);
       }
     }
 
@@ -1492,7 +1734,12 @@
       for (var i = 0; i < n; i++) puntos.push(escalaX(i) + ',' + escalaY(valores[i]));
       var linea = crearSVG(doc, 'polyline', { points: puntos.join(' '), 'stroke-width': '2', 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
       linea.style.fill = 'none';
-      linea.style.stroke = 'var(--text-muted)';
+      // LY-01 pieza 3 (R9): opciones.lineaAcento — opción aditiva
+      // default-apagada. La polilínea completa usa colorAcento (mismo
+      // opciones.color que ya tiñe el punto final) en vez de
+      // var(--text-muted); apagada, render idéntico al actual (la evidencia
+      // principal deja de codificarse en el gris más recesivo).
+      linea.style.stroke = opciones.lineaAcento ? colorAcento : 'var(--text-muted)';
       svg.appendChild(linea);
 
       for (var j = 0; j < n; j++) {
@@ -1605,6 +1852,12 @@
     // cómputo de colisión/posición que usa la etiqueta de opciones.referencia
     // en barras(), en vez de reinventarlo.
     cajasIntersectan: cajasIntersectan,
-    resolverPosicionEtiquetaReferencia: resolverPosicionEtiquetaReferencia
+    resolverPosicionEtiquetaReferencia: resolverPosicionEtiquetaReferencia,
+    // R9: expuestas para que el selfcheck asevere sobre el mismo cómputo
+    // puro que usan los fixes internos DV-02 y DV-05 (pieza 3), en vez de
+    // reinventarlo.
+    calcularMargenIzquierdoRotado: calcularMargenIzquierdoRotado,
+    derivarLadoCeldaHeatmap: derivarLadoCeldaHeatmap,
+    LADO_HEATMAP_POR_DEFECTO: LADO_HEATMAP_POR_DEFECTO
   };
 })();

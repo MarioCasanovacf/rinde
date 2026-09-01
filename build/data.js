@@ -617,15 +617,23 @@
       trigliceridos: 'mg/dL'
     },
     generado: 'sintetico',
-    nota: 'Datos sintéticos generados para fines de demostración; no representan una paciente real ni deben usarse para decisiones clínicas.'
+    // PR-06 (R9): esta es la nota de MODO DEMO. La nota del cliente real vive
+    // en build/almacen.js (NOTA_META_REAL) y sobrescribe esta en
+    // montarObjetoCompleto — un documento de un cliente real del CECAD JAMÁS
+    // sale firmado con este texto.
+    nota: 'Documento generado en modo demo con datos de ejemplo; no representa a una paciente real ni debe usarse para decisiones clínicas.'
   };
 
+  // PR-04 (R9): reemplazo íntegro del array anterior. Título "Acerca del
+  // modo demo" lo monta build/vista_metricas.js SOLO en modo demo; el
+  // supuesto 5 anterior ("esta demo no persiste información") era falso
+  // desde R8 (Herzon.Almacen sí persiste en modo real) y queda corregido.
   var supuestos = [
-    'Todos los datos de este prototipo son sintéticos y no corresponden a una paciente real.',
-    'No existe un motor clínico real: las dos variantes de plan están pre-armadas y el formulario solo alterna entre ellas según objetivo y restricción.',
-    'Las series de seguimiento (peso, composición corporal, laboratorios) son ilustrativas y narran una tendencia plausible de recomposición corporal, no un caso clínico validado.',
-    'El régimen de suplementos es ilustrativo y no constituye una recomendación médica.',
-    'Esta demo no persiste información: recargar la página reinicia cualquier selección del formulario.'
+    'Estás viendo el modo demo: un caso de ejemplo (Daniela Reyes Cortez) cuyos datos no corresponden a una paciente real.',
+    'Los planes de dieta son plantillas pre-armadas; el recomendador las ordena y ajusta según los datos capturados, no genera planes nuevos.',
+    'Las series de seguimiento del ejemplo (peso, composición corporal, laboratorios) ilustran una tendencia plausible de recomposición corporal; no son un caso clínico validado.',
+    'El régimen de suplementos del ejemplo es ilustrativo y no constituye una recomendación médica.',
+    'El modo demo no guarda cambios; con el botón Usar mis datos, la información capturada sí se guarda en este dispositivo.'
   ];
 
   // ---------------------------------------------------------------------

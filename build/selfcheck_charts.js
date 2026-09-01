@@ -75,6 +75,22 @@ function serializarNodo(nodo) {
   return partes.join('');
 }
 
+// R9 (fix post-rechazo verifier, DV-03+DV-04): caja delimitadora REAL de una
+// marca de barra a partir de su atributo `d` (construirBarraVertical), en vez
+// de recalcular la geometría con la fórmula interna (que es justo lo que el
+// verifier señaló como insuficiente: comparar contra los límites del viewBox
+// no prueba que la etiqueta no tape la barra). Extrae todos los pares
+// x,y de los comandos M/L/Q del path y toma min/max — las esquinas
+// redondeadas (RADIO_ESQUINA, unos pocos px) hacen la caja ligeramente MÁS
+// GRANDE que el contorno real, nunca más chica, así que la aserción de "no
+// intersecta" es, si acaso, más estricta que la colisión real.
+function bboxDesdePathD(d) {
+  var nums = (d.match(/-?\d+\.?\d*/g) || []).map(Number);
+  var xs = [], ys = [];
+  for (var k = 0; k + 1 < nums.length; k += 2) { xs.push(nums[k]); ys.push(nums[k + 1]); }
+  return { x0: Math.min.apply(null, xs), x1: Math.max.apply(null, xs), y0: Math.min.apply(null, ys), y1: Math.max.apply(null, ys) };
+}
+
 // Hash FNV-1a de 32 bits + longitud (no criptográfico: solo para comparar
 // igualdad exacta de la serialización anterior sin embeber la cadena entera,
 // que en un SVG de barras() ronda los 4,000 caracteres).
@@ -1126,6 +1142,421 @@ var ejeXPrincipal = rLinea.consultarTodo('line').filter(function (l) { return l.
 afirmar(ejeXPrincipal.length >= 1, 'linea (resp-6, anti-regresión): el eje X debe conservar var(--axis) (solo el crosshair cambió)');
 var gridPrincipal = rLinea.consultarTodo('line').filter(function (l) { return l.style.stroke === 'var(--grid)'; });
 afirmar(gridPrincipal.length >= 1, 'linea (resp-6, anti-regresión): las gridlines deben conservar var(--grid) (solo el crosshair cambió)');
+
+// ---------------------------------------------------------------------
+// 23. R9 (Adendum R9, panel Justesse): opciones aditivas default-apagadas
+// (DV-01, DV-03, DV-04, DV-05 pieza 1, LY-01 pieza 3) + 2 fixes internos sin
+// API (mismo estatus que D2/D3/T-034: no participan de la garantía
+// byte-idéntica porque cambian el render por defecto de la primitiva, DV-02
+// y DV-05 pieza 3). Cada bloque de opción prueba la opción ACTIVADA y
+// confirma que el fixture existente (sin la opción) NO cambia de render.
+// ---------------------------------------------------------------------
+
+// Geometría pura de una etiqueta rotada (dibujarEtiquetaCategoriaX): con
+// text-anchor end, el punto (x,y) recibido por atributo es el ancla (extremo
+// derecho del texto sin rotar) y coincide con el pivote de
+// rotate(-35 x y), así que el ancla NO se mueve; el borde IZQUIERDO del
+// texto (a `anchoTexto` de distancia del ancla, sobre el eje del texto sin
+// rotar) sí se mueve. Mismo cómputo que usa DV-02 para decidir cuánto
+// margen reservar: se reutiliza aquí, en el test, para poder aseverar sobre
+// el resultado real del DOM sin reinventar la trigonometría.
+function xIzquierdaTrasRotar(elementoTexto) {
+  var x = parseFloat(elementoTexto.getAttribute('x'));
+  var anchoTexto = Charts._debug.estimarAnchoTexto(elementoTexto.textContent, Charts._debug.TAMANO_FUENTE_EJE);
+  var radianes = Charts._debug.ROTACION_ETIQUETA_X_GRADOS * Math.PI / 180;
+  return x - anchoTexto * Math.cos(radianes);
+}
+
+// 23.1 DV-01: apilada100 — opciones.etiquetasSegmentoIndices restringe el %
+// a las categorías (columnas) cuyo índice está en la lista recibida; el
+// resto queda sin etiquetar aunque su segmento mida >= 14px de alto.
+var cSegmentosIndices = contenedorNuevo();
+var rSegmentosIndices = Charts.apilada100(cSegmentosIndices, {
+  categorias: CATEGORIAS_MACROS_QAR3,
+  series: [
+    { nombre: 'Proteínas', datos: [36, 36, 36, 36, 36] },
+    { nombre: 'Carbohidratos', datos: [48, 48, 48, 48, 48] },
+    { nombre: 'Grasas', datos: [16, 16, 16, 16, 16] }
+  ],
+  alto: 400,
+  etiquetasSegmento: true,
+  etiquetasSegmentoIndices: [2]
+});
+var etiquetasSegmentosIndices = rSegmentosIndices.consultarTodo('.hz-etiqueta-segmento');
+afirmar(etiquetasSegmentosIndices.length === 3,
+  'apilada100 (DV-01, etiquetasSegmentoIndices): con 5 categorías casi idénticas (36/48/16) y etiquetasSegmentoIndices:[2], debe etiquetar SOLO los 3 segmentos de la categoría índice 2 ("Comida"), no los 15 (encontrado: ' + etiquetasSegmentosIndices.length + ')');
+var textosSegmentosIndices = etiquetasSegmentosIndices.map(function (e) { return e.textContent; }).sort();
+afirmar(textosSegmentosIndices.join(',') === '16%,36%,48%',
+  'apilada100 (DV-01): los 3 porcentajes etiquetados deben ser los de la categoría seleccionada (encontrado: ' + textosSegmentosIndices.join(', ') + ')');
+afirmar(rApiladaSegmentos.consultarTodo('.hz-etiqueta-segmento').length === 2,
+  'apilada100 (DV-01, anti-regresión): sin etiquetasSegmentoIndices (fixture 22.7, solo etiquetasSegmento), se conserva el comportamiento actual (todas las categorías elegibles, sujeto al umbral de alto)');
+
+// 23.2 DV-02 (fix interno, no aditivo — mismo estatus que D2/D3/T-034): al
+// rotar, ninguna etiqueta de categoría debe quedar con el borde izquierdo en
+// x negativa tras el transform. Se reutilizan los DOS fixtures ya existentes
+// que fuerzan rotación (rApiladaMacros §19.3 y rBarrasVerticalLargas §19.5,
+// contenedor angosto de 300px): con el margen izquierdo SIN corregir (16 y
+// 52 respectivamente) la primera etiqueta ("Desayuno") ya cae en x negativa
+// en apilada100 (verificado manualmente contra el código pre-fix: -1.89px),
+// así que esta aserción es una regresión real, no un caso trivial.
+['apilada100', 'barras (vertical)'].forEach(function (nombrePrimitiva, idx) {
+  var resultado = idx === 0 ? rApiladaMacros : rBarrasVerticalLargas;
+  var rotadas = resultado.consultarTodo('text').filter(function (t) { return t.getAttribute('data-etiqueta-rotada') === '1'; });
+  afirmar(rotadas.length === CATEGORIAS_MACROS_QAR3.length,
+    nombrePrimitiva + ' (DV-02): el fixture de rotación debe seguir emitiendo las ' + CATEGORIAS_MACROS_QAR3.length + ' etiquetas rotadas (regresión de §19)');
+  rotadas.forEach(function (etiqueta) {
+    var xIzquierda = xIzquierdaTrasRotar(etiqueta);
+    afirmar(xIzquierda >= 0,
+      nombrePrimitiva + ' (DV-02): ninguna etiqueta rotada debe quedar con el borde izquierdo en x negativa tras transformar (encontrado x_izquierda=' + xIzquierda.toFixed(2) + ' para "' + etiqueta.textContent + '")');
+  });
+});
+
+// 23.2b DV-02 fixture adicional para barras (vertical): la primera categoría
+// es la de texto MÁS LARGO ("Colación matutina"), el caso que con el margen
+// izquierdo fijo de 52px (sin el fix) sí desborda en x negativa
+// (verificado manualmente: -4.56px) — a diferencia de 23.2, que con
+// "Desayuno" primero nunca llegaba a desbordar por el margen ya generoso.
+var cBarrasVertPrimeraLarga = contenedorNuevo();
+cBarrasVertPrimeraLarga.clientWidth = 300;
+var rBarrasVertPrimeraLarga = Charts.barras(cBarrasVertPrimeraLarga, {
+  categorias: ['Colación matutina', 'Desayuno', 'Comida'],
+  series: [{ nombre: 'Kcal', datos: [420, 180, 610] }]
+});
+var rotadasPrimeraLarga = rBarrasVertPrimeraLarga.consultarTodo('text').filter(function (t) { return t.getAttribute('data-etiqueta-rotada') === '1'; });
+afirmar(rotadasPrimeraLarga.length === 3,
+  'barras (vertical, DV-02): con "Colación matutina" de primera categoría en un contenedor angosto, las 3 etiquetas deben rotar');
+rotadasPrimeraLarga.forEach(function (etiqueta) {
+  var xIzquierda = xIzquierdaTrasRotar(etiqueta);
+  afirmar(xIzquierda >= 0,
+    'barras (vertical, DV-02): con el label MÁS LARGO en la primera categoría, el borde izquierdo tras rotar no debe ser negativo (encontrado x_izquierda=' + xIzquierda.toFixed(2) + ' para "' + etiqueta.textContent + '")');
+});
+
+// 23.2c DV-02 (unidad pura): calcularMargenIzquierdoRotado.
+afirmar(Charts._debug.calcularMargenIzquierdoRotado([], 300, 16) === 16,
+  'calcularMargenIzquierdoRotado: sin categorías, debe devolver el margen base sin cambio');
+var margenRotadoCorto = Charts._debug.calcularMargenIzquierdoRotado(['S1'], 300, 16);
+afirmar(margenRotadoCorto === 16,
+  'calcularMargenIzquierdoRotado: con una etiqueta corta cuya proyección no excede el margen base, no debe ampliarlo (encontrado: ' + margenRotadoCorto + ')');
+var margenRotadoLargo = Charts._debug.calcularMargenIzquierdoRotado(['Colación matutina'], 300, 16);
+afirmar(margenRotadoLargo > 16 && margenRotadoLargo < 300 * Charts._debug.GUTTER_IZQUIERDO_PROPORCION_MAX + 1,
+  'calcularMargenIzquierdoRotado: con una etiqueta larga, debe ampliar el margen por encima del base y respetar el tope proporcional (encontrado: ' + margenRotadoLargo + ')');
+var margenRotadoTope = Charts._debug.calcularMargenIzquierdoRotado(['Un texto extremadamente largo para forzar el tope del gutter'], 100, 16);
+afirmar(cercaDe(margenRotadoTope, 100 * Charts._debug.GUTTER_IZQUIERDO_PROPORCION_MAX, 0.01),
+  'calcularMargenIzquierdoRotado: con una etiqueta que excede el tope proporcional, debe quedar acotado a ancho*GUTTER_IZQUIERDO_PROPORCION_MAX (encontrado: ' + margenRotadoTope + ')');
+
+// 23.3 DV-03: barras — opciones.referencia { valor, etiqueta } (variante de
+// UMBRAL único, distinta de {min,max}): UNA hairline var(--text-muted) +
+// etiqueta corta, reutilizando resolverPosicionEtiquetaReferencia.
+var cKcalObjetivo = contenedorNuevo();
+var rKcalObjetivo = Charts.barras(cKcalObjetivo, {
+  categorias: ['Día 1', 'Día 2', 'Día 3', 'Día 4', 'Día 5'],
+  series: [{ nombre: 'Calorías (kcal)', datos: [1500, 1600, 1550, 1620, 1618] }],
+  referencia: { valor: 1600, etiqueta: 'Objetivo' },
+  unidad: 'kcal'
+});
+var lineasKcalObjetivo = rKcalObjetivo.consultarTodo('.hz-referencia-linea');
+afirmar(lineasKcalObjetivo.length === 1,
+  'barras (DV-03, referencia.valor): debe dibujar exactamente UNA hairline (no dos como {min,max}) (encontrado: ' + lineasKcalObjetivo.length + ')');
+afirmar(lineasKcalObjetivo[0].getAttribute('stroke-width') === '1' && lineasKcalObjetivo[0].style.stroke === 'var(--text-muted)',
+  'barras (DV-03): la hairline de referencia.valor debe ser 1px var(--text-muted) (misma anatomía que {min,max})');
+var etiquetaKcalObjetivo = rKcalObjetivo.consultarTodo('.hz-referencia-etiqueta')[0];
+afirmar(!!etiquetaKcalObjetivo && etiquetaKcalObjetivo.textContent === 'Objetivo',
+  'barras (DV-03): debe emitir la etiqueta corta recibida ("Objetivo")');
+afirmar(etiquetaKcalObjetivo.style.fill === 'var(--text-muted)' && etiquetaKcalObjetivo.getAttribute('text-anchor') === 'start',
+  'barras (DV-03): la etiqueta debe usar var(--text-muted) y anclarse por la izquierda, igual que la variante {min,max} (T-034)');
+var etiquetaValorKcalObjetivo = rKcalObjetivo.consultarTodo('.hz-etiqueta-valor')[0];
+afirmar(!!etiquetaValorKcalObjetivo && etiquetaValorKcalObjetivo.textContent === '1,618 kcal',
+  'barras (DV-03): con opciones.unidad="kcal", la etiqueta de valor del último día debe leer "1,618 kcal" (encontrado: "' + (etiquetaValorKcalObjetivo && etiquetaValorKcalObjetivo.textContent) + '")');
+
+// 23.3b DV-03 en barras horizontales (mismo contrato, eje perpendicular).
+var cReferenciaValorH = contenedorNuevo();
+var rReferenciaValorH = Charts.barras(cReferenciaValorH, {
+  orientacion: 'horizontal',
+  categorias: ['Suplemento A', 'Suplemento B'],
+  series: [{ nombre: 'Adherencia', datos: [92, 78] }],
+  referencia: { valor: 80, etiqueta: 'Meta' }
+});
+afirmar(rReferenciaValorH.consultarTodo('.hz-referencia-linea').length === 1,
+  'barras (horizontal, DV-03): opciones.referencia.valor también debe dibujar UNA sola hairline');
+var etiquetaReferenciaValorH = rReferenciaValorH.consultarTodo('.hz-referencia-etiqueta')[0];
+afirmar(etiquetaReferenciaValorH.textContent === 'Meta' && etiquetaReferenciaValorH.getAttribute('text-anchor') === 'middle',
+  'barras (horizontal, DV-03): la etiqueta usa el mismo anclaje centrado que la variante {min,max} horizontal (encontrado text-anchor="' + etiquetaReferenciaValorH.getAttribute('text-anchor') + '")');
+
+// 23.3c DV-03: opciones.referencia.valor amplía la escala automática igual
+// que opciones.referencia.max, para que el umbral nunca quede fuera del área
+// de trazo aunque supere el dato más alto.
+var cReferenciaValorEscala = contenedorNuevo();
+var rReferenciaValorEscala = Charts.barras(cReferenciaValorEscala, {
+  categorias: ['A', 'B'],
+  series: [{ nombre: 'X', datos: [10, 20] }],
+  referencia: { valor: 100, etiqueta: 'Meta' }
+});
+var lineaEscala = rReferenciaValorEscala.consultarTodo('.hz-referencia-linea')[0];
+afirmar(parseFloat(lineaEscala.getAttribute('y1')) >= 0,
+  'barras (DV-03): con un umbral (100) muy por encima del dato máximo (20), la escala debe expandirse para que la hairline no quede fuera del área de trazo (y1=' + lineaEscala.getAttribute('y1') + ')');
+
+// 23.3d DV-03 anti-regresión: los fixtures {min,max} existentes (22.4, 22.4b)
+// siguen dibujando EXACTAMENTE 2 hairlines (no se activó por accidente la
+// rama de valor único), y el fixture original sin referencia sigue en 0.
+afirmar(rBarrasReferencia.consultarTodo('.hz-referencia-linea').length === 2,
+  'barras (DV-03, anti-regresión): el fixture {min,max} (22.4) debe seguir dibujando 2 hairlines, no 1');
+afirmar(rBarras.consultarTodo('.hz-referencia-linea').length === 0,
+  'barras (DV-03, anti-regresión): el fixture original sin opciones.referencia sigue en 0 hairlines');
+
+// 23.3e DV-03 + DV-04 combinados (fix de colisión descubierto en la
+// verificación visual propia, no en un hallazgo individual): reproduce la
+// evidencia real "Laboratorios en 3 cortes" (build/vista_metricas.js,
+// data-8), que YA trae opciones.referencia {min,max} y ahora también
+// valoresEnBarras — con Basal (148) cerca del techo del rango de
+// referencia (max 100 en escala real, aquí 100 también), el label "Rango
+// normal" colisiona con la NUEVA etiqueta de valor de la primera barra
+// (antes de este fix, invisible: y quedaba en -6, por encima del viewBox
+// que empieza en 0). Verificado manualmente contra el código pre-fix.
+var cLdlColision = contenedorNuevo();
+var rLdlColision = Charts.barras(cLdlColision, {
+  categorias: ['Basal', 'Seg.', 'Final'],
+  series: [{ nombre: 'LDL', datos: [148, 128, 105] }],
+  referencia: { min: 0, max: 100, etiqueta: 'Rango normal' },
+  valoresEnBarras: true,
+  unidad: 'mg/dL'
+});
+var etiquetaLdlColision = rLdlColision.consultarTodo('.hz-referencia-etiqueta')[0];
+afirmar(!!etiquetaLdlColision, 'barras (DV-03+DV-04, colisión combinada): debe seguir emitiendo la etiqueta de referencia');
+afirmar(parseFloat(etiquetaLdlColision.getAttribute('y')) >= 0,
+  'barras (DV-03+DV-04, colisión combinada): "Rango normal" no debe quedar con y negativa (fuera del viewBox, invisible) al evitar la nueva etiqueta de valor de la primera barra (encontrado y=' + etiquetaLdlColision.getAttribute('y') + ')');
+var svgLdlColision = rLdlColision.consultarTodo('svg')[0];
+var altoViewBoxLdl = parseFloat(svgLdlColision.getAttribute('viewBox').split(' ')[3]);
+afirmar(parseFloat(etiquetaLdlColision.getAttribute('y')) <= altoViewBoxLdl,
+  'barras (DV-03+DV-04, colisión combinada): "Rango normal" debe quedar dentro del alto del viewBox');
+var etiquetaValorBasalLdl = rLdlColision.consultarTodo('.hz-etiqueta-valor')[0];
+afirmar(!!etiquetaValorBasalLdl && etiquetaValorBasalLdl.textContent === '148 mg/dL',
+  'barras (DV-03+DV-04, colisión combinada): la primera barra (Basal) debe seguir mostrando su valor con unidad');
+
+// 23.3e-bis (fix post-rechazo verifier): no basta con quedar dentro del
+// viewBox -- la caja REAL de "Rango normal" no debe intersectar la caja REAL
+// de NINGUNA de las 3 barras (el defecto exacto que reprodujo el verifier:
+// la etiqueta caía tapada por la barra Basal, visible dentro del viewBox
+// pero oculta detrás del rect). Mismo método que usó el verifier para
+// reproducir: bbox real desde el atributo `d` de cada barra, no la fórmula
+// interna.
+var anchoTextoLdlColision = Charts._debug.estimarAnchoTexto(etiquetaLdlColision.textContent, Charts._debug.TAMANO_FUENTE_EJE);
+var cajaEtiquetaLdlColision = {
+  x0: parseFloat(etiquetaLdlColision.getAttribute('x')),
+  x1: parseFloat(etiquetaLdlColision.getAttribute('x')) + anchoTextoLdlColision,
+  y0: parseFloat(etiquetaLdlColision.getAttribute('y')) - Charts._debug.TAMANO_FUENTE_EJE,
+  y1: parseFloat(etiquetaLdlColision.getAttribute('y'))
+};
+var barrasLdlColision = rLdlColision.consultarTodo('path');
+afirmar(barrasLdlColision.length === 3,
+  'barras (DV-03+DV-04, colisión combinada): deben existir exactamente 3 marcas de barra (Basal, Seg., Final)');
+var nombresCortesLdl = ['Basal', 'Seg.', 'Final'];
+barrasLdlColision.forEach(function (pBarra, iBarra) {
+  var cajaBarra = bboxDesdePathD(pBarra.getAttribute('d'));
+  afirmar(!Charts._debug.cajasIntersectan(cajaEtiquetaLdlColision, cajaBarra),
+    'barras (DV-03+DV-04, colisión combinada): "Rango normal" no debe quedar tapada por la barra ' + nombresCortesLdl[iBarra] +
+    ' (etiqueta=' + JSON.stringify(cajaEtiquetaLdlColision) + ', barra=' + JSON.stringify(cajaBarra) + ')');
+});
+
+// 23.3f resolverPosicionEtiquetaReferencia (unidad pura): el nuevo parámetro
+// opcional limiteArriba es backward-compatible (ausente, comportamiento
+// idéntico a T-034 — regresión de 22.4f) y, cuando viene, actúa como piso:
+// si el desplazamiento por colisión deja la caja por encima de ese límite,
+// se re-ancla ahí en vez de escapar hacia y negativa.
+var posicionSinLimiteArriba = Charts._debug.resolverPosicionEtiquetaReferencia(52, 200, 'Rango normal', Charts._debug.TAMANO_FUENTE_EJE, 4, [obstaculoCercanoRef]);
+afirmar(posicionSinLimiteArriba.caja.y0 === posicionConColisionRef.caja.y0,
+  'resolverPosicionEtiquetaReferencia (anti-regresión 22.4f): sin limiteArriba, el resultado debe ser IDÉNTICO al de antes de R9 (mismo caso de colisión)');
+var obstaculoAltoCercaDelTecho = { x0: 40, x1: 140, y0: 10, y1: 30 };
+var posicionConPiso = Charts._debug.resolverPosicionEtiquetaReferencia(52, 20, 'Rango normal', Charts._debug.TAMANO_FUENTE_EJE, 4, [obstaculoAltoCercaDelTecho], 16);
+afirmar(posicionConPiso.caja.y0 >= 16,
+  'resolverPosicionEtiquetaReferencia (R9, limiteArriba): con un obstáculo que empujaría la etiqueta por encima del límite, debe re-anclarse en el piso (encontrado caja.y0=' + posicionConPiso.caja.y0 + ')');
+afirmar(posicionConPiso.y >= 16,
+  'resolverPosicionEtiquetaReferencia (R9, limiteArriba): la posición final (y, usada como atributo del texto) también respeta el piso');
+// El obstáculo `obstaculoAltoCercaDelTecho` cubre también la fila del piso
+// (y0=10..y1=30 incluye 16..27): confirma que el fix post-rechazo se activó
+// en ESTE mismo caso ya cubierto por 23.3f (no solo en el nuevo 23.3g de
+// abajo) -- la caja final no debe intersectarlo y, por tanto, `.x` se corre
+// más allá de `xEtiqueta` (deja de ser 52).
+afirmar(!Charts._debug.cajasIntersectan(posicionConPiso.caja, obstaculoAltoCercaDelTecho),
+  'resolverPosicionEtiquetaReferencia (R9, fix post-rechazo): la caja final del caso 23.3f (piso) tampoco debe intersectar el obstáculo que la empujó ahí (encontrado caja=' + JSON.stringify(posicionConPiso.caja) + ')');
+afirmar(posicionConPiso.x > 52,
+  'resolverPosicionEtiquetaReferencia (R9, fix post-rechazo): con el piso todavía cubierto por el obstáculo, x debe correrse más allá de xEtiqueta=52 (encontrado x=' + posicionConPiso.x + ')');
+
+// 23.3g (fix post-rechazo verifier, unidad pura): cuando el piso vuelve a
+// caer sobre el MISMO obstáculo (el obstáculo cubre también la fila del
+// piso), la caja final debe correrse en X más allá de ese obstáculo -- el
+// defecto exacto que reportó el verifier era que el piso NO se revalidaba
+// contra `obstaculos` y la caja final seguía intersectando (reproduce, en
+// aislamiento puro, la geometría real de la barra Basal contra "Rango
+// normal" a escala real: yHairline=88.65 = yMax de referencia{max:100} con
+// valorMax=148 y altoPlot=224, ver 23.3e).
+var obstaculoCubreElPiso = { x0: 40, x1: 140, y0: 16, y1: 240 };
+var posicionConPisoYObstaculoAncho = Charts._debug.resolverPosicionEtiquetaReferencia(52, 88.65, 'Rango normal', Charts._debug.TAMANO_FUENTE_EJE, 4, [obstaculoCubreElPiso], 16);
+afirmar(!Charts._debug.cajasIntersectan(posicionConPisoYObstaculoAncho.caja, obstaculoCubreElPiso),
+  'resolverPosicionEtiquetaReferencia (R9, fix post-rechazo): si el obstáculo también cubre el piso, la caja final NO debe intersectarlo (encontrado caja=' + JSON.stringify(posicionConPisoYObstaculoAncho.caja) + ')');
+afirmar(posicionConPisoYObstaculoAncho.caja.x0 >= obstaculoCubreElPiso.x1,
+  'resolverPosicionEtiquetaReferencia (R9, fix post-rechazo): la evasión debe ser horizontal (x0 más allá del x1 del obstáculo), no dejar la etiqueta fuera de pantalla o superpuesta (encontrado x0=' + posicionConPisoYObstaculoAncho.caja.x0 + ', obstáculo.x1=' + obstaculoCubreElPiso.x1 + ')');
+afirmar(posicionConPisoYObstaculoAncho.x === posicionConPisoYObstaculoAncho.caja.x0,
+  'resolverPosicionEtiquetaReferencia (R9, fix post-rechazo): la posición final (x, usada como atributo del texto) debe coincidir con la caja evaluada, no con xEtiqueta original -- si no, el texto se dibujaría tapado aunque la caja "lógica" ya se movió');
+
+// 23.3h (fix post-rechazo verifier, unidad pura): anti-regresión -- con el
+// piso alcanzado pero SIN que el obstáculo cubra esa fila (empuja hacia
+// arriba pero queda por debajo de la fila del piso), `.x` sigue siendo
+// exactamente `xEtiqueta`, byte-idéntico a antes del fix, porque caja.x0
+// nunca se toca cuando no hay colisión persistente.
+var obstaculoEmpujaSinCubrirPiso = { x0: 40, x1: 140, y0: 5, y1: 15 };
+var posicionPisoSinColisionPersistente = Charts._debug.resolverPosicionEtiquetaReferencia(52, 20, 'Rango normal', Charts._debug.TAMANO_FUENTE_EJE, 4, [obstaculoEmpujaSinCubrirPiso], 16);
+afirmar(posicionPisoSinColisionPersistente.caja.y0 === 16 && posicionPisoSinColisionPersistente.x === 52,
+  'resolverPosicionEtiquetaReferencia (anti-regresión, fix post-rechazo): con piso alcanzado pero sin colisión persistente en esa fila, x debe seguir siendo exactamente xEtiqueta (52), sin desplazamiento horizontal espurio (encontrado caja.y0=' + posicionPisoSinColisionPersistente.caja.y0 + ', x=' + posicionPisoSinColisionPersistente.x + ')');
+afirmar(posicionSinColisionRef.x === 52 && posicionConColisionRef.x === 52,
+  'resolverPosicionEtiquetaReferencia (anti-regresión, fix post-rechazo): los casos T-034 preexistentes (sin limiteArriba) deben conservar x === xEtiqueta, byte-idéntico');
+
+// 23.4 DV-04: barras — valoresEnBarras extendido a orientación VERTICAL
+// (serie única, <=6 categorías): valor con unidad encima de CADA barra, no
+// solo la última (R6 data-4 por defecto).
+var cLabsValores = contenedorNuevo();
+var rLabsValores = Charts.barras(cLabsValores, {
+  categorias: ['Basal', 'Seg.', 'Final'],
+  series: [{ nombre: 'Glucosa', datos: [104, 96, 91] }],
+  valoresEnBarras: true,
+  unidad: 'mg/dL'
+});
+var etiquetasLabsValores = rLabsValores.consultarTodo('.hz-etiqueta-valor');
+afirmar(etiquetasLabsValores.length === 3,
+  'barras (vertical, DV-04): debe emitir una etiqueta de valor por CADA categoría (3), no solo la última (encontrado: ' + etiquetasLabsValores.length + ')');
+var textosLabsValores = etiquetasLabsValores.map(function (e) { return e.textContent; });
+afirmar(textosLabsValores[0] === '104 mg/dL' && textosLabsValores[textosLabsValores.length - 1] === '91 mg/dL',
+  'barras (vertical, DV-04): ambos extremos (Basal y Final) deben llevar su valor con unidad — "antes/después" con los dos extremos etiquetados (encontrado: ' + textosLabsValores.join(', ') + ')');
+etiquetasLabsValores.forEach(function (e) {
+  afirmar(e.style.fill === 'var(--text-primary)', 'barras (vertical, DV-04): la tinta debe ser var(--text-primary), igual que el resto de etiquetas de valor');
+});
+
+// 23.4b DV-04: guard de <=6 categorías en VERTICAL — con 7 categorías, la
+// opción se ignora y se conserva el comportamiento default (data-4: 1 sola
+// etiqueta, la del ÚLTIMO valor), sin lanzar.
+var cLabsValores7 = contenedorNuevo();
+var rLabsValores7;
+afirmar((function () {
+  try {
+    rLabsValores7 = Charts.barras(cLabsValores7, {
+      categorias: ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7'],
+      series: [{ nombre: 'X', datos: [10, 20, 30, 40, 50, 60, 70] }],
+      valoresEnBarras: true
+    });
+    return true;
+  } catch (e) { console.error(e); return false; }
+})(), 'barras (vertical, DV-04): con 7 categorías (> 6) no debe lanzar');
+var etiquetasLabsValores7 = rLabsValores7.consultarTodo('.hz-etiqueta-valor');
+afirmar(etiquetasLabsValores7.length === 1 && etiquetasLabsValores7[0].textContent === '70',
+  'barras (vertical, DV-04): con 7 categorías (> 6) debe ignorar la opción y conservar el default (1 sola etiqueta, la del ÚLTIMO valor, 70) (encontrado: ' + (etiquetasLabsValores7[0] && etiquetasLabsValores7[0].textContent) + ')');
+
+// 23.4c DV-04 anti-regresión: los fixtures existentes sin valoresEnBarras
+// (rBarras, rBarrasUltimoValor) siguen emitiendo exactamente 1 etiqueta.
+afirmar(rBarras.consultarTodo('.hz-etiqueta-valor').length === 1,
+  'barras (vertical, DV-04, anti-regresión): el fixture original sigue con 1 sola etiqueta de valor (default apagado)');
+afirmar(rBarrasUltimoValor.consultarTodo('.hz-etiqueta-valor').length === 1,
+  'barras (vertical, DV-04, anti-regresión): el fixture data-4 (22.3) sigue con 1 sola etiqueta de valor');
+
+// 23.5 DV-05 pieza 1: heatmapCalendario — opciones.encabezadosColumna (texto
+// libre por columna, p.ej. S1/S4/S8/S12 cuando las columnas son semanas).
+var ETIQUETAS_ENCABEZADO_COLUMNA_R9 = [];
+for (var ecr9 = 0; ecr9 < 12; ecr9++) ETIQUETAS_ENCABEZADO_COLUMNA_R9.push((ecr9 === 0 || ecr9 === 3 || ecr9 === 7 || ecr9 === 11) ? 'S' + (ecr9 + 1) : '');
+var VALORES_HEAT_TRANSPUESTO_R9 = [];
+for (var vhtr9 = 0; vhtr9 < 84; vhtr9++) VALORES_HEAT_TRANSPUESTO_R9.push(10 + (vhtr9 % 90));
+var cHeatEncColumna = contenedorNuevo();
+var rHeatEncColumna = Charts.heatmapCalendario(cHeatEncColumna, {
+  valores: VALORES_HEAT_TRANSPUESTO_R9,
+  etiquetas: VALORES_HEAT_TRANSPUESTO_R9.map(function (_, idx) { return 'D' + (idx + 1); }),
+  columnas: 12,
+  min: 0, max: 100,
+  encabezadosColumna: ETIQUETAS_ENCABEZADO_COLUMNA_R9,
+  etiquetasFila: ['L', 'M', 'X', 'J', 'V', 'S', 'D'],
+  lado: 40
+});
+var encabezadosColumnaR9 = rHeatEncColumna.consultarTodo('.hz-heat-encabezado-columna');
+afirmar(encabezadosColumnaR9.length === 4,
+  'heatmapCalendario (DV-05 pieza 1, encabezadosColumna): con solo 4 entradas no vacías (S1,S4,S8,S12 de 12 columnas), debe emitir exactamente 4 rótulos (encontrado: ' + encabezadosColumnaR9.length + ')');
+var textosEncColumnaR9 = encabezadosColumnaR9.map(function (e) { return e.textContent; });
+afirmar(textosEncColumnaR9.join(',') === 'S1,S4,S8,S12',
+  'heatmapCalendario (DV-05 pieza 1): los rótulos emitidos deben ser exactamente S1, S4, S8, S12 en orden de columna (encontrado: ' + textosEncColumnaR9.join(', ') + ')');
+encabezadosColumnaR9.forEach(function (e) {
+  afirmar(e.style.fill === 'var(--text-muted)', 'heatmapCalendario (DV-05 pieza 1): encabezadosColumna debe usar var(--text-muted)');
+});
+afirmar(rHeat.consultarTodo('.hz-heat-encabezado-columna').length === 0,
+  'heatmapCalendario (DV-05 pieza 1, anti-regresión): sin encabezadosColumna (fixture original), cero encabezados de columna (default apagado)');
+afirmar(rHeatR6.consultarTodo('.hz-heat-encabezado-columna').length === 0,
+  'heatmapCalendario (DV-05 pieza 1, anti-regresión): el fixture R6 (encabezadosDia, sin encabezadosColumna) tampoco emite encabezados de columna');
+
+// 23.6 DV-05 pieza 3 (fix interno, no aditivo — mismo estatus que D3 en las
+// demás primitivas): heatmapCalendario usa anchoDeRenderizado (clientWidth
+// real del contenedor) y deriva `lado` del ancho disponible cuando
+// opciones.lado no viene, para que la card de 2 pistas (~570px, decisión C4)
+// le dé a las 12 columnas transpuestas una celda digna en vez de ~20px.
+var cHeatAnchoReal = contenedorNuevo();
+cHeatAnchoReal.clientWidth = 570;
+var rHeatAnchoReal = Charts.heatmapCalendario(cHeatAnchoReal, {
+  valores: VALORES_HEAT_TRANSPUESTO_R9,
+  etiquetas: VALORES_HEAT_TRANSPUESTO_R9.map(function (_, idx) { return 'D' + (idx + 1); }),
+  columnas: 12,
+  min: 0, max: 100,
+  etiquetasFila: ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+});
+var svgHeatAnchoReal = rHeatAnchoReal.consultarTodo('svg')[0];
+afirmar(svgHeatAnchoReal.getAttribute('viewBox').indexOf('0 0 570 ') === 0,
+  'heatmapCalendario (DV-05 pieza 3): con clientWidth real de 570px, el viewBox debe usar ese ancho (encontrado: "' + svgHeatAnchoReal.getAttribute('viewBox') + '")');
+var celdaHeatAnchoReal = rHeatAnchoReal.consultarTodo('.hz-heat-celda')[0];
+afirmar(parseFloat(celdaHeatAnchoReal.getAttribute('width')) > 35,
+  'heatmapCalendario (DV-05 pieza 3): con 12 columnas a ~570px, el lado de celda derivado debe rondar ~44px (celda digna, no ~20px de 1 pista) (encontrado: ' + celdaHeatAnchoReal.getAttribute('width') + ')');
+afirmar(parseFloat(celdaHeatAnchoReal.getAttribute('width')) === parseFloat(rHeatAnchoReal.consultarTodo('.hz-heat-celda')[1].getAttribute('width')),
+  'heatmapCalendario (DV-05 pieza 3): todas las celdas derivan el MISMO lado (grid regular)');
+
+// 23.6b DV-05 pieza 3: opciones.lado explícito se respeta tal cual (sin
+// derivación), igual que antes del fix — cambio de API cero.
+var cHeatLadoExplicito = contenedorNuevo();
+cHeatLadoExplicito.clientWidth = 570;
+var rHeatLadoExplicito = Charts.heatmapCalendario(cHeatLadoExplicito, {
+  valores: [10, 20, 30, 40, 50, 60, 70],
+  etiquetas: ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7'],
+  columnas: 7,
+  lado: 12
+});
+afirmar(parseFloat(rHeatLadoExplicito.consultarTodo('.hz-heat-celda')[0].getAttribute('width')) === 12,
+  'heatmapCalendario (DV-05 pieza 3): con opciones.lado explícito, se respeta tal cual aunque haya clientWidth real (sin derivación)');
+
+// 23.6c DV-05 pieza 3, anti-regresión: SIN layout real (TestDOM headless,
+// como los fixtures existentes) y sin opciones.ancho/opciones.lado, el
+// resultado debe ser IDÉNTICO al de siempre (viewBox y lado de celda), ya
+// que anchoDeRenderizado cae al mismo cálculo por defecto de antes.
+var svgHeatOriginal = rHeat.consultarTodo('svg')[0];
+afirmar(svgHeatOriginal.getAttribute('viewBox') === '0 0 136 41',
+  'heatmapCalendario (DV-05 pieza 3, anti-regresión): sin layout real, el viewBox por defecto (7 columnas, lado=16) debe seguir siendo "0 0 136 41" (encontrado: "' + svgHeatOriginal.getAttribute('viewBox') + '")');
+afirmar(parseFloat(rHeat.consultarTodo('.hz-heat-celda')[0].getAttribute('width')) === 16,
+  'heatmapCalendario (DV-05 pieza 3, anti-regresión): sin layout real, el lado de celda derivado debe seguir siendo 16 (el default de siempre)');
+
+// 23.6d DV-05 pieza 3 (unidad pura): derivarLadoCeldaHeatmap.
+afirmar(Charts._debug.derivarLadoCeldaHeatmap(136, 0, 3, 7) === 16,
+  'derivarLadoCeldaHeatmap: con el ancho por defecto de siempre (136, 0 columnas de gutter, gap 3, 7 columnas), debe recuperar EXACTO lado=16');
+afirmar(Charts._debug.derivarLadoCeldaHeatmap(0, 0, 3, 0) === Charts._debug.LADO_HEATMAP_POR_DEFECTO,
+  'derivarLadoCeldaHeatmap: con columnas=0 (guard), debe devolver LADO_HEATMAP_POR_DEFECTO sin dividir por cero');
+afirmar(Charts._debug.derivarLadoCeldaHeatmap(20, 0, 3, 12) === 8,
+  'derivarLadoCeldaHeatmap: con un ancho extremadamente angosto, debe quedar acotado al piso de 8px (nunca colapsar a 0 o negativo)');
+
+// 23.7 LY-01 pieza 3: sparkline — opciones.lineaAcento usa colorAcento
+// (opciones.color) en la polilínea completa en vez de var(--text-muted).
+var cSparkAcento = contenedorNuevo();
+var rSparkAcento = Charts.sparkline(cSparkAcento, {
+  valores: [80, 79.6, 79.4, 79.1, 78.9, 78.8, 78.6, 78.5, 78.4, 78.3, 78.2, 78.1],
+  color: 'var(--series-2)',
+  lineaAcento: true
+});
+var polilineaAcento = rSparkAcento.consultarTodo('polyline')[0];
+afirmar(polilineaAcento.style.stroke === 'var(--series-2)',
+  'sparkline (LY-01 pieza 3): con lineaAcento:true, la polilínea debe usar colorAcento (encontrado: "' + polilineaAcento.style.stroke + '")');
+var polilineaAcentoDefault = rSpark12.consultarTodo('polyline')[0];
+afirmar(polilineaAcentoDefault.style.stroke === 'var(--text-muted)',
+  'sparkline (LY-01 pieza 3, anti-regresión): el fixture original (sin lineaAcento) sigue con la polilínea en var(--text-muted)');
+var puntoFinalAcento = rSparkAcento.consultarTodo('.hz-spark-punto').slice(-1)[0];
+afirmar(puntoFinalAcento.style.fill === 'var(--series-2)',
+  'sparkline (LY-01 pieza 3): el punto final ya usaba colorAcento antes de R9 (sin cambio) — sigue siendo var(--series-2)');
 
 // ---------------------------------------------------------------------
 // Cierre
