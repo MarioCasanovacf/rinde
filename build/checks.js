@@ -155,25 +155,33 @@ assert(html.indexOf('@media print') !== -1, 'presencia literal de @media print (
 assert(html.indexOf('#documento-plan') !== -1, 'presencia del contenedor #documento-plan que el bloque @media print hace visible');
 
 // ---------------------------------------------------------------------
-// D. Cinco contenedores, cinco pestañas y etiquetas en español
-//    (criterio de aceptación 10).
+// D. Seis contenedores, seis pestañas y etiquetas en español (criterio de
+//    aceptación 10, extendido por el Adendum R10 punto 1 / R-01: la sexta
+//    pestaña Rutina se inserta entre Plan de dieta y Seguimiento).
 // ---------------------------------------------------------------------
-var CONTENEDORES = ['vista-resumen', 'vista-perfil', 'vista-plan', 'vista-seguimiento', 'vista-suplementos'];
+var CONTENEDORES = ['vista-resumen', 'vista-perfil', 'vista-plan', 'vista-rutina', 'vista-seguimiento', 'vista-suplementos'];
 for (var ci = 0; ci < CONTENEDORES.length; ci++) {
   var idContenedor = CONTENEDORES[ci];
   assert(html.indexOf('id="' + idContenedor + '"') !== -1, 'presencia del contenedor de vista #' + idContenedor);
 }
 
-var PESTANAS = ['tab-resumen', 'tab-perfil', 'tab-plan', 'tab-seguimiento', 'tab-suplementos'];
+var PESTANAS = ['tab-resumen', 'tab-perfil', 'tab-plan', 'tab-rutina', 'tab-seguimiento', 'tab-suplementos'];
 for (var pi = 0; pi < PESTANAS.length; pi++) {
   var idPestana = PESTANAS[pi];
   assert(html.indexOf('id="' + idPestana + '"') !== -1, 'presencia de la pestaña #' + idPestana);
 }
+(function verificarTabOrderExacto() {
+  var m = /var TAB_ORDER = \[([^\]]*)\];/.exec(html);
+  assert(m !== null, 'TAB_ORDER existe literal en el documento ensamblado');
+  var normalizado = m ? m[1].replace(/['"\s]/g, '') : '';
+  assert(normalizado === 'resumen,perfil,plan,rutina,seguimiento,suplementos', 'TAB_ORDER exacto [resumen,perfil,plan,rutina,seguimiento,suplementos] (Adendum R10 punto 1 / R-01.3); encontrado [' + normalizado + ']');
+})();
 
 // Adendum R9 punto 5 / PR-04 (T-042): la nota del Resumen se renombró de
 // "Acerca de este prototipo" a "Acerca del modo demo" (build/vista_metricas.js);
 // pin actualizado en el MISMO cambio que la propagación (regla de la tarea).
-var ETIQUETAS_ES = ['Resumen', 'Perfil', 'Plan de dieta', 'Seguimiento', 'Suplementos', 'Ver tabla', 'Acerca del modo demo'];
+// Adendum R10 (T-055, R-01): etiqueta nueva 'Rutina' de la sexta pestaña.
+var ETIQUETAS_ES = ['Resumen', 'Perfil', 'Plan de dieta', 'Rutina', 'Seguimiento', 'Suplementos', 'Ver tabla', 'Acerca del modo demo'];
 for (var ei = 0; ei < ETIQUETAS_ES.length; ei++) {
   var etiqueta = ETIQUETAS_ES[ei];
   assert(html.indexOf(etiqueta) !== -1, 'presencia de la etiqueta en español "' + etiqueta + '"');
@@ -227,13 +235,19 @@ assert(html.toLowerCase().indexOf('<embed ') === -1, 'cero <embed en el document
 // comentarios de proveniencia "build/" más abajo (sección E, nota
 // OPEN-QUESTION original): se vigila la ESTRUCTURA real del documento, no
 // cualquier subcadena que aparezca dentro de un string de JS legítimo.
+// Adendum R10 (T-055, R-07.3): build/vista_rutina.js (bloque
+// hz-vista-rutina) genera su PROPIO documento .html descargable
+// (generarHtmlRutinaDescargable) con el mismo patrón -- mismo motivo de
+// exclusión.
 (function verificarDoctypeYHtmlUnicosFueraDeDocsDescargable() {
   var bloqueDocs = bloquePorId('hz-docs');
+  var bloqueVistaRutina = bloquePorId('hz-vista-rutina');
   assert(bloqueDocs !== null, 'el bloque <script id="hz-docs"> existe (necesario para excluir su documento descargable embebido del conteo de DOCTYPE/html)');
-  var htmlSinDocumentoDescargable = html.split(bloqueDocs.contenido).join('');
-  assert(contarOcurrencias(htmlSinDocumentoDescargable, '<!DOCTYPE html>') === 1, 'exactamente un <!DOCTYPE html> en la estructura real del documento (fuera del documento descargable embebido en hz-docs)');
-  assert(contarOcurrencias(htmlSinDocumentoDescargable, '<html') === 1, 'exactamente un <html en la estructura real del documento (fuera del documento descargable embebido en hz-docs)');
-  assert(contarOcurrencias(htmlSinDocumentoDescargable, '</html>') === 1, 'exactamente un </html> en la estructura real del documento (fuera del documento descargable embebido en hz-docs)');
+  assert(bloqueVistaRutina !== null, 'el bloque <script id="hz-vista-rutina"> existe (necesario para excluir su documento descargable embebido del conteo de DOCTYPE/html)');
+  var htmlSinDocumentoDescargable = html.split(bloqueDocs.contenido).join('').split(bloqueVistaRutina.contenido).join('');
+  assert(contarOcurrencias(htmlSinDocumentoDescargable, '<!DOCTYPE html>') === 1, 'exactamente un <!DOCTYPE html> en la estructura real del documento (fuera de los documentos descargables embebidos en hz-docs/hz-vista-rutina)');
+  assert(contarOcurrencias(htmlSinDocumentoDescargable, '<html') === 1, 'exactamente un <html en la estructura real del documento (fuera de los documentos descargables embebidos en hz-docs/hz-vista-rutina)');
+  assert(contarOcurrencias(htmlSinDocumentoDescargable, '</html>') === 1, 'exactamente un </html> en la estructura real del documento (fuera de los documentos descargables embebidos en hz-docs/hz-vista-rutina)');
 })();
 
 // ---------------------------------------------------------------------
@@ -252,8 +266,11 @@ assert(html.indexOf('Herzon.planActivo') !== -1, 'presencia de Herzon.planActivo
 // T-042 (R8/R9): namespace nuevo que assemble.js integra como segundo
 // bloque del marcador INJECT:data.
 assert(html.indexOf('Herzon.Almacen') !== -1, 'presencia de Herzon.Almacen (T-039/T-045, modo demo/real y multi-cliente)');
+// Adendum R10 (T-055, C-5): namespace nuevo de build/seguridad.js (S-01),
+// segundo bloque del marcador INJECT:data (entre hz-data y hz-almacen).
+assert(html.indexOf('Herzon.Seguridad') !== -1, 'presencia de Herzon.Seguridad (T-050, S-01: cripto puro AES-GCM/PBKDF2, jamás DOM)');
 
-var VISTAS_REGISTRADAS = ['plan', 'suplementos', 'resumen', 'perfil', 'seguimiento'];
+var VISTAS_REGISTRADAS = ['plan', 'suplementos', 'resumen', 'perfil', 'seguimiento', 'rutina'];
 for (var vi = 0; vi < VISTAS_REGISTRADAS.length; vi++) {
   var idVista = VISTAS_REGISTRADAS[vi];
   assert(html.indexOf('Herzon.Views.' + idVista) !== -1, 'presencia de la vista registrada Herzon.Views.' + idVista);
@@ -267,11 +284,16 @@ for (var vi = 0; vi < VISTAS_REGISTRADAS.length; vi++) {
 //    el registro guardeado del service worker como bloque estático propio
 //    de build/shell.html (hz-sw-registro, fuera de cualquier marcador
 //    INJECT). T-042 (R8/R9) agrega build/almacen.js como segundo bloque del
-//    marcador <!-- INJECT:data -->. La cuenta total: runtime, data,
-//    almacen, charts, motor, docs, vistas-a, vistas-b, boot, sw-registro =
-//    10. (bloquesScript ya se extrajo arriba, antes de la sección A.)
+//    marcador <!-- INJECT:data -->. Adendum R10 (T-055, C-5) agrega DOS
+//    bloques más: hz-seguridad (build/seguridad.js, T-050) como segundo
+//    bloque de <!-- INJECT:data --> (entre hz-data y hz-almacen) y
+//    hz-vista-rutina (build/vista_rutina.js, T-053) como cuarto bloque de
+//    <!-- INJECT:vistas-a --> (tras hz-vistas-a). La cuenta total: runtime,
+//    data, seguridad, almacen, charts, motor, docs, vistas-a, vista-rutina,
+//    vistas-b, boot, sw-registro = 12. (bloquesScript ya se extrajo arriba,
+//    antes de la sección A.)
 // ---------------------------------------------------------------------
-assert(bloquesScript.length === 10, 'exactamente 10 bloques <script> inline (runtime, data, almacen, charts, motor, docs, vistas-a, vistas-b, boot, sw-registro); encontrados ' + bloquesScript.length);
+assert(bloquesScript.length === 12, 'exactamente 12 bloques <script> inline (runtime, data, seguridad, almacen, charts, motor, docs, vistas-a, vista-rutina, vistas-b, boot, sw-registro); encontrados ' + bloquesScript.length);
 
 for (var si = 0; si < bloquesScript.length; si++) {
   (function (indice) {
@@ -311,10 +333,17 @@ for (var si = 0; si < bloquesScript.length; si++) {
   // que el bloque @media print de build/shell.html (T-021, que fuerza
   // esos mismos 4 valores dentro de <style> con !important). Verificado
   // por el propio selfcheck de T-023 (selfcheck_docs.js, check #25).
+  // Adendum R10 (T-055, R-07.3): build/vista_rutina.js (bloque
+  // hz-vista-rutina) genera su propio documento .html descargable
+  // AUTOCONTENIDO con el MISMO precedente bendecido -- mismos 4 hexes
+  // literales, mismo motivo (documento fuera del árbol vivo, sin acceso a
+  // var(--token)) -- verificado por selfcheck_vista_rutina.js.
   var HEXES_PERMITIDOS_FUERA_DE_ESTILO = ['#0b0b0b', '#52514e', '#c3c2b7', '#e1e0d9'];
 
   var bloqueDocs = bloquePorId('hz-docs');
   var hexesEnDocs = bloqueDocs ? (bloqueDocs.contenido.match(HEX_REGEX) || []) : [];
+  var bloqueVistaRutinaHex = bloquePorId('hz-vista-rutina');
+  var hexesEnVistaRutina = bloqueVistaRutinaHex ? (bloqueVistaRutinaHex.contenido.match(HEX_REGEX) || []) : [];
 
   // Adendum R8 punto 2 (T-038/T-042): el <head>, ANTES de que abra el
   // <style>, trae los dos <meta name="theme-color"> (claro/oscuro) que el
@@ -331,9 +360,9 @@ for (var si = 0; si < bloquesScript.length; si++) {
 
   assert(hexesEnEstilo > 0, 'el bloque de tokens CSS (<style>) contiene hexes (sanity: la paleta está definida)');
   assert(
-    hexesEnDocumento === hexesEnEstilo + hexesEnDocs.length + hexesEnHead.length,
-    'todos los hexes del documento viven dentro del bloque de tokens CSS, del documento descargable de hz-docs o del <head> PWA autorizado por el Adendum R8 punto 2 (' +
-      hexesEnDocumento + ' totales vs ' + hexesEnEstilo + ' en <style> + ' + hexesEnDocs.length + ' en hz-docs + ' + hexesEnHead.length + ' en <head>)'
+    hexesEnDocumento === hexesEnEstilo + hexesEnDocs.length + hexesEnVistaRutina.length + hexesEnHead.length,
+    'todos los hexes del documento viven dentro del bloque de tokens CSS, de los documentos descargables de hz-docs/hz-vista-rutina o del <head> PWA autorizado por el Adendum R8 punto 2 (' +
+      hexesEnDocumento + ' totales vs ' + hexesEnEstilo + ' en <style> + ' + hexesEnDocs.length + ' en hz-docs + ' + hexesEnVistaRutina.length + ' en hz-vista-rutina + ' + hexesEnHead.length + ' en <head>)'
   );
 
   for (var hdi = 0; hdi < hexesEnDocs.length; hdi++) {
@@ -341,6 +370,14 @@ for (var si = 0; si < bloquesScript.length; si++) {
     assert(
       HEXES_PERMITIDOS_FUERA_DE_ESTILO.indexOf(hexEncontrado) !== -1,
       'el hex "' + hexesEnDocs[hdi] + '" dentro de hz-docs (documento descargable) pertenece a la lista validada del contrato de diseño sección 2 (' + HEXES_PERMITIDOS_FUERA_DE_ESTILO.join(', ') + ')'
+    );
+  }
+
+  for (var hvi = 0; hvi < hexesEnVistaRutina.length; hvi++) {
+    var hexEnVistaRutina = hexesEnVistaRutina[hvi].toLowerCase();
+    assert(
+      HEXES_PERMITIDOS_FUERA_DE_ESTILO.indexOf(hexEnVistaRutina) !== -1,
+      'el hex "' + hexesEnVistaRutina[hvi] + '" dentro de hz-vista-rutina (documento descargable, R-07.3) pertenece a la lista validada del contrato de diseño sección 2 (' + HEXES_PERMITIDOS_FUERA_DE_ESTILO.join(', ') + ')'
     );
   }
 
@@ -354,7 +391,8 @@ for (var si = 0; si < bloquesScript.length; si++) {
 
   for (var sbi = 0; sbi < bloquesScript.length; sbi++) {
     var esBloqueDocs = bloquesScript[sbi].atributos.indexOf('id="hz-docs"') !== -1;
-    if (esBloqueDocs) { continue; } // ya verificado arriba contra la whitelist
+    var esBloqueVistaRutina = bloquesScript[sbi].atributos.indexOf('id="hz-vista-rutina"') !== -1;
+    if (esBloqueDocs || esBloqueVistaRutina) { continue; } // ya verificados arriba contra la whitelist
     var hexesEnBloque = (bloquesScript[sbi].contenido.match(HEX_REGEX) || []).length;
     assert(hexesEnBloque === 0, 'cero hexes literales dentro del bloque <script> #' + sbi);
   }
@@ -370,11 +408,13 @@ assert(html.indexOf('innerHTML') === -1, 'cero innerHTML en el documento (datos 
 // ---------------------------------------------------------------------
 var FUENTES = [
   { nombre: 'build/data.js', archivo: 'data.js' },
+  { nombre: 'build/seguridad.js', archivo: 'seguridad.js' },
   { nombre: 'build/almacen.js', archivo: 'almacen.js' },
   { nombre: 'build/charts.js', archivo: 'charts.js' },
   { nombre: 'build/motor_recomendacion.js', archivo: 'motor_recomendacion.js' },
   { nombre: 'build/documentos.js', archivo: 'documentos.js' },
   { nombre: 'build/vista_dieta_supl.js', archivo: 'vista_dieta_supl.js' },
+  { nombre: 'build/vista_rutina.js', archivo: 'vista_rutina.js' },
   { nombre: 'build/vista_metricas.js', archivo: 'vista_metricas.js' }
 ];
 
@@ -426,6 +466,24 @@ for (var fi = 0; fi < FUENTES.length; fi++) {
 //        (elemento raíz del contenedor de cada primitiva).
 //      - 'valido': clave de objeto `{valido: true/false}` en almacen.js
 //        (validarNombreCliente), interna a la validación de alta/renombrado.
+//    Adendum R10 (T-055): tres selfchecks nuevos/tocados suman vocabulario
+//    -- selfcheck_seguridad.js (T-050, S-01), selfcheck_vista_rutina.js
+//    (T-053, R-08.3) y la lista ampliada de selfcheck_almacen.js (T-052,
+//    vocabulario nuevo marcado "R10" en ese archivo). Mismo método:
+//    inspección directa (grep de límite de palabra) sobre los DIEZ fuentes
+//    ya ensamblados + build/shell.html antes de sumar cada palabra.
+//    Exclusiones NUEVAS de esta ronda (colisión con identificador legítimo):
+//      - 'maximo': parámetro de build/almacen.js
+//        (function enteroFinitoEnRango(v, minimo, maximo)).
+//      - 'tamano': variable local de build/charts.js (var tamano = tamanoFuente...).
+//      - 'publica': verbo "publicar" en 3a persona (correcto sin acento) usado
+//        en comentarios de build/vista_dieta_supl.js/vista_metricas.js
+//        ("no publica una primitiva...", "...la publica antes de..."); la
+//        palabra de la lista cruda de S-01 se refería al adjetivo "pública",
+//        pero el verbo colisiona sin ser un error real -- se excluye.
+//      - 'exito': coincide con el id de elemento literal 'hz-seg-exito'
+//        (build/vista_metricas.js, S-03) -- identificador de atributo, no
+//        prosa visible (mismo principio que 'catalogo'/'invalidos'/'raiz').
 //    Todas las exclusiones se verificaron por inspección directa sobre
 //    prototype/index.html ya ensamblado (cero colisiones para el resto).
 //    Coincidencia con límite de palabra (\b), aplicada al documento ya
@@ -448,19 +506,55 @@ for (var fi = 0; fi < FUENTES.length; fi++) {
     // de identificador ('invalidos', 'vacio', 'numero' quedan fuera, ver nota).
     'modulo', 'vacios', 'vacias', 'sesion', 'sincrono', 'sincrona', 'logica',
     'pagina', 'aqui', 'tambien', 'parametro', 'construccion', 'publicacion',
-    'confirmacion', 'cronologicamente', 'mutacion', 'formula', 'diseno',
+    'confirmacion', 'cronologicamente', 'mutacion', 'formula',
+    // 'diseno' sale de esta lista en el Adendum R10 (T-055): antes de esta
+    // ronda no colisionaba con nada (0 ocurrencias) y viajaba aquí como
+    // guardia preventiva; ahora build/seguridad.js, build/vista_rutina.js y
+    // build/vista_metricas.js referencian por su nombre LITERAL el archivo
+    // en disco `.harness/justesse-r10-diseno.md` (sin eñe, así se llama el
+    // archivo -- mismo principio que la exclusión de rutas 'build/' de la
+    // sección E). Se verifica aparte, abajo, con conteo acotado 1:1 contra
+    // el número de referencias a ese nombre de archivo, para que 'diseno'
+    // en prosa (sin ser parte del nombre del archivo) siga atrapado.
     'dialogos', 'unica', 'unico', 'ultima', 'ultimo', 'estan', 'clasico',
     'clasica', 'aceptacion',
     // T-042 (R8/R9): palabras nuevas de la lista ampliada de
     // selfcheck_vistas_b.js sin colisión ('raiz', 'valido' quedan fuera).
     'jerarquia', 'heroe', 'mecanica', 'edicion', 'creacion', 'eliminacion',
-    'seleccion'
+    'seleccion',
+    // Adendum R10 (T-055): palabras nuevas de selfcheck_seguridad.js (T-050)
+    // sin colisión ('maximo', 'tamano', 'publica', 'exito', 'vacio', 'numero'
+    // quedan fuera, ver nota arriba).
+    'proteccion', 'traves', 'codigo', 'jamas', 'dueno', 'patron',
+    'asincrona', 'asincronas', 'identico', 'autenticacion', 'catastrofico',
+    'acompanan', 'confia',
+    // Adendum R10 (T-055): palabras nuevas de selfcheck_vista_rutina.js
+    // (T-053) sin colisión ('exito' queda fuera, ver nota arriba).
+    'genericamente', 'reaccion', 'reconstruccion', 'informacion',
+    'grafica', 'graficas', 'estatico', 'estatica', 'dinamico', 'dinamica',
+    // Adendum R10 (T-055): palabras nuevas de la lista ampliada de
+    // selfcheck_almacen.js (T-052, marcadas "R10" en ese archivo) sin
+    // colisión ('genericamente'/'exito' ya cubiertas arriba).
+    'asincrono', 'anticolision', 'colision', 'atomica', 'atomico',
+    'genero', 'monotona', 'monotono'
   ];
   for (var pa = 0; pa < PALABRAS_SIN_ACENTO_PROHIBIDAS.length; pa++) {
     var palabra = PALABRAS_SIN_ACENTO_PROHIBIDAS[pa];
     var regexPalabra = new RegExp('\\b' + palabra + '\\b');
     assert(!regexPalabra.test(html), 'prototype/index.html contiene la palabra sin acento "' + palabra + '" (D1, QA ronda 1 + R5): revisar y corregir a español con acentos/eñe');
   }
+
+  // Adendum R10 (T-055): 'diseno' acotado 1:1 contra las referencias al
+  // nombre literal del archivo justesse-r10-diseno.md (ver nota arriba) --
+  // cualquier aparición EXTRA de 'diseno' sin acento (prosa real) rompe
+  // esta igualdad y la aserción falla.
+  var ocurrenciasDiseno = (html.match(/\bdiseno\b/g) || []).length;
+  var ocurrenciasArchivoDiseno = (html.match(/justesse-r10-diseno\.md/g) || []).length;
+  assert(
+    ocurrenciasDiseno === ocurrenciasArchivoDiseno,
+    'todas las apariciones de "diseno" (sin eñe) en prototype/index.html son parte del nombre literal de archivo justesse-r10-diseno.md, cero en prosa (' +
+      ocurrenciasDiseno + ' apariciones de "diseno" vs ' + ocurrenciasArchivoDiseno + ' referencias al archivo)'
+  );
 })();
 
 // ---------------------------------------------------------------------
@@ -537,21 +631,47 @@ assert(html.indexOf(':root[data-theme="light"] { color-scheme: light; }') !== -1
 })();
 
 // ---------------------------------------------------------------------
-// O. Adendum R8 punto 6 (T-042): bloque hz-almacen presente y ORDENADO --
-//    segundo bloque del marcador INJECT:data, después de hz-data y antes
-//    de hz-charts, para que Almacen.cargar() corra antes de que boot monte
-//    las vistas.
+// O. Adendum R8 punto 6 (T-042) + Adendum R10 (T-055, C-5): orden EXACTO
+//    del marcador INJECT:data -- hz-data, hz-seguridad (S-01, NUEVO en
+//    R10, cripto puro que almacen.js consulta de forma síncrona en su
+//    cargar()), hz-almacen -- y todo eso antes de hz-charts, para que
+//    Almacen.cargar() corra antes de que boot monte las vistas.
 // ---------------------------------------------------------------------
-(function verificarBloqueAlmacenPresenteYOrdenado() {
-  var indiceData = -1, indiceAlmacen = -1, indiceCharts = -1;
+(function verificarBloqueAlmacenYSeguridadPresentesYOrdenados() {
+  var indiceData = -1, indiceSeguridad = -1, indiceAlmacen = -1, indiceCharts = -1;
   for (var bi = 0; bi < bloquesScript.length; bi++) {
     if (bloquesScript[bi].atributos.indexOf('id="hz-data"') !== -1) { indiceData = bi; }
+    if (bloquesScript[bi].atributos.indexOf('id="hz-seguridad"') !== -1) { indiceSeguridad = bi; }
     if (bloquesScript[bi].atributos.indexOf('id="hz-almacen"') !== -1) { indiceAlmacen = bi; }
     if (bloquesScript[bi].atributos.indexOf('id="hz-charts"') !== -1) { indiceCharts = bi; }
   }
+  assert(indiceSeguridad !== -1, 'el bloque <script id="hz-seguridad"> existe en el documento ensamblado (Adendum R10, C-5)');
   assert(indiceAlmacen !== -1, 'el bloque <script id="hz-almacen"> existe en el documento ensamblado');
-  assert(indiceData !== -1 && indiceAlmacen === indiceData + 1, 'hz-almacen es EXACTAMENTE el bloque siguiente a hz-data (segundo bloque del marcador INJECT:data)');
+  assert(indiceData !== -1 && indiceSeguridad === indiceData + 1, 'hz-seguridad es EXACTAMENTE el bloque siguiente a hz-data (segundo bloque del marcador INJECT:data, C-5)');
+  assert(indiceSeguridad !== -1 && indiceAlmacen === indiceSeguridad + 1, 'hz-almacen es EXACTAMENTE el bloque siguiente a hz-seguridad (tercer bloque del marcador INJECT:data, C-5)');
   assert(indiceCharts !== -1 && indiceAlmacen < indiceCharts, 'hz-almacen precede a hz-charts (Almacen.cargar() corre antes de que boot monte las vistas)');
+})();
+
+// ---------------------------------------------------------------------
+// O-bis. Adendum R10 (T-055, C-5, R-08.2): bloque hz-vista-rutina presente
+//    y ORDENADO -- CUARTO y último bloque del marcador INJECT:vistas-a,
+//    después de hz-vistas-a (así HERZON_DATA, Herzon.Almacen y Herzon.Docs
+//    ya existen cuando vista_rutina.js llama a Herzon.registerView).
+// ---------------------------------------------------------------------
+(function verificarBloqueVistaRutinaPresenteYOrdenado() {
+  var indiceMotor = -1, indiceDocs = -1, indiceVistasA = -1, indiceVistaRutina = -1, indiceVistasB = -1;
+  for (var bi = 0; bi < bloquesScript.length; bi++) {
+    if (bloquesScript[bi].atributos.indexOf('id="hz-motor"') !== -1) { indiceMotor = bi; }
+    if (bloquesScript[bi].atributos.indexOf('id="hz-docs"') !== -1) { indiceDocs = bi; }
+    if (bloquesScript[bi].atributos.indexOf('id="hz-vistas-a"') !== -1) { indiceVistasA = bi; }
+    if (bloquesScript[bi].atributos.indexOf('id="hz-vista-rutina"') !== -1) { indiceVistaRutina = bi; }
+    if (bloquesScript[bi].atributos.indexOf('id="hz-vistas-b"') !== -1) { indiceVistasB = bi; }
+  }
+  assert(indiceVistaRutina !== -1, 'el bloque <script id="hz-vista-rutina"> existe en el documento ensamblado');
+  assert(indiceVistasA !== -1 && indiceVistaRutina === indiceVistasA + 1, 'hz-vista-rutina es EXACTAMENTE el bloque siguiente a hz-vistas-a (cuarto y último bloque del marcador INJECT:vistas-a, C-5)');
+  assert(indiceMotor !== -1 && indiceMotor < indiceVistaRutina, 'hz-motor precede a hz-vista-rutina');
+  assert(indiceDocs !== -1 && indiceDocs < indiceVistaRutina, 'hz-docs precede a hz-vista-rutina (R-07 consume Herzon.Docs, C-7)');
+  assert(indiceVistasB !== -1 && indiceVistaRutina < indiceVistasB, 'hz-vista-rutina precede a hz-vistas-b (INJECT:vistas-a se resuelve completo antes de INJECT:vistas-b)');
 })();
 
 // ---------------------------------------------------------------------
@@ -635,6 +755,97 @@ assert(html.indexOf("'hz-grid-pares'") !== -1 || html.indexOf('"hz-grid-pares"')
 //    cards en modo real sin datos.
 // ---------------------------------------------------------------------
 assert(html.indexOf('.hz-vacio {') !== -1, 'presencia de la regla CSS .hz-vacio { ... } (Adendum R8 punto 2, estados vacíos)');
+
+// ---------------------------------------------------------------------
+// V. Sección 12 (Adendum R10, F-01/F-02) presente y CONSUMIDA: el
+//    comentario de cabecera vive literal en build/shell.html, y al menos
+//    una vista aplica de verdad las clases hz-form-* / hz-btn-* que esa
+//    sección define (consumo real, no solo declaración -- mismo principio
+//    que la sección N para las opciones de Charts).
+// ---------------------------------------------------------------------
+assert(
+  html.indexOf('/* ---------- 12. Adendum R10 (F-01/F-02): sistema de formularios ----------') !== -1,
+  'presencia literal del comentario de cabecera de la sección 12 (Adendum R10, F-01/F-02) en el bloque <style>'
+);
+(function verificarSeccion12Consumida() {
+  var bloqueVistasB = bloquePorId('hz-vistas-b'); // vista_metricas.js (F-03..F-06, S-02..S-04)
+  var bloqueVistaRutina = bloquePorId('hz-vista-rutina'); // vista_rutina.js (R-06)
+  assert(bloqueVistasB !== null, 'el bloque <script id="hz-vistas-b"> existe (necesario para verificar consumo de la sección 12)');
+  assert(bloqueVistaRutina !== null, 'el bloque <script id="hz-vista-rutina"> existe (necesario para verificar consumo de la sección 12)');
+  var contenidoConsumo = bloqueVistasB.contenido + '\n' + bloqueVistaRutina.contenido;
+  assert(/hz-form-card/.test(contenidoConsumo), 'hz-form-card (F-01.1, sección 12) aparece consumida por al menos una vista');
+  assert(/hz-form-columnas/.test(contenidoConsumo), 'hz-form-columnas (F-01.2, sección 12) aparece consumida por al menos una vista');
+  assert(/hz-btn-primario/.test(contenidoConsumo), 'hz-btn-primario (F-02, sección 12) aparece consumida por al menos una vista');
+  assert(/hz-btn-secundario/.test(contenidoConsumo), 'hz-btn-secundario (F-02, sección 12) aparece consumida por al menos una vista');
+  assert(/hz-btn-peligro/.test(contenidoConsumo), 'hz-btn-peligro (F-02, sección 12) aparece consumida por al menos una vista');
+})();
+
+// ---------------------------------------------------------------------
+// W. Adendum R10 (T-055, R-01.6): compuerta de impresión por documento
+//    presente -- #documento-rutina existe, la regla maestra excluye a
+//    AMBOS documentos, y el atributo body[data-imprimir="rutina"] separa
+//    la impresión del plan de la de la rutina.
+// ---------------------------------------------------------------------
+assert(html.indexOf('#documento-rutina') !== -1, 'presencia del contenedor #documento-rutina (R-01.4)');
+assert(
+  html.indexOf('body > *:not(#documento-plan):not(#documento-rutina) { display: none !important; }') !== -1,
+  'presencia literal del selector maestro de impresión con AMBOS :not() (R-01.6): body > *:not(#documento-plan):not(#documento-rutina)'
+);
+assert(
+  html.indexOf('body[data-imprimir="rutina"] #documento-plan { display: none !important; }') !== -1,
+  'presencia literal de la regla body[data-imprimir="rutina"] #documento-plan { display: none !important; } (R-01.6)'
+);
+assert(
+  html.indexOf('body[data-imprimir="rutina"] #documento-rutina { display: block; }') !== -1,
+  'presencia literal de la regla body[data-imprimir="rutina"] #documento-rutina { display: block; } (R-01.6)'
+);
+
+// ---------------------------------------------------------------------
+// X. Invariante de exportables S-05 (.harness/justesse-r10-diseno.md
+//    sección 2.3): NINGÚN documento o descarga (plan, CSV de mediciones,
+//    plantilla CSV, rutina) incluye una sección de laboratorios --
+//    aserción que FIJA el estado actual (build/documentos.js y
+//    build/vista_rutina.js jamás mencionan "laboratorio"; el CSV de
+//    series usa exactamente las 7 columnas congeladas, sin ninguna de
+//    laboratorio). Si algún cambio futuro agrega labs a un exportable,
+//    esta aserción lo atrapa de inmediato.
+// ---------------------------------------------------------------------
+(function verificarInvarianteExportablesSinLabs() {
+  var bloqueDocs = bloquePorId('hz-docs');
+  var bloqueVistaRutina = bloquePorId('hz-vista-rutina');
+  assert(bloqueDocs !== null, 'el bloque <script id="hz-docs"> existe (necesario para el invariante S-05)');
+  assert(bloqueVistaRutina !== null, 'el bloque <script id="hz-vista-rutina"> existe (necesario para el invariante S-05)');
+  assert(!/aborator/i.test(bloqueDocs.contenido), 'S-05: build/documentos.js (documento del plan + CSV de mediciones + plantilla CSV) NO contiene "laboratorio"/"Laboratorios" en ninguna forma -- ningún exportable incluye sección de labs');
+  assert(!/aborator/i.test(bloqueVistaRutina.contenido), 'S-05: build/vista_rutina.js (documento de la rutina, R-07) NO contiene "laboratorio"/"Laboratorios" en ninguna forma');
+  assert(
+    html.indexOf("var columnas = ['semana', 'fecha', 'peso_kg', 'grasa_pct', 'musculo_kg', 'cintura_cm', 'adherenciaDieta_pct'];") !== -1,
+    'S-05: las columnas del CSV de mediciones son EXACTAMENTE las 7 congeladas (sin columna de laboratorio)'
+  );
+})();
+
+// ---------------------------------------------------------------------
+// Y. Copy S-06 (modelo de amenazas honesto, .harness/justesse-r10-diseno.md
+//    sección 2.3): la advertencia de irrecuperabilidad está presente en el
+//    HTML final (card de activación y pie de recuperación), y cero claims
+//    de sobre-promesa ('grado militar', 'imposible de hackear' o
+//    equivalentes) en todo el documento.
+// ---------------------------------------------------------------------
+assert(
+  html.indexOf('Si olvidaste tu contraseña, no es posible recuperarla.') !== -1,
+  'S-06: advertencia de irrecuperabilidad presente literal en el HTML final (pie de #hz-card-desbloqueo)'
+);
+assert(
+  html.indexOf('Entiendo que si olvido la contraseña mis datos no se pueden recuperar') !== -1,
+  'S-06: casilla de confirmación de irrecuperabilidad presente literal en el HTML final (#hz-seg-confirmo, activación de protección)'
+);
+(function verificarCeroSobrePromesaSeguridad() {
+  var htmlMinusculas = html.toLowerCase();
+  var FRASES_SOBRE_PROMESA_PROHIBIDAS = ['grado militar', 'imposible de hackear', 'grado bancario', 'inhackeable'];
+  for (var fpi = 0; fpi < FRASES_SOBRE_PROMESA_PROHIBIDAS.length; fpi++) {
+    var frase = FRASES_SOBRE_PROMESA_PROHIBIDAS[fpi];
+    assert(htmlMinusculas.indexOf(frase) === -1, 'S-06: cero ocurrencias de la frase de sobre-promesa "' + frase + '" en todo el documento (prohibida por el modelo de amenazas honesto)');
+  }
+})();
 
 // ---------------------------------------------------------------------
 // Cierre (plan.md 3.J).

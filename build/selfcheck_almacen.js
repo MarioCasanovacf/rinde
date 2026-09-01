@@ -779,6 +779,262 @@ afirmar(fixtureUI.selector.value === '__demo__', 'REGRESIÓN: el value del selec
 Almacen.borrarTodo();
 globalThis.localStorage = mockStorage;
 
+// =========================================================================
+// 15. R-02/R-03 (Adendum R10, T-052): guardarRutina(rutina) -- normalización
+//     tolerante del slot, persistencia en clientes[activoId].rutina,
+//     exposición inmediata en HERZON_DATA.rutina, aislamiento entre
+//     clientes y rechazo total en modo demo (MC-05).
+// =========================================================================
+afirmar(Almacen.modo() === 'demo', 'sanity: antes de probar guardarRutina debe estar en modo demo');
+afirmar(Almacen.guardarRutina({ dias: [{ ejercicios: [{ nombre: 'Sentadilla', series: 3, repeticiones: '10' }] }] }) === false, 'guardarRutina en modo demo debe devolver false');
+afirmar(mockStorage.getItem('rinde.datos.v1') === null, 'guardarRutina en modo demo NO debe tocar localStorage');
+
+var idRutinaA = Almacen.crearCliente({ nombre: 'Rutina Cliente A' }).id;
+afirmar(globalThis.HERZON_DATA.rutina === null, 'un cliente recién creado debe montar HERZON_DATA.rutina === null (R-02)');
+
+var rutinaCruda = {
+  dias: [
+    {
+      titulo: 'Piernas', ejercicios: [
+        { nombre: '  Sentadilla goblet  ', series: 4, repeticiones: '10-12', descanso_s: 90, notas: 'Controlada' },
+        { nombre: '', series: 3, repeticiones: '10' }, // sin nombre: se descarta
+        { nombre: 'Zancada', series: 20, repeticiones: '10 por pierna', descanso_s: 900 } // series/descanso fuera de rango => null
+      ]
+    },
+    { titulo: 'Día vacío', ejercicios: [{ nombre: '   ', series: 3, repeticiones: '10' }] }, // todos los ejercicios inválidos => día descartado
+    { titulo: 'Torso', ejercicios: [{ nombre: 'Press banca', series: 4, repeticiones: '8-10' }] }
+  ],
+  actualizado: 'fecha-no-valida'
+};
+var okGuardarRutinaA = Almacen.guardarRutina(rutinaCruda);
+afirmar(okGuardarRutinaA === true, 'guardarRutina en modo real con cliente activo debe devolver true');
+afirmar(globalThis.HERZON_DATA.rutina !== null, 'tras guardar, HERZON_DATA.rutina debe dejar de ser null');
+afirmar(globalThis.HERZON_DATA.rutina.dias.length === 2, 'guardarRutina debe descartar el día sin ejercicios válidos (quedan 2 de 3)');
+afirmar(globalThis.HERZON_DATA.rutina.dias[0].dia === 1 && globalThis.HERZON_DATA.rutina.dias[1].dia === 2, 'los días restantes deben renumerarse secuencial 1..n tras descartar el día vacío');
+afirmar(globalThis.HERZON_DATA.rutina.dias[1].titulo === 'Torso', 'el día "Torso" (originalmente el tercero) debe quedar como el segundo día tras renumerar');
+afirmar(globalThis.HERZON_DATA.rutina.dias[0].ejercicios.length === 2, 'el primer día debe conservar los 2 ejercicios con nombre no vacío (el de nombre vacío se descarta)');
+afirmar(globalThis.HERZON_DATA.rutina.dias[0].ejercicios[0].nombre === 'Sentadilla goblet', 'el nombre normalizado debe venir recortado (trim) de espacios');
+afirmar(globalThis.HERZON_DATA.rutina.dias[0].ejercicios[1].series === null, 'series=20 (fuera de 1..10) debe normalizarse a null, sin descartar el ejercicio');
+afirmar(globalThis.HERZON_DATA.rutina.dias[0].ejercicios[1].descanso_s === null, 'descanso_s=900 (fuera de 0..600) debe normalizarse a null');
+afirmar(/^\d{4}-\d{2}-\d{2}$/.test(globalThis.HERZON_DATA.rutina.actualizado), 'una fecha "actualizado" inválida debe normalizarse a fechaHoy() (formato AAAA-MM-DD)');
+var crudoConRutina = JSON.parse(mockStorage.getItem('rinde.datos.v1'));
+afirmar(crudoConRutina.clientes[idRutinaA].rutina.dias.length === 2, 'guardarRutina debe persistir el slot normalizado en clientes[activoId].rutina');
+
+// Aislamiento entre clientes (R-03.5): B no debe ver la rutina de A.
+Almacen.crearCliente({ nombre: 'Rutina Cliente B' });
+afirmar(globalThis.HERZON_DATA.rutina === null, 'cliente B recién creado debe montar rutina === null, sin heredar la de A');
+Almacen.seleccionarCliente(idRutinaA);
+afirmar(globalThis.HERZON_DATA.rutina !== null && globalThis.HERZON_DATA.rutina.dias.length === 2, 'al volver a A, su rutina debe reaparecer intacta');
+var idRutinaB = Almacen.clientes().filter(function (c) { return c.nombre === 'Rutina Cliente B'; })[0].id;
+Almacen.seleccionarCliente(idRutinaB);
+afirmar(globalThis.HERZON_DATA.rutina === null, 'B sigue sin rutina: la de A es invisible mientras B está montado (aislamiento)');
+
+// guardarRutina(null) limpia el slot.
+Almacen.seleccionarCliente(idRutinaA);
+var okLimpiarRutina = Almacen.guardarRutina(null);
+afirmar(okLimpiarRutina === true, 'guardarRutina(null) debe devolver true');
+afirmar(globalThis.HERZON_DATA.rutina === null, 'guardarRutina(null) debe dejar HERZON_DATA.rutina en null');
+var crudoSinRutina = JSON.parse(mockStorage.getItem('rinde.datos.v1'));
+afirmar(crudoSinRutina.clientes[idRutinaA].rutina === null, 'guardarRutina(null) debe persistir rutina:null');
+Almacen.borrarTodo();
+
+// =========================================================================
+// 16. S-05 (Adendum R10, T-052): config {labsOcultos} por cliente -- valor
+//     por defecto aditivo cuando falta la clave, actualizarConfig
+//     fusiona/persiste/emite modo-cambiado, y en demo HERZON_DATA.config
+//     es SIEMPRE {labsOcultos:false} sin importar el catálogo.
+// =========================================================================
+afirmar(globalThis.HERZON_DATA.config && globalThis.HERZON_DATA.config.labsOcultos === false, 'en modo demo, HERZON_DATA.config debe ser SIEMPRE {labsOcultos:false} (S-05)');
+afirmar(Almacen.actualizarConfig({ labsOcultos: true }) === false, 'actualizarConfig en modo demo debe devolver false');
+
+var idConfig = Almacen.crearCliente({ nombre: 'Cliente Config' }).id;
+afirmar(globalThis.HERZON_DATA.config && globalThis.HERZON_DATA.config.labsOcultos === false, 'un cliente recién creado debe montar config.labsOcultos === false por defecto');
+
+eventosCapturados.length = 0;
+var okActualizarConfig = Almacen.actualizarConfig({ labsOcultos: true });
+afirmar(okActualizarConfig === true, 'actualizarConfig en modo real con cliente activo debe devolver true');
+afirmar(globalThis.HERZON_DATA.config.labsOcultos === true, 'actualizarConfig debe sincronizar HERZON_DATA.config de inmediato');
+afirmar(eventosDeTipo('herzon:modo-cambiado').length === 1 && eventosDeTipo('herzon:modo-cambiado')[0].detail.modo === 'real' && eventosDeTipo('herzon:modo-cambiado')[0].detail.clienteId === idConfig, 'actualizarConfig debe emitir herzon:modo-cambiado {modo:"real",clienteId:activoId} (semántica de remontaje)');
+var crudoConConfig = JSON.parse(mockStorage.getItem('rinde.datos.v1'));
+afirmar(crudoConConfig.clientes[idConfig].config.labsOcultos === true, 'actualizarConfig debe persistir el valor fusionado en clientes[activoId].config');
+
+// Remontaje: el valor persiste al volver a montar el cliente, y un cliente
+// DISTINTO no lo hereda.
+Almacen.crearCliente({ nombre: 'Otro Config' });
+afirmar(globalThis.HERZON_DATA.config.labsOcultos === false, 'un cliente nuevo distinto no debe heredar labsOcultos de otro cliente');
+Almacen.seleccionarCliente(idConfig);
+afirmar(globalThis.HERZON_DATA.config.labsOcultos === true, 'al re-montar el cliente configurado, labsOcultos debe reaparecer true');
+
+// actualizarConfig con parcial vacío conserva el valor vigente (fusión por
+// clave, no reemplazo ciego).
+var okConfigVacio = Almacen.actualizarConfig({});
+afirmar(okConfigVacio === true && globalThis.HERZON_DATA.config.labsOcultos === true, 'actualizarConfig({}) debe conservar labsOcultos vigente (fusiona clave por clave, no reemplaza)');
+Almacen.borrarTodo();
+
+// =========================================================================
+// 17. S-04 (Adendum R10, T-052): exportarRespaldo/restaurarRespaldo --
+//     formato exacto, rechazo con el texto EXACTO del hallazgo, y
+//     reemplazo TOTAL (jamás fusión por id, C-11) con conteos reales.
+// =========================================================================
+var respaldoFormatoInvalido = Almacen.restaurarRespaldo({ formato: 'algo-que-no-es', datos: {} });
+afirmar(respaldoFormatoInvalido.ok === false && respaldoFormatoInvalido.errores[0] === 'El archivo no es un respaldo válido de Rinde.', 'restaurarRespaldo con formato desconocido debe rechazar con el texto EXACTO del hallazgo');
+var respaldoVersionInvalida = Almacen.restaurarRespaldo({ formato: 'rinde-respaldo-1', exportado: '2026-01-01', datos: { version: 1, activoId: null, clientes: {} } });
+afirmar(respaldoVersionInvalida.ok === false && respaldoVersionInvalida.errores[0] === 'El archivo no es un respaldo válido de Rinde.', 'restaurarRespaldo con datos.version !== 2 debe rechazar con el mismo texto exacto');
+afirmar(Almacen.restaurarRespaldo(null).ok === false, 'restaurarRespaldo(null) no debe lanzar y debe rechazar');
+afirmar(Almacen.restaurarRespaldo('no soy un objeto').ok === false, 'restaurarRespaldo con un string no debe lanzar y debe rechazar');
+
+// Ciclo exportar -> divergir localmente -> restaurar: reemplazo TOTAL.
+Almacen.crearCliente({ nombre: 'Exportado Uno' });
+Almacen.crearCliente({ nombre: 'Exportado Dos' });
+afirmar(Almacen.clientes().length === 2, 'sanity: deben existir 2 clientes antes de exportar');
+var respaldo = Almacen.exportarRespaldo();
+afirmar(respaldo.ok === true && typeof respaldo.json === 'string' && /^rinde-respaldo-\d{4}-\d{2}-\d{2}\.json$/.test(respaldo.nombreArchivo), 'exportarRespaldo debe devolver {ok:true,json,nombreArchivo} con el nombre de archivo exacto');
+var objetoRespaldo = JSON.parse(respaldo.json);
+afirmar(objetoRespaldo.formato === 'rinde-respaldo-1' && objetoRespaldo.datos.version === 2 && Object.keys(objetoRespaldo.datos.clientes).length === 2, 'el respaldo exportado debe traer formato/version exactos y los 2 clientes en memoria');
+
+Almacen.crearCliente({ nombre: 'Solo Local (se pierde al restaurar)' });
+afirmar(Almacen.clientes().length === 3, 'sanity: ahora hay 3 clientes localmente, antes de restaurar el respaldo de 2');
+
+eventosCapturados.length = 0;
+var resultadoRestaurar = Almacen.restaurarRespaldo(objetoRespaldo);
+afirmar(resultadoRestaurar.ok === true && resultadoRestaurar.clientes === 2, 'restaurarRespaldo debe devolver {ok:true, clientes:2} (el conteo del respaldo, no el local previo)');
+afirmar(Almacen.clientes().length === 2, 'C-11: restaurar debe REEMPLAZAR por completo -- el tercer cliente local (no estaba en el respaldo) debe desaparecer');
+afirmar(Almacen.clientes().some(function (c) { return c.nombre === 'Solo Local (se pierde al restaurar)'; }) === false, 'el cliente creado tras exportar no debe sobrevivir a la restauración (reemplazo total, no fusión)');
+afirmar(eventosDeTipo('herzon:clientes-actualizados').length === 1, 'restaurarRespaldo debe emitir herzon:clientes-actualizados');
+afirmar(eventosDeTipo('herzon:cliente-cambiado').length === 1, 'restaurarRespaldo con clientes debe emitir herzon:cliente-cambiado (misma secuencia que desbloquearYMontar)');
+afirmar(eventosDeTipo('herzon:modo-cambiado').length === 1 && eventosDeTipo('herzon:modo-cambiado')[0].detail.modo === 'real', 'restaurarRespaldo debe emitir herzon:modo-cambiado {modo:"real",...} tras montar');
+var crudoTrasRestaurar = JSON.parse(mockStorage.getItem('rinde.datos.v1'));
+afirmar(Object.keys(crudoTrasRestaurar.clientes).length === 2, 'restaurarRespaldo debe persistir el reemplazo vía el embudo único (persistirEstado)');
+Almacen.borrarTodo();
+
+// =========================================================================
+// 18. R-02/S-05: payload v2 previo a esta ronda, SIN las claves rutina ni
+//     config -- debe cargar sin lanzar y montar rutina:null,
+//     config.labsOcultos:false (tolerancia declarada en ambos contratos).
+// =========================================================================
+var payloadV2SinClavesNuevas = {
+  version: 2,
+  activoId: 'c-viejo',
+  clientes: {
+    'c-viejo': {
+      perfil: { nombre: 'Cliente Anterior a R10', sexo: 'femenino', edad: 40, talla_cm: 165, pesoInicial_kg: 68, pesoActual_kg: 68, imcInicial: 25, imcActual: 25, objetivo: 'Mantenimiento', actividad: 'ligero', diagnosticos: [], alergias: [], restricciones: [], gastoEnergetico: { tmb_kcal: 1300, get_kcal: 1800 }, inicio: '2026-01-01' },
+      series: { semanas: [], fechas: [], peso_kg: [], grasa_pct: [], musculo_kg: [], cintura_cm: [], adherenciaDieta_pct: [], adherenciaDiaria: [] },
+      labs: { cortes: [], marcadores: [] },
+      plicometria: { unidad: 'mm', cortes: [], sitios: [], sumaPliegues_mm: [] },
+      suplementos: [],
+      plan: null,
+      creado: '2026-01-01'
+      // SIN "rutina" ni "config": payload de una ronda anterior a R10.
+    }
+  }
+};
+var scriptSinClavesNuevas = [
+  'globalThis.window = globalThis;',
+  'var almacenCrudo = { "rinde.datos.v1": ' + JSON.stringify(JSON.stringify(payloadV2SinClavesNuevas)) + ' };',
+  'globalThis.localStorage = {',
+  '  getItem: function (k) { return Object.prototype.hasOwnProperty.call(almacenCrudo, k) ? almacenCrudo[k] : null; },',
+  '  setItem: function (k, v) { almacenCrudo[k] = String(v); },',
+  '  removeItem: function (k) { delete almacenCrudo[k]; }',
+  '};',
+  'require(' + JSON.stringify(TESTDOM_PATH) + ');',
+  'require(' + JSON.stringify(DATA_PATH) + ');',
+  'require(' + JSON.stringify(ALMACEN_PATH) + ');',
+  'if (Herzon.Almacen.modo() !== "real") { process.exit(2); }',
+  'if (globalThis.HERZON_DATA.rutina !== null) { process.exit(3); }',
+  'if (!globalThis.HERZON_DATA.config || globalThis.HERZON_DATA.config.labsOcultos !== false) { process.exit(4); }',
+  'process.exit(0);'
+].join('\n');
+var resultadoSinClavesNuevas = childProcess.spawnSync(process.execPath, ['-e', scriptSinClavesNuevas], { encoding: 'utf8' });
+afirmar(resultadoSinClavesNuevas.status === 0, 'un payload v2 sin las claves rutina/config debe montar rutina:null y config.labsOcultos:false, sin lanzar (status=' + resultadoSinClavesNuevas.status + '); stderr: ' + (resultadoSinClavesNuevas.stderr || ''));
+
+// =========================================================================
+// 19. Adendum R10 punto 7: id de cliente anticolisión -- con Date.now
+//     CONGELADO (stub), crear 3 clientes en el "mismo milisegundo" debe
+//     producir 3 ids DISTINTOS, y clientes() debe listarlos en el mismo
+//     orden en que se crearon (cierra el flake de la asercion número 160
+//     de este selfcheck, documentado en T-048).
+// =========================================================================
+var scriptIdAnticolision = [
+  'globalThis.window = globalThis;',
+  'globalThis.localStorage = {',
+  '  _d: {},',
+  '  getItem: function (k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },',
+  '  setItem: function (k, v) { this._d[k] = String(v); },',
+  '  removeItem: function (k) { delete this._d[k]; }',
+  '};',
+  'require(' + JSON.stringify(TESTDOM_PATH) + ');',
+  'require(' + JSON.stringify(DATA_PATH) + ');',
+  'require(' + JSON.stringify(ALMACEN_PATH) + ');',
+  'var TS_CONGELADO = Date.now();',
+  'Date.now = function () { return TS_CONGELADO; };',
+  'var idUno = Herzon.Almacen.crearCliente({ nombre: "Congelado Uno" }).id;',
+  'var idDos = Herzon.Almacen.crearCliente({ nombre: "Congelado Dos" }).id;',
+  'var idTres = Herzon.Almacen.crearCliente({ nombre: "Congelado Tres" }).id;',
+  'if (idUno === idDos || idDos === idTres || idUno === idTres) { process.exit(2); }',
+  'var lista = Herzon.Almacen.clientes();',
+  'if (lista.length !== 3) { process.exit(3); }',
+  'if (lista[0].id !== idUno || lista[1].id !== idDos || lista[2].id !== idTres) { process.exit(4); }',
+  'if (lista[0].nombre !== "Congelado Uno" || lista[1].nombre !== "Congelado Dos" || lista[2].nombre !== "Congelado Tres") { process.exit(5); }',
+  'process.exit(0);'
+].join('\n');
+var resultadoIdAnticolision = childProcess.spawnSync(process.execPath, ['-e', scriptIdAnticolision], { encoding: 'utf8' });
+afirmar(resultadoIdAnticolision.status === 0, 'con Date.now congelado, 3 clientes creados en el mismo milisegundo deben tener ids distintos y ordenar en el mismo orden en que se crearon (status=' + resultadoIdAnticolision.status + '); stderr: ' + (resultadoIdAnticolision.stderr || ''));
+
+// ---------------------------------------------------------------------
+// 20. S-02 (Adendum R10, T-052): cableado de header y selector con
+//     bloqueado()===true -- selector limitado a 2 opciones (Demo + "Mis
+//     datos (con contraseña)…", value __bloqueado__), SIN "+ Nuevo
+//     cliente…", y el botón #hz-btn-modo despacha
+//     herzon:desbloqueo-solicitado en vez de activarReal.
+// ---------------------------------------------------------------------
+function crearMockSeguridad(opciones) {
+  opciones = opciones || {};
+  var llamadasCifrar = [];
+  var activaValor = opciones.activaInicial === true;
+  return {
+    llamadasCifrar: llamadasCifrar,
+    activa: function () { return activaValor; },
+    fijarActiva: function (v) { activaValor = v; },
+    desbloquear: function (contrasena) {
+      var resolver = opciones.resolverDesbloquear || function () { return null; };
+      return Promise.resolve(resolver(contrasena));
+    },
+    cifrarYPersistir: function (payload) {
+      llamadasCifrar.push(payload);
+      return Promise.resolve(true);
+    },
+    bloquear: function () { activaValor = false; }
+  };
+}
+
+globalThis.localStorage = crearLocalStorageMock();
+var mockSeguridadBloqueo = crearMockSeguridad({ activaInicial: true });
+Herzon.Seguridad = mockSeguridadBloqueo;
+Almacen.cargar(); // re-arranque simulado: ahora con Seguridad activa
+afirmar(Almacen.bloqueado() === true, 'con Herzon.Seguridad.activa()===true, cargar() debe dejar bloqueado()===true');
+afirmar(Almacen.modo() === 'demo', 'en bloqueado, el modo montado debe ser demo funcional');
+
+var fixtureBloqueado = crearDocumentoConHeader(true, true);
+var handleBloqueado = Almacen.initUI(fixtureBloqueado.doc);
+afirmar(handleBloqueado !== null, 'initUI debe seguir funcionando con bloqueado()===true');
+var opcionesBloqueado = fixtureBloqueado.selector.consultarTodo('option');
+afirmar(opcionesBloqueado.length === 2, 'en bloqueado, el selector debe traer EXACTAMENTE 2 options (Demo + Mis datos)');
+afirmar(opcionesBloqueado[0].getAttribute('value') === '__demo__' && opcionesBloqueado[0].hasAttribute('selected') === true, 'en bloqueado, la primera option debe ser Demo, seleccionada');
+afirmar(opcionesBloqueado[1].getAttribute('value') === '__bloqueado__' && opcionesBloqueado[1].textContent === 'Mis datos (con contraseña)…', 'en bloqueado, la segunda option debe ser "Mis datos (con contraseña)…" con value="__bloqueado__"');
+afirmar(opcionesBloqueado.some(function (o) { return o.getAttribute('value') === '__nuevo__'; }) === false, 'en bloqueado, "+ Nuevo cliente…" NO debe ofrecerse (crear escribiría sobre el sobre cifrado)');
+
+eventosCapturados.length = 0;
+fixtureBloqueado.boton.despachar('click');
+afirmar(Almacen.modo() === 'demo' && Almacen.bloqueado() === true, 'click en #hz-btn-modo en bloqueado NO debe activar un real: el estado sigue bloqueado/demo');
+afirmar(eventosDeTipo('herzon:desbloqueo-solicitado').length === 1, 'click en #hz-btn-modo en bloqueado debe despachar herzon:desbloqueo-solicitado');
+afirmar(eventosDeTipo('herzon:cliente-nuevo-solicitado').length === 0, 'en bloqueado, el botón NO debe despachar herzon:cliente-nuevo-solicitado (ese es el flujo de alta, no el de desbloqueo)');
+
+eventosCapturados.length = 0;
+fixtureBloqueado.selector.value = '__bloqueado__';
+fixtureBloqueado.selector.despachar('change');
+afirmar(eventosDeTipo('herzon:desbloqueo-solicitado').length === 1, 'elegir "Mis datos (con contraseña)…" en el selector debe despachar herzon:desbloqueo-solicitado');
+afirmar(fixtureBloqueado.selector.value === '__demo__', 'tras elegir "Mis datos (con contraseña)…", el selector debe restaurar la selección Demo (el estado no cambió)');
+
 // ---------------------------------------------------------------------
 // 13. Cero innerHTML, cero red, cero emojis, cero hexes (no negociables de
 //     plan.md): este módulo es solo datos/UI mínima del header, no debería
@@ -807,7 +1063,14 @@ var PALABRAS_SIN_ACENTO_PROHIBIDAS = [
   'sincrona', 'logica', 'pagina', 'aqui', 'tambien', 'parametro',
   'construccion', 'publicacion', 'confirmacion', 'cronologicamente',
   'mutacion', 'formula', 'diseno', 'dialogos', 'unica', 'unico', 'ultima',
-  'ultimo', 'anios', 'estan', 'clasico', 'clasica', 'aceptacion'
+  'ultimo', 'anios', 'estan', 'clasico', 'clasica', 'aceptacion',
+  // R10 (Adendum R10, T-052): vocabulario nuevo del módulo. "contrasena"
+  // queda FUERA a propósito: es el nombre de PARÁMETRO que usa, literal,
+  // el contrato S-01 (activar/desactivar/cambiar/desbloquear(contrasena)) --
+  // identificador, no prosa (mismo precedente que "catalogo"/"boton").
+  'asincrono', 'asincrona', 'anticolision', 'colision',
+  'atomica', 'atomico', 'genericamente',
+  'genero', 'monotona', 'monotono', 'exito'
 ];
 for (var pa = 0; pa < PALABRAS_SIN_ACENTO_PROHIBIDAS.length; pa++) {
   var palabra = PALABRAS_SIN_ACENTO_PROHIBIDAS[pa];
@@ -815,6 +1078,114 @@ for (var pa = 0; pa < PALABRAS_SIN_ACENTO_PROHIBIDAS.length; pa++) {
   afirmar(!regexPalabra.test(fuenteAlmacen), 'build/almacen.js contiene la palabra sin acento "' + palabra + '": revisar y corregir a español con acentos/eñe');
 }
 
-// ---------------------------------------------------------------------
-console.log('checks ejecutados: ' + contador);
-process.exit(0);
+// =========================================================================
+// 21. S-02 (Adendum R10, T-052): boot bloqueado + desbloquearYMontar +
+//     embudo único de escritura, con mock de Herzon.Seguridad contra el
+//     CONTRATO S-01 (activa/desbloquear/cifrarYPersistir) -- T-050 corre
+//     en paralelo, así que este selfcheck NUNCA importa build/seguridad.js
+//     real. Cierra la porción asíncrona del criterio de aceptación
+//     ("ciclo completo con mock de Seguridad").
+// =========================================================================
+(async function () {
+  Almacen.borrarTodo();
+  var localStorageBloqueo = crearLocalStorageMock();
+  globalThis.localStorage = localStorageBloqueo;
+
+  var payloadDesbloqueado = {
+    version: 2,
+    activoId: 'c-desbloqueado-1',
+    clientes: {
+      'c-desbloqueado-1': {
+        perfil: { nombre: 'Cliente Desbloqueado', sexo: 'masculino', edad: 45, talla_cm: 175, pesoInicial_kg: 80, pesoActual_kg: 80, imcInicial: 26.1, imcActual: 26.1, objetivo: 'Recomposición', actividad: 'moderado', diagnosticos: [], alergias: [], restricciones: [], gastoEnergetico: { tmb_kcal: 1700, get_kcal: 2400 }, inicio: '2026-01-01' },
+        series: { semanas: [], fechas: [], peso_kg: [], grasa_pct: [], musculo_kg: [], cintura_cm: [], adherenciaDieta_pct: [], adherenciaDiaria: [] },
+        labs: { cortes: [], marcadores: [] },
+        plicometria: { unidad: 'mm', cortes: [], sitios: [], sumaPliegues_mm: [] },
+        suplementos: [],
+        plan: null,
+        rutina: null,
+        config: { labsOcultos: false },
+        creado: '2026-01-01'
+      }
+    }
+  };
+  var mockSeg = crearMockSeguridad({
+    activaInicial: true,
+    resolverDesbloquear: function (contrasena) {
+      return contrasena === 'clave-correcta' ? payloadDesbloqueado : null;
+    }
+  });
+  Herzon.Seguridad = mockSeg;
+  Almacen.cargar();
+  afirmar(Almacen.bloqueado() === true, 'boot con Seguridad.activa()===true debe dejar bloqueado()===true');
+  afirmar(Almacen.modo() === 'demo', 'boot bloqueado debe montar la demo funcional');
+  afirmar(Almacen.clientes().length === 0, 'boot bloqueado debe dejar clientes() vacío (datos ilegibles sin desbloquear)');
+
+  // EMBUDO, rama 2: activa + SIN clave de sesión (aún bloqueado) => false,
+  // NO escribe (crearCliente() no depende del modo para intentar
+  // persistir -- el embudo cierra la rama por construcción).
+  var snapshotAntesDeBloqueado = localStorageBloqueo.getItem('rinde.datos.v1');
+  Almacen.crearCliente({ nombre: 'Intento Mientras Bloqueado' });
+  afirmar(localStorageBloqueo.getItem('rinde.datos.v1') === snapshotAntesDeBloqueado, 'EMBUDO rama "activa+sin clave": ninguna escritura debe alcanzar localStorage mientras bloqueado()===true');
+  afirmar(mockSeg.llamadasCifrar.length === 0, 'EMBUDO rama "activa+sin clave": NO debe delegar a Seguridad.cifrarYPersistir (no hay clave de sesión)');
+  Almacen.borrarTodo();
+  Almacen.cargar(); // vuelve a arrancar bloqueado (borrarTodo no desbloquea)
+  afirmar(Almacen.bloqueado() === true, 'sanity: tras el intento bloqueado, sigue bloqueado');
+
+  // Contraseña incorrecta: SIN tocar el estado.
+  eventosCapturados.length = 0;
+  var resultadoIncorrecto = await Almacen.desbloquearYMontar('clave-mala');
+  afirmar(resultadoIncorrecto.ok === false && resultadoIncorrecto.error === 'Contraseña incorrecta. Vuelve a intentarlo.', 'desbloquearYMontar con contraseña incorrecta debe devolver {ok:false,error} con el texto exacto');
+  afirmar(Almacen.bloqueado() === true, 'una contraseña incorrecta NO debe levantar el bloqueo');
+  afirmar(Almacen.modo() === 'demo', 'una contraseña incorrecta debe dejar el modo intacto (demo)');
+  afirmar(eventosCapturados.length === 0, 'una contraseña incorrecta NO debe emitir ningún evento (el estado no se tocó)');
+
+  // Contraseña correcta: orden de eventos EXACTO (clientes-actualizados ->
+  // cliente-cambiado -> modo-cambiado).
+  eventosCapturados.length = 0;
+  var resultadoCorrecto = await Almacen.desbloquearYMontar('clave-correcta');
+  afirmar(resultadoCorrecto.ok === true && resultadoCorrecto.error === null, 'desbloquearYMontar con contraseña correcta debe devolver {ok:true,error:null}');
+  afirmar(Almacen.bloqueado() === false, 'desbloquearYMontar exitoso debe levantar el bloqueo');
+  afirmar(Almacen.modo() === 'real', 'desbloquearYMontar exitoso con un cliente en el payload debe montar modo "real"');
+  afirmar(globalThis.HERZON_DATA.paciente.nombre === 'Cliente Desbloqueado', 'el cliente del payload descifrado debe quedar montado en HERZON_DATA');
+  afirmar(eventosCapturados.length === 3, 'desbloquearYMontar exitoso debe emitir EXACTAMENTE 3 eventos');
+  afirmar(eventosCapturados[0].type === 'herzon:clientes-actualizados', 'orden de eventos 1/3: herzon:clientes-actualizados');
+  afirmar(eventosCapturados[1].type === 'herzon:cliente-cambiado' && eventosCapturados[1].detail.id === 'c-desbloqueado-1', 'orden de eventos 2/3: herzon:cliente-cambiado con el id del cliente montado');
+  afirmar(eventosCapturados[2].type === 'herzon:modo-cambiado' && eventosCapturados[2].detail.modo === 'real' && eventosCapturados[2].detail.clienteId === 'c-desbloqueado-1', 'orden de eventos 3/3: herzon:modo-cambiado {modo:"real",clienteId}');
+
+  // EMBUDO, rama 1: activa + CON clave de sesión (ya desbloqueado) =>
+  // delega a Seguridad.cifrarYPersistir, true optimista, y JAMÁS escribe
+  // texto plano en localStorage.
+  var llamadasCifrarAntes = mockSeg.llamadasCifrar.length;
+  var okConfigCifrado = Almacen.actualizarConfig({ labsOcultos: true });
+  afirmar(okConfigCifrado === true, 'EMBUDO rama "activa+con clave": la escritura debe devolver true (optimista)');
+  afirmar(mockSeg.llamadasCifrar.length === llamadasCifrarAntes + 1, 'EMBUDO rama "activa+con clave": debe delegar a Seguridad.cifrarYPersistir');
+  afirmar(localStorageBloqueo.getItem('rinde.datos.v1') === null, 'EMBUDO rama "activa+con clave": jamás debe escribir el payload en claro sobre localStorage (el cifrado lo hace Seguridad, fuera de este mock)');
+  afirmar(mockSeg.llamadasCifrar[mockSeg.llamadasCifrar.length - 1].clientes['c-desbloqueado-1'].config.labsOcultos === true, 'el payload delegado a cifrarYPersistir debe reflejar la mutación recién hecha');
+
+  // T-058 (fix S-02): "Bloquear ahora" -- Almacen.bloquearYVolverADemo()
+  // debe re-bloquear DE VERDAD (a diferencia de volverADemo(), que NO debe
+  // re-bloquear: lo usa también el toggle #hz-btn-modo para previsualizar
+  // demo con la sesión aún desbloqueada).
+  eventosCapturados.length = 0;
+  Almacen.bloquearYVolverADemo();
+  afirmar(Almacen.bloqueado() === true, 'bloquearYVolverADemo() debe dejar bloqueado()===true (mismo bookkeeping que el boot bloqueado)');
+  afirmar(Almacen.modo() === 'demo', 'bloquearYVolverADemo() debe montar la demo funcional');
+  afirmar(Almacen.clientes().length === 0, 'bloquearYVolverADemo() debe vaciar clientes() en memoria (datos reales ya no accesibles sin desbloquear otra vez)');
+  afirmar(globalThis.HERZON_DATA.paciente.nombre !== 'Cliente Desbloqueado', 'bloquearYVolverADemo() no debe dejar el nombre del cliente real montado en HERZON_DATA');
+  afirmar(eventosCapturados.some(function (e) { return e.type === 'herzon:modo-cambiado' && e.detail.modo === 'demo'; }), 'bloquearYVolverADemo() debe emitir herzon:modo-cambiado {modo:"demo"}');
+  afirmar(eventosCapturados.some(function (e) { return e.type === 'herzon:clientes-actualizados'; }), 'bloquearYVolverADemo() debe emitir herzon:clientes-actualizados (para reconstruir el selector a las 2 opciones bloqueadas)');
+
+  // Restaurar el estado del módulo para el resto del proceso: sin
+  // Seguridad, boot normal (tolerancia total, sin flag day).
+  delete Herzon.Seguridad;
+  globalThis.localStorage = mockStorage;
+  Almacen.borrarTodo();
+  Almacen.cargar();
+  afirmar(Almacen.bloqueado() === false, 'sanity final: sin Herzon.Seguridad, cargar() debe dejar bloqueado()===false (tolerancia total, sin flag day)');
+
+  console.log('checks ejecutados: ' + contador);
+  process.exit(0);
+})().catch(function (err) {
+  console.error('ERROR INESPERADO en la sección asíncrona del selfcheck: ' + ((err && err.stack) || err));
+  process.exit(1);
+});

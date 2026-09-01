@@ -29,7 +29,16 @@
 // cuanto se define, así que el boot de vistas ya ve el modo (demo/real) y
 // el cliente activo correctos.
 //
-// Idempotente por construcción: cada corrida lee los ocho fuentes de
+// Adendum R10 (T-055, C-5): orden de inyección canónico y único.
+// INJECT:data pasa a TRES bloques: hz-data, hz-seguridad (build/seguridad.js,
+// T-050, S-01 -- cripto puro, jamás DOM), hz-almacen (T-052) -- en ese orden,
+// porque almacen.js consulta Herzon.Seguridad.activa() de forma síncrona en
+// su cargar(). INJECT:vistas-a pasa a CUATRO bloques: hz-motor, hz-docs,
+// hz-vistas-a, hz-vista-rutina (build/vista_rutina.js, T-053, R-08.2) --
+// vista_rutina.js se registra AL FINAL para que HERZON_DATA, Herzon.Almacen
+// y Herzon.Docs ya existan cuando llama a Herzon.registerView('rutina', ...).
+//
+// Idempotente por construcción: cada corrida lee los diez fuentes de
 // disco desde cero y no conserva estado entre invocaciones, así que dos
 // corridas consecutivas producen el mismo prototype/index.html byte a
 // byte mientras los fuentes no cambien.
@@ -69,22 +78,23 @@ function bloquesScript(lista) {
   return piezas.join('\n');
 }
 
-// Ensambla el documento completo en memoria a partir de los ocho fuentes
+// Ensambla el documento completo en memoria a partir de los diez fuentes
 // en disco (cinco originales de T-006 + motor_recomendacion.js y
-// documentos.js de R5 + almacen.js de R8/R9). Función pura respecto del
-// sistema de archivos: siempre lee, nunca escribe. Permite que
-// build/checks.js la reutilice para verificar idempotencia sin invocar un
-// segundo proceso node.
+// documentos.js de R5 + almacen.js de R8/R9 + seguridad.js y
+// vista_rutina.js de R10). Función pura respecto del sistema de archivos:
+// siempre lee, nunca escribe. Permite que build/checks.js la reutilice
+// para verificar idempotencia sin invocar un segundo proceso node.
 function ensamblar() {
   var shellHtml = leerFuente('shell.html');
 
   var inyecciones = [
     {
-      // Adendum R8 punto 6 (T-042): almacen.js como segundo bloque, después
-      // de data.js -- ver nota arriba.
+      // Adendum R10 (T-055, C-5): hz-seguridad como SEGUNDO bloque (entre
+      // hz-data y hz-almacen) -- ver nota arriba.
       marcador: '<!-- INJECT:data -->',
       bloques: [
         { idBloque: 'hz-data', contenido: leerFuente('data.js') },
+        { idBloque: 'hz-seguridad', contenido: leerFuente('seguridad.js') },
         { idBloque: 'hz-almacen', contenido: leerFuente('almacen.js') }
       ]
     },
@@ -93,14 +103,16 @@ function ensamblar() {
       bloques: [{ idBloque: 'hz-charts', contenido: leerFuente('charts.js') }]
     },
     {
-      // Orden congelado por el task T-024: motor y docs van DESPUÉS de
-      // charts y ANTES de vistas -- se resuelve como tres bloques
-      // consecutivos bajo el mismo marcador de vistas-a (ver nota arriba).
+      // Orden congelado por el task T-024, extendido por el Adendum R10
+      // (T-055, C-5): motor y docs van DESPUÉS de charts y ANTES de
+      // vistas; hz-vista-rutina cierra el marcador como CUARTO bloque --
+      // ver nota arriba.
       marcador: '<!-- INJECT:vistas-a -->',
       bloques: [
         { idBloque: 'hz-motor', contenido: leerFuente('motor_recomendacion.js') },
         { idBloque: 'hz-docs', contenido: leerFuente('documentos.js') },
-        { idBloque: 'hz-vistas-a', contenido: leerFuente('vista_dieta_supl.js') }
+        { idBloque: 'hz-vistas-a', contenido: leerFuente('vista_dieta_supl.js') },
+        { idBloque: 'hz-vista-rutina', contenido: leerFuente('vista_rutina.js') }
       ]
     },
     {

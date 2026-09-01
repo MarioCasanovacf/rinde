@@ -628,7 +628,11 @@ button, input, select { font-family: inherit; }
    (:root base, @media dark, [data-theme="dark"], [data-theme="light"])
    quedan intactos -- esto no los modifica, solo los sobre-escribe en
    tiempo de impresión (Adendum R5 punto 5: "sin tokens de tema oscuro,
-   documento siempre claro para impresión"). */
+   documento siempre claro para impresión").
+   Adendum R10 (R-01.6): el selector maestro gana un segundo :not() para
+   #documento-rutina (compuerta de impresión por documento, ver las reglas
+   justo después de él, más abajo); con el atributo data-imprimir ausente
+   el resultado impreso del plan queda idéntico al de antes de R10. */
 @media print {
   :root {
     --page: #f9f9f7 !important;
@@ -649,7 +653,17 @@ button, input, select { font-family: inherit; }
     --shadow-card: none !important;
   }
 
-  body > *:not(#documento-plan) { display: none !important; }
+  body > *:not(#documento-plan):not(#documento-rutina) { display: none !important; }
+
+  /* Adendum R10 (R-01.6): compuerta de impresión por documento. Con el
+     atributo data-imprimir ausente, el resultado impreso del plan es
+     idéntico al de antes: #documento-rutina queda oculto por la regla de
+     ID de abajo (gana por especificidad sobre .hz-doc-documento{display:
+     block} aunque aparezca antes en la cascada) y #documento-plan sigue
+     siendo el único documento visible. */
+  body[data-imprimir="rutina"] #documento-plan { display: none !important; }
+  #documento-rutina { display: none; }
+  body[data-imprimir="rutina"] #documento-rutina { display: block; }
 
   .hz-doc-documento {
     display: block;
@@ -763,6 +777,90 @@ button, input, select { font-family: inherit; }
   outline: 2px solid var(--series-1);
   outline-offset: 2px;
 }
+
+/* ---------- 12. Adendum R10 (F-01/F-02): sistema de formularios ----------
+   Sistema único de formularios (F-01) y jerarquía de botones (F-02) que
+   consumen alta/editar perfil/captura (vista_metricas.js), el editor de
+   rutina (vista_rutina.js) y las cards de seguridad (vista_metricas.js).
+   Nadie fuera de esta sección define clases hz-form-* ni hz-btn-* (C-1/C-2). */
+
+/* F-01.1 */
+.hz-form-card { width: 100%; max-width: 720px; margin-inline: auto; }
+
+/* F-01.2 -- la regla .hz-form base (sección 6) NO se toca; todo es aditivo
+   por composición (class="hz-form hz-form-columnas"). */
+.hz-form.hz-form-columnas { display: grid; grid-template-columns: 1fr; gap: 14px 20px; max-width: none; }
+@media (min-width: 600px) {
+  .hz-form.hz-form-columnas { grid-template-columns: 1fr 1fr; }
+}
+
+/* F-01.3 */
+.hz-form-ancho { grid-column: 1 / -1; }
+
+/* F-01.4 */
+.hz-form-sub { display: grid; grid-template-columns: 1fr; gap: 14px 20px; margin-top: 12px; }
+@media (min-width: 600px) {
+  .hz-form-sub { grid-template-columns: 1fr 1fr; }
+}
+
+/* F-01.5 */
+.hz-form summary { cursor: pointer; font-size: 0.9rem; font-weight: 600; color: var(--text-secondary); }
+.hz-form summary:hover { color: var(--text-primary); }
+.hz-form summary:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
+/* F-01.6 */
+.hz-form-campo input[aria-invalid="true"], .hz-form-campo select[aria-invalid="true"] { border-color: var(--delta-bad); }
+
+/* F-01.7 */
+.hz-form-campo input[type="number"] { font-variant-numeric: tabular-nums; }
+
+/* F-01.8 */
+.hz-form-error { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--delta-bad); }
+.hz-form-error:empty { display: none; }
+
+/* F-01.9 */
+.hz-form-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
+
+/* F-01.10 */
+.hz-form-pie { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+/* F-01.11 -- AL FINAL de la sección (ganan por orden ante empate 0-2-0);
+   el inline style.display='none' del JS se conserva como cinturón
+   verificado. */
+.hz-form[hidden] { display: none; }
+.hz-form-card[hidden] { display: none; }
+
+/* F-02 -- jerarquía de botones hz-btn-*. Radius 8px (píldora 999px
+   reservada a badge/filtro). Un solo primario por formulario. */
+.hz-btn { appearance: none; border: 1px solid transparent; border-radius: 8px; padding: 8px 18px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+.hz-btn:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.hz-btn:disabled, .hz-btn[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+
+.hz-btn-primario { background: var(--series-1); border-color: var(--series-1); color: var(--surface-1); }
+.hz-btn-primario:hover { filter: brightness(0.94); }
+
+.hz-btn-secundario { background: var(--surface-1); border-color: var(--border); color: var(--text-primary); }
+.hz-btn-secundario:hover { background: var(--page); }
+
+.hz-btn-peligro { background: transparent; border-color: transparent; color: var(--delta-bad); font-size: 0.85rem; padding: 6px 12px; }
+.hz-btn-peligro:hover { border-color: var(--delta-bad); }
+.hz-btn-peligro:focus-visible { outline: 2px solid var(--delta-bad); outline-offset: 2px; }
+.hz-btn-peligro[data-confirmar="true"] { background: var(--delta-bad); border-color: var(--delta-bad); color: var(--surface-1); font-weight: 700; }
+
+/* Targets táctiles (extiende la regla R6 resp-3 sin tocarla, sección 11
+   arriba: ese bloque no incluye .hz-btn). */
+@media (pointer: coarse), (max-width: 640px) {
+  .hz-btn { min-height: 44px; padding: 10px 18px; display: inline-flex; align-items: center; justify-content: center; }
+}
+
+/* ---------- 13. Adendum R10 (R-01): clases hz-rutina- (lectura de la
+   rutina) ---------- */
+.hz-rutina-lista {display:flex;flex-direction:column;gap:10px;margin-top:4px;}
+.hz-rutina-item {display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--page);}
+.hz-rutina-nombre {flex:1 1 200px;min-width:140px;color:var(--text-primary);font-size:0.92rem;white-space:normal;overflow-wrap:break-word;}
+.hz-rutina-dosis {flex:0 0 auto;font-weight:600;color:var(--text-primary);font-variant-numeric:tabular-nums;}
+.hz-rutina-descanso {flex:0 0 auto;color:var(--text-secondary);font-size:0.85rem;}
+.hz-rutina-nota {flex:1 1 100%;color:var(--text-secondary);font-size:0.8rem;}
 </style>
 </head>
 <body>
@@ -786,6 +884,7 @@ button, input, select { font-family: inherit; }
   <button type="button" id="tab-resumen" class="hz-tab" role="tab" aria-selected="true" aria-controls="vista-resumen" tabindex="0">Resumen</button>
   <button type="button" id="tab-perfil" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-perfil" tabindex="-1">Perfil</button>
   <button type="button" id="tab-plan" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-plan" tabindex="-1">Plan de dieta</button>
+  <button type="button" id="tab-rutina" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-rutina" tabindex="-1">Rutina</button>
   <button type="button" id="tab-seguimiento" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-seguimiento" tabindex="-1">Seguimiento</button>
   <button type="button" id="tab-suplementos" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-suplementos" tabindex="-1">Suplementos</button>
 </nav>
@@ -801,6 +900,9 @@ button, input, select { font-family: inherit; }
          .hz-menu-fila del Adendum R4). -->
     <div id="reco-plan" class="hz-card hz-reco-panel"></div>
   </section>
+  <!-- Adendum R10 (T-049, R-01.2): contenedor vacío; build/vista_rutina.js
+       (T-053) lo llena vía JS, mismo patrón que las demás vistas. -->
+  <section id="vista-rutina" class="hz-vista" role="tabpanel" aria-labelledby="tab-rutina" hidden></section>
   <div id="filtro-rango" class="hz-filtros" hidden>
     <span class="hz-filtros-label">Rango de fechas:</span>
     <button type="button" class="hz-filtro-btn" data-weeks="4">4 semanas</button>
@@ -839,7 +941,7 @@ button, input, select { font-family: inherit; }
   G.Herzon = G.Herzon || {};
   var Herzon = G.Herzon;
 
-  var TAB_ORDER = ['resumen', 'perfil', 'plan', 'seguimiento', 'suplementos'];
+  var TAB_ORDER = ['resumen', 'perfil', 'plan', 'rutina', 'seguimiento', 'suplementos'];
   var views = {};
   var activeTab = 'resumen';
   var rangeWeeks = 12;
@@ -1019,6 +1121,13 @@ button, input, select { font-family: inherit; }
      T-023 (build/documentos.js) genera su contenido vía JS con
      Herzon.planActivo() (fallback al plan por defecto). -->
 <div id="documento-plan" class="hz-doc-documento"></div>
+
+<!-- Adendum R10 (T-049, R-01.4): documento imprimible/descargable de la
+     rutina, hermano de #documento-plan; oculto en pantalla (regla base
+     .hz-doc-documento) y en impresión salvo con
+     body[data-imprimir="rutina"] (sección 10 del <style>, punto R-01.6).
+     T-053 (build/vista_rutina.js) lo llena vía JS. -->
+<div id="documento-rutina" class="hz-doc-documento"></div>
 
 <!-- Adendum R8 punto 2 (T-038): registro del service worker GUARDEADO al
      final del body — SOLO si 'serviceWorker' existe en navigator y el

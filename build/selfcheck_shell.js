@@ -99,17 +99,19 @@ assert(/id="hz-modo-datos"[^>]*>Modo demo</.test(html), 'el header tiene el badg
 assert(/id="toggle-tema"/.test(html), 'existe el toggle de tema #toggle-tema');
 
 // ---------------------------------------------------------------
-// 4. Tablist accesible: 5 pestañas
+// 4. Tablist accesible: 6 pestañas (Adendum R10, R-01.1/R-01.3: sexta
+//    pestaña Rutina entre Plan de dieta y Seguimiento)
 // ---------------------------------------------------------------
 assert(/role="tablist"/.test(html), 'existe un contenedor [role="tablist"]');
 var TAB_LABELS = {
   resumen: 'Resumen',
   perfil: 'Perfil',
   plan: 'Plan de dieta',
+  rutina: 'Rutina',
   seguimiento: 'Seguimiento',
   suplementos: 'Suplementos'
 };
-var TAB_ORDER = ['resumen', 'perfil', 'plan', 'seguimiento', 'suplementos'];
+var TAB_ORDER = ['resumen', 'perfil', 'plan', 'rutina', 'seguimiento', 'suplementos'];
 
 TAB_ORDER.forEach(function (id, idx) {
   var re = new RegExp(
@@ -127,7 +129,7 @@ TAB_ORDER.forEach(function (id, idx) {
 });
 
 // ---------------------------------------------------------------
-// 5. Cinco tabpanels
+// 5. Seis tabpanels (Adendum R10, R-01.2)
 // ---------------------------------------------------------------
 TAB_ORDER.forEach(function (id, idx) {
   var re = new RegExp(
@@ -352,12 +354,14 @@ FROZEN_CLASSES.forEach(function (cls) {
 });
 
 // ---------------------------------------------------------------
-// 13. Tipografía: system-ui en body; tabular-nums SOLO en tabla y ticks de eje
+// 13. Tipografía: system-ui en body; tabular-nums en tabla, ticks de eje y
+//     -- desde Adendum R10 -- inputs numéricos de formulario (F-01.7) y
+//     la dosis de la rutina (R-01.5, .hz-rutina-dosis)
 // ---------------------------------------------------------------
 assert(/font-family:\s*system-ui,\s*-apple-system,\s*"Segoe UI",\s*sans-serif;/.test(cssText), 'body usa la pila tipográfica system-ui del contrato');
 
 var tabularOccurrences = cssText.match(/font-variant-numeric:\s*tabular-nums;/g) || [];
-assert(tabularOccurrences.length === 2, 'font-variant-numeric: tabular-nums aparece exactamente 2 veces (tabla + ticks de eje)', 'encontradas=' + tabularOccurrences.length);
+assert(tabularOccurrences.length === 4, 'font-variant-numeric: tabular-nums aparece exactamente 4 veces (tabla + ticks de eje + F-01.7 input[type=number] de formulario + R-01.5 .hz-rutina-dosis)', 'encontradas=' + tabularOccurrences.length);
 
 var tableRuleBlock = extractBlock(cssText, '.hz-table {');
 var axisTickRuleBlock = extractBlock(cssText, '.hz-axis-tick {');
@@ -616,19 +620,38 @@ var R8_CLASSES = ['hz-vacio'];
 // explícitamente autorizadas por el contrato (.hz-grid-pares para LY-04,
 // .hz-selector-cliente para MC-03).
 var R9_CLASSES = ['hz-grid-pares', 'hz-selector-cliente'];
+// Adendum R10 (sección 12/13, T-049): sistema de formularios (F-01),
+// jerarquía de botones (F-02) y clases de lectura de la rutina (R-01.5).
+// Único worker autorizado a definir hz-form-*/hz-btn-*/hz-rutina-*
+// (Adendum R10 punto 1, C-1/C-2).
+var R10_CLASSES = [
+  'hz-form-card', 'hz-form-columnas', 'hz-form-ancho', 'hz-form-sub',
+  'hz-form-error', 'hz-form-acciones', 'hz-form-pie',
+  'hz-btn', 'hz-btn-primario', 'hz-btn-secundario', 'hz-btn-peligro',
+  'hz-rutina-lista', 'hz-rutina-item', 'hz-rutina-nombre', 'hz-rutina-dosis',
+  'hz-rutina-descanso', 'hz-rutina-nota'
+];
 var cssTextSinComentarios = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
 var classSelectorRe = /\.([a-zA-Z][a-zA-Z0-9-]*)/g;
 var classesEnCss = {};
 var cmSel;
 while ((cmSel = classSelectorRe.exec(cssTextSinComentarios))) { classesEnCss[cmSel[1]] = true; }
 var KNOWN_PREEXISTING = {};
-FROZEN_CLASSES.concat(MENU_CLASSES_R4).concat(CHROME_UTILITY_CLASSES).concat(R8_CLASSES).concat(R9_CLASSES).forEach(function (c) { KNOWN_PREEXISTING[c] = true; });
+FROZEN_CLASSES.concat(MENU_CLASSES_R4).concat(CHROME_UTILITY_CLASSES).concat(R8_CLASSES).concat(R9_CLASSES).concat(R10_CLASSES).forEach(function (c) { KNOWN_PREEXISTING[c] = true; });
 Object.keys(classesEnCss).sort().forEach(function (cls) {
   var esConocida = !!KNOWN_PREEXISTING[cls];
   var esRecoODoc = (cls.indexOf('hz-reco-') === 0) || (cls.indexOf('hz-doc-') === 0);
-  assert(esConocida || esRecoODoc, 'la clase .' + cls + ' definida en build/shell.html es previamente conocida (incluye .hz-vacio de R8 y .hz-grid-pares/.hz-selector-cliente de R9) o lleva prefijo hz-reco-/hz-doc- (cero clases nuevas fuera de ese set, Adendum R5+R8+R9)');
+  assert(esConocida || esRecoODoc, 'la clase .' + cls + ' definida en build/shell.html es previamente conocida (incluye .hz-vacio de R8, .hz-grid-pares/.hz-selector-cliente de R9 y hz-form-*/hz-btn-*/hz-rutina-* de R10) o lleva prefijo hz-reco-/hz-doc- (cero clases nuevas fuera de ese set, Adendum R5+R8+R9+R10)');
 });
-assert(Object.keys(classesEnCss).length >= 81, 'el bloque <style> define al menos 81 selectores de clase distintos (frozen + menú R4 + chrome + reco + doc + .hz-vacio de R8 + .hz-grid-pares/.hz-selector-cliente de R9)', 'encontrados=' + Object.keys(classesEnCss).length);
+assert(Object.keys(classesEnCss).length >= 98, 'el bloque <style> define al menos 98 selectores de clase distintos (frozen + menú R4 + chrome + reco + doc + .hz-vacio de R8 + .hz-grid-pares/.hz-selector-cliente de R9 + 17 clases hz-form-*/hz-btn-*/hz-rutina-* de R10)', 'encontrados=' + Object.keys(classesEnCss).length);
+
+// 22.1-bis Prefijos de clase nuevos de R10 autorizados SOLO en shell.html
+// (nadie más define hz-form-*/hz-btn-*/hz-rutina-*, Adendum R10 punto 1).
+R10_CLASSES.forEach(function (cls) {
+  var prefijoOk = (cls.indexOf('hz-form-') === 0) || cls === 'hz-btn' || (cls.indexOf('hz-btn-') === 0) || (cls.indexOf('hz-rutina-') === 0);
+  assert(prefijoOk, 'clase nueva ' + cls + ' lleva uno de los prefijos autorizados por el Adendum R10 (hz-form-/hz-btn-/hz-rutina-)');
+  assert(hasClassSelector(cssText, cls), 'clase nueva .' + cls + ' (Adendum R10) tiene una regla CSS definida en build/shell.html');
+});
 
 // 22.2 Contenedor #reco-plan: dentro de #vista-plan, hz-card + hz-reco-panel, vacío.
 assert(/<div id="reco-plan" class="hz-card hz-reco-panel"><\/div>/.test(html), '#reco-plan existe, vacío, con clases "hz-card hz-reco-panel"');
@@ -664,7 +687,9 @@ assert(/<input type="file" id="hz-doc-input-importar" accept="\.csv,text\/csv">/
 // clase hz-doc-documento, vacío (T-023 lo llena vía JS). Desde el Adendum
 // R8 el ÚLTIMO elemento literal del body es <script id="hz-sw-registro">
 // (registro del service worker, contrato punto 2: "al final del body");
-// #documento-plan sigue siendo el último NODO DE CONTENIDO, justo antes.
+// #documento-plan sigue siendo un NODO DE CONTENIDO, justo antes. Desde el
+// Adendum R10 (R-01.4) #documento-rutina es su hermano, ANTES de
+// #hz-sw-registro.
 var bootScriptCloseIdx = html.indexOf('</script>', bootTagIdx);
 var documentoPlanIdx = html.indexOf('<div id="documento-plan"');
 var bodyCloseIdx = html.indexOf('</body>');
@@ -672,21 +697,45 @@ assert(documentoPlanIdx > -1 && documentoPlanIdx > bootScriptCloseIdx, '#documen
 assert(bodyCloseIdx > -1 && documentoPlanIdx < bodyCloseIdx, '#documento-plan aparece ANTES de </body>');
 var tailDespuesDeDocumento = html.slice(documentoPlanIdx);
 assert(
-  /^<div id="documento-plan" class="hz-doc-documento"><\/div>\s*<!--[\s\S]*?-->\s*<script id="hz-sw-registro">[\s\S]*?<\/script>\s*<\/body>\s*<\/html>\s*$/.test(tailDespuesDeDocumento),
-  '#documento-plan es el último NODO DE CONTENIDO del body (vacío, clase hz-doc-documento); solo <script id="hz-sw-registro"> (Adendum R8) va después, y nada más entre él y </body>'
+  /^<div id="documento-plan" class="hz-doc-documento"><\/div>\s*<!--[\s\S]*?-->\s*<div id="documento-rutina" class="hz-doc-documento"><\/div>\s*<!--[\s\S]*?-->\s*<script id="hz-sw-registro">[\s\S]*?<\/script>\s*<\/body>\s*<\/html>\s*$/.test(tailDespuesDeDocumento),
+  '#documento-plan es seguido por #documento-rutina (hermano, vacío, clase hz-doc-documento, Adendum R10 R-01.4) y luego solo <script id="hz-sw-registro"> (Adendum R8) va después, y nada más entre él y </body>'
 );
+var documentoRutinaIdx = html.indexOf('<div id="documento-rutina"');
+var swRegistroTagIdx = html.indexOf('<script id="hz-sw-registro">');
+assert(documentoRutinaIdx > documentoPlanIdx && documentoRutinaIdx < swRegistroTagIdx, '#documento-rutina aparece DESPUÉS de #documento-plan y ANTES de <script id="hz-sw-registro">');
 
 // 22.5 Bloque @media print: existe, aparece DESPUÉS de los 4 bloques de
-// tokens y contiene la regla que oculta todo menos #documento-plan.
+// tokens y contiene la regla que oculta todo menos #documento-plan y
+// #documento-rutina (Adendum R10, R-01.6: compuerta de impresión por
+// documento vía body[data-imprimir]).
 var idxMediaPrint = html.indexOf('@media print');
 assert(idxMediaPrint > -1 && idxMediaPrint > idxAttrLight, '@media print aparece DESPUÉS de los 4 bloques de tokens (:root base, @media dark, [data-theme=dark], [data-theme=light])');
 
 var printOuterBlock = extractBlock(html, '@media print {');
 assert(printOuterBlock.length > 0, 'el bloque @media print tiene contenido');
 assert(
-  /body\s*>\s*\*:not\(#documento-plan\)\s*\{\s*display:\s*none\s*!important;\s*\}/.test(printOuterBlock),
-  '@media print oculta TODO excepto #documento-plan con "body > *:not(#documento-plan) { display: none !important; }"'
+  /body\s*>\s*\*:not\(#documento-plan\):not\(#documento-rutina\)\s*\{\s*display:\s*none\s*!important;\s*\}/.test(printOuterBlock),
+  '@media print oculta TODO excepto #documento-plan y #documento-rutina con "body > *:not(#documento-plan):not(#documento-rutina) { display: none !important; }" (Adendum R10, R-01.6)'
 );
+assert(
+  /body\[data-imprimir="rutina"\]\s+#documento-plan\s*\{\s*display:\s*none\s*!important;\s*\}/.test(printOuterBlock),
+  '@media print tiene "body[data-imprimir=\\"rutina\\"] #documento-plan { display: none !important; }" (R-01.6: al imprimir la rutina, el plan se oculta)'
+);
+assert(
+  /#documento-rutina\s*\{\s*display:\s*none;\s*\}/.test(printOuterBlock),
+  '@media print tiene "#documento-rutina { display: none; }" (R-01.6: oculto por defecto dentro del bloque de impresión, gana por especificidad de ID sobre .hz-doc-documento{display:block})'
+);
+assert(
+  /body\[data-imprimir="rutina"\]\s+#documento-rutina\s*\{\s*display:\s*block;\s*\}/.test(printOuterBlock),
+  '@media print tiene "body[data-imprimir=\\"rutina\\"] #documento-rutina { display: block; }" (R-01.6: visible solo al imprimir la rutina)'
+);
+// Con el atributo data-imprimir AUSENTE, el resultado impreso del plan
+// debe ser idéntico al de antes de R10: el selector maestro sigue
+// excluyendo #documento-plan (deja verlo) y NO hay ninguna regla
+// "body[data-imprimir=...]" (sin el atributo, ninguna se activa nunca);
+// la única regla que aplica a #documento-rutina sin el atributo es la de
+// ID plana de arriba, que lo mantiene oculto -- se verifica no-regresión
+// simulando el CSS en Node más abajo (sección 25).
 
 var printRootBlock = extractBlock(printOuterBlock, ':root {');
 assert(printRootBlock.length > 0, '@media print tiene un bloque :root { ... } que sobre-escribe tokens para impresión');
@@ -984,6 +1033,118 @@ assert(/color:\s*var\(--text-secondary\);/.test(vacioBlock), '.hz-vacio usa var(
 assert(/text-align:\s*center;/.test(vacioBlock), '.hz-vacio está centrada (text-align: center)');
 var vacioPaddingMatch = /padding:\s*(\d+)px/.exec(vacioBlock);
 assert(vacioPaddingMatch !== null && parseInt(vacioPaddingMatch[1], 10) >= 24, '.hz-vacio tiene padding vertical generoso (>=24px)');
+
+// ---------------------------------------------------------------
+// 25. Adendum R10 (T-049): F-01 (sistema de formularios), F-02
+//     (jerarquía de botones hz-btn-*) y R-01 (sexta pestaña Rutina,
+//     clases hz-rutina-*, #documento-rutina, compuerta de impresión).
+//     .harness/justesse-r10-diseno.md es la fuente única; las reglas se
+//     copian literales del documento de diseño (instrucción del
+//     coordinador para esta tarea).
+// ---------------------------------------------------------------
+
+// 25.1 Existencia del bloque "sección 12" (patrón extractBlock: se ancla
+// en el comentario de cabecera literal y se verifica que aparece DESPUÉS
+// de la sección 11 y ANTES de </style>).
+var idxSeccion11 = cssText.indexOf('---------- 11. Adendum R6');
+var idxSeccion12 = html.indexOf('---------- 12. Adendum R10 (F-01/F-02): sistema de formularios ----------');
+var idxSeccion13 = html.indexOf('---------- 13. Adendum R10 (R-01): clases hz-rutina-');
+var idxStyleEnd = html.indexOf('</style>');
+assert(idxSeccion11 > -1, 'prerrequisito: existe la cabecera de la sección 11 (Adendum R6)');
+assert(idxSeccion12 > -1 && idxSeccion12 > idxSeccion11, 'existe el bloque "sección 12. Adendum R10 (F-01/F-02): sistema de formularios" DESPUÉS de la sección 11');
+assert(idxSeccion13 > -1 && idxSeccion13 > idxSeccion12, 'existe el bloque "sección 13. Adendum R10 (R-01): clases hz-rutina-" DESPUÉS de la sección 12');
+assert(idxStyleEnd > -1 && idxSeccion13 < idxStyleEnd, 'la sección 13 (R-01) aparece ANTES de </style>');
+
+var seccion12Block = html.slice(idxSeccion12, idxSeccion13);
+var seccion13Block = html.slice(idxSeccion13, idxStyleEnd);
+assert(seccion12Block.length > 0, 'el bloque de la sección 12 tiene contenido (patrón extractBlock delimitado por cabeceras consecutivas)');
+assert(seccion13Block.length > 0, 'el bloque de la sección 13 tiene contenido (patrón extractBlock delimitado por cabecera y </style>)');
+
+// 25.2 F-01: las 11 reglas EXACTAS, copiadas literales del contrato.
+var F01_LITERALES = [
+  '.hz-form-card { width: 100%; max-width: 720px; margin-inline: auto; }',
+  '.hz-form.hz-form-columnas { display: grid; grid-template-columns: 1fr; gap: 14px 20px; max-width: none; }',
+  '.hz-form.hz-form-columnas { grid-template-columns: 1fr 1fr; }',
+  '.hz-form-ancho { grid-column: 1 / -1; }',
+  '.hz-form-sub { display: grid; grid-template-columns: 1fr; gap: 14px 20px; margin-top: 12px; }',
+  '.hz-form-sub { grid-template-columns: 1fr 1fr; }',
+  '.hz-form summary { cursor: pointer; font-size: 0.9rem; font-weight: 600; color: var(--text-secondary); }',
+  '.hz-form summary:hover { color: var(--text-primary); }',
+  '.hz-form summary:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }',
+  '.hz-form-campo input[aria-invalid="true"], .hz-form-campo select[aria-invalid="true"] { border-color: var(--delta-bad); }',
+  '.hz-form-campo input[type="number"] { font-variant-numeric: tabular-nums; }',
+  '.hz-form-error { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--delta-bad); }',
+  '.hz-form-error:empty { display: none; }',
+  '.hz-form-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }',
+  '.hz-form-pie { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }',
+  '.hz-form[hidden] { display: none; }',
+  '.hz-form-card[hidden] { display: none; }'
+];
+F01_LITERALES.forEach(function (regla) {
+  assert(seccion12Block.indexOf(regla) !== -1, 'F-01: la sección 12 contiene literal "' + regla + '"');
+});
+// F-01.11 "AL FINAL de la sección": ambas reglas [hidden] aparecen
+// DESPUÉS de las 10 reglas anteriores, y hz-form[hidden] antes que
+// hz-form-card[hidden] (orden del contrato).
+var idxFormHidden = seccion12Block.indexOf('.hz-form[hidden] { display: none; }');
+var idxFormCardHidden = seccion12Block.indexOf('.hz-form-card[hidden] { display: none; }');
+var idxFormPie = seccion12Block.indexOf('.hz-form-pie {');
+assert(idxFormPie > -1 && idxFormHidden > idxFormPie, 'F-01.11: ".hz-form[hidden]" aparece DESPUÉS de ".hz-form-pie" (al final de la sección, no antes)');
+assert(idxFormHidden > -1 && idxFormCardHidden > idxFormHidden, 'F-01.11: ".hz-form[hidden]" antes que ".hz-form-card[hidden]", ambas al final de la sección');
+
+// 25.3 F-02: jerarquía de botones, literal.
+var F02_LITERALES = [
+  '.hz-btn { appearance: none; border: 1px solid transparent; border-radius: 8px; padding: 8px 18px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }',
+  '.hz-btn:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }',
+  '.hz-btn:disabled, .hz-btn[aria-disabled="true"] { opacity: 0.5; cursor: default; }',
+  '.hz-btn-primario { background: var(--series-1); border-color: var(--series-1); color: var(--surface-1); }',
+  '.hz-btn-primario:hover { filter: brightness(0.94); }',
+  '.hz-btn-secundario { background: var(--surface-1); border-color: var(--border); color: var(--text-primary); }',
+  '.hz-btn-secundario:hover { background: var(--page); }',
+  '.hz-btn-peligro { background: transparent; border-color: transparent; color: var(--delta-bad); font-size: 0.85rem; padding: 6px 12px; }',
+  '.hz-btn-peligro:hover { border-color: var(--delta-bad); }',
+  '.hz-btn-peligro:focus-visible { outline: 2px solid var(--delta-bad); outline-offset: 2px; }',
+  '.hz-btn-peligro[data-confirmar="true"] { background: var(--delta-bad); border-color: var(--delta-bad); color: var(--surface-1); font-weight: 700; }'
+];
+F02_LITERALES.forEach(function (regla) {
+  assert(seccion12Block.indexOf(regla) !== -1, 'F-02: la sección 12 contiene literal "' + regla + '"');
+});
+
+var btnCoarseOuter = extractBlock(seccion12Block, '@media (pointer: coarse), (max-width: 640px) {');
+assert(btnCoarseOuter.length > 0, 'F-02: existe un @media (pointer: coarse), (max-width: 640px) { ... } propio de .hz-btn en la sección 12 (patrón extractBlock, extiende resp-3 sin tocarla)');
+assert(
+  btnCoarseOuter.indexOf('.hz-btn { min-height: 44px; padding: 10px 18px; display: inline-flex; align-items: center; justify-content: center; }') !== -1,
+  'F-02: el media de targets táctiles fija min-height:44px, padding:10px 18px y flex centrado en .hz-btn (literal)'
+);
+// La regla resp-3 original (sección 11) sigue intacta y NO incluye .hz-btn.
+var resp3Outer = extractBlock(cssText, '.hz-filtro-btn,\n  .hz-doc-btn,\n  .hz-doc-import-label,\n  .hz-table-toggle {');
+assert(resp3Outer.length > 0, 'prerrequisito: la regla resp-3 original (.hz-filtro-btn/.hz-doc-btn/.hz-doc-import-label/.hz-table-toggle) sigue presente');
+assert(resp3Outer.indexOf('hz-btn') === -1, 'resp-3 (sección 11) NO fue tocada para incluir .hz-btn (F-02 usa su PROPIO media, sin fusionar)');
+
+// 25.4 R-01.5: las 6 clases hz-rutina-*, literales.
+var R01_RUTINA_LITERALES = [
+  '.hz-rutina-lista {display:flex;flex-direction:column;gap:10px;margin-top:4px;}',
+  '.hz-rutina-item {display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--page);}',
+  '.hz-rutina-nombre {flex:1 1 200px;min-width:140px;color:var(--text-primary);font-size:0.92rem;white-space:normal;overflow-wrap:break-word;}',
+  '.hz-rutina-dosis {flex:0 0 auto;font-weight:600;color:var(--text-primary);font-variant-numeric:tabular-nums;}',
+  '.hz-rutina-descanso {flex:0 0 auto;color:var(--text-secondary);font-size:0.85rem;}',
+  '.hz-rutina-nota {flex:1 1 100%;color:var(--text-secondary);font-size:0.8rem;}'
+];
+R01_RUTINA_LITERALES.forEach(function (regla) {
+  assert(seccion13Block.indexOf(regla) !== -1, 'R-01.5: la sección 13 contiene literal "' + regla + '"');
+});
+assert(R01_RUTINA_LITERALES.length === 6, 'prerrequisito: se declaran exactamente 6 reglas hz-rutina- (contrato R-01.5)');
+
+// 25.5 R-01.1/R-01.3: sexta pestaña Rutina entre Plan de dieta y
+// Seguimiento; TAB_ORDER de longitud 6 (ya verificado en las secciones
+// 4/5 arriba, que ahora corren sobre TAB_ORDER con 'rutina' incluida).
+assert(TAB_ORDER.length === 6, 'TAB_ORDER tiene exactamente 6 pestañas (R-01.3)');
+assert(TAB_ORDER.indexOf('rutina') === 3 && TAB_ORDER[2] === 'plan' && TAB_ORDER[4] === 'seguimiento', 'la pestaña "rutina" está entre "plan" y "seguimiento" en TAB_ORDER (R-01.1)');
+assert(/var TAB_ORDER = \['resumen', 'perfil', 'plan', 'rutina', 'seguimiento', 'suplementos'\];/.test(runtimeSrc), 'hz-runtime declara TAB_ORDER literal con "rutina" entre "plan" y "seguimiento"');
+
+// 25.6 R-01.3: filtro-rango sigue exclusivo de Seguimiento (nada más
+// cambia en esa lógica, contrato R-01.3 "nada más cambia").
+assert(/if \(id === 'seguimiento'\) \{ filtroEl\.removeAttribute\('hidden'\); \}/.test(runtimeSrc), 'filtro-rango sigue condicionado exclusivamente a id === "seguimiento" (R-01.3: nada más cambia)');
 
 console.log('checks ejecutados: ' + checks);
 process.exit(0);

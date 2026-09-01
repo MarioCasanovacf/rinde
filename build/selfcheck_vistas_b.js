@@ -140,18 +140,50 @@ function conBusDeEventosAislado(fn) {
   }
 }
 
-// Mock de Herzon.Almacen (R8/R9): registra llamadas y permite configurar
+// R10: thenable SINCRONO (no una Promise nativa -- .then() de una Promise
+// real siempre difiere al microtask queue, y este selfcheck es un script
+// top-level sin async/await). `promesaSincrona` resuelve su callback en el
+// momento exacto en que se llama .then(). `promesaControlada` permite
+// posponer la resolución a un momento elegido por el test (para verificar
+// el estado ocupado ANTES de resolver, p.ej. "Descifrando…"/"Cifrando…").
+function promesaSincrona(valor) {
+  return { then: function (cb) { return promesaSincrona(cb(valor)); } };
+}
+function promesaControlada() {
+  var cb = null, resuelta = false, valorPendiente;
+  var p = {
+    then: function (callback) {
+      cb = callback;
+      if (resuelta) { cb(valorPendiente); }
+      return p;
+    },
+    resolver: function (valor) {
+      resuelta = true;
+      valorPendiente = valor;
+      if (cb) { cb(valor); }
+    }
+  };
+  return p;
+}
+
+// Mock de Herzon.Almacen (R8/R9/R10): registra llamadas y permite configurar
 // resultados. NO reimplementa build/almacen.js (eso ya lo prueba
 // build/selfcheck_almacen.js) -- solo prueba que vista_metricas.js llama a
 // la API correcta con los datos correctos y reacciona a sus eventos.
 function crearAlmacenMock(config) {
   config = config || {};
-  var llamadas = { crearCliente: [], actualizarPerfil: [], agregarMedicion: [], eliminarCliente: [], seleccionarCliente: [] };
+  var llamadas = {
+    crearCliente: [], actualizarPerfil: [], agregarMedicion: [], eliminarCliente: [], seleccionarCliente: [],
+    actualizarConfig: [], desbloquearYMontar: [], exportarRespaldo: [], restaurarRespaldo: [], volverADemo: [], borrarTodo: []
+  };
   return {
     _llamadas: llamadas,
     modo: function () { return config.modo || 'real'; },
     clientes: function () { return config.clientes || []; },
     clienteActivo: function () { return (config.clienteActivo !== undefined) ? config.clienteActivo : null; },
+    // S-02: bloqueado puede ser un booleano fijo o una función (para poder
+    // mutar el estado a mitad de un test, p.ej. tras un desbloqueo exitoso).
+    bloqueado: function () { return (typeof config.bloqueado === 'function') ? config.bloqueado() === true : config.bloqueado === true; },
     crearCliente: function (perfil) {
       llamadas.crearCliente.push(perfil);
       return (typeof config.crearCliente === 'function') ? config.crearCliente(perfil) : { ok: true, id: 'c-mock' };
@@ -160,6 +192,10 @@ function crearAlmacenMock(config) {
       llamadas.actualizarPerfil.push(p);
       return (typeof config.actualizarPerfil === 'function') ? config.actualizarPerfil(p) : true;
     },
+    actualizarConfig: function (parcial) {
+      llamadas.actualizarConfig.push(parcial);
+      return (typeof config.actualizarConfig === 'function') ? config.actualizarConfig(parcial) : true;
+    },
     agregarMedicion: function (m) {
       llamadas.agregarMedicion.push(m);
       return (typeof config.agregarMedicion === 'function') ? config.agregarMedicion(m) : { ok: true, errores: [], medicion: m };
@@ -167,6 +203,58 @@ function crearAlmacenMock(config) {
     eliminarCliente: function (id) {
       llamadas.eliminarCliente.push(id);
       return (typeof config.eliminarCliente === 'function') ? config.eliminarCliente(id) : { ok: true, restantes: 0 };
+    },
+    desbloquearYMontar: function (contrasena) {
+      llamadas.desbloquearYMontar.push(contrasena);
+      return (typeof config.desbloquearYMontar === 'function') ? config.desbloquearYMontar(contrasena) : promesaSincrona({ ok: true });
+    },
+    exportarRespaldo: function () {
+      return (typeof config.exportarRespaldo === 'function') ? config.exportarRespaldo() : { ok: true, nombreArchivo: 'rinde-respaldo-mock.json', json: '{}' };
+    },
+    restaurarRespaldo: function (objeto) {
+      llamadas.restaurarRespaldo.push(objeto);
+      return (typeof config.restaurarRespaldo === 'function') ? config.restaurarRespaldo(objeto) : { ok: true, errores: [], clientes: 1 };
+    },
+    volverADemo: function () {
+      llamadas.volverADemo.push(true);
+      if (typeof config.volverADemo === 'function') { config.volverADemo(); }
+    },
+    borrarTodo: function () {
+      llamadas.borrarTodo.push(true);
+      if (typeof config.borrarTodo === 'function') { config.borrarTodo(); }
+    }
+  };
+}
+
+// Mock de Herzon.Seguridad (S-01/S-02/S-03): cripto puro simulado -- NO
+// reimplementa build/seguridad.js (eso lo prueba build/selfcheck_seguridad.js),
+// solo prueba que vista_metricas.js llama a la API correcta y reacciona a
+// sus resultados (éxito/error, estado ocupado, limpieza de contraseñas).
+function crearSeguridadMock(config) {
+  config = config || {};
+  var llamadas = { activar: [], desactivar: [], cambiar: [], desbloquear: [], bloquear: [] };
+  return {
+    _llamadas: llamadas,
+    activa: function () { return (typeof config.activa === 'function') ? config.activa() === true : config.activa === true; },
+    activar: function (contrasena) {
+      llamadas.activar.push(contrasena);
+      return (typeof config.activar === 'function') ? config.activar(contrasena) : promesaSincrona({ ok: true, errores: [] });
+    },
+    desactivar: function (contrasena) {
+      llamadas.desactivar.push(contrasena);
+      return (typeof config.desactivar === 'function') ? config.desactivar(contrasena) : promesaSincrona({ ok: true, errores: [] });
+    },
+    cambiar: function (actual, nueva) {
+      llamadas.cambiar.push({ actual: actual, nueva: nueva });
+      return (typeof config.cambiar === 'function') ? config.cambiar(actual, nueva) : promesaSincrona({ ok: true, errores: [] });
+    },
+    desbloquear: function (contrasena) {
+      llamadas.desbloquear.push(contrasena);
+      return (typeof config.desbloquear === 'function') ? config.desbloquear(contrasena) : promesaSincrona(null);
+    },
+    bloquear: function () {
+      llamadas.bloquear.push(true);
+      if (typeof config.bloquear === 'function') { config.bloquear(); }
     }
   };
 }
@@ -389,25 +477,51 @@ var formEditarPerfilAusente = recolectarNodos(rootPerfil).filter(function (n) { 
   .filter(function (f) { return f.getAttribute('id') !== 'hz-form-alta-cliente'; });
 afirmar(formEditarPerfilAusente.length === 0, 'sin Almacen (modo no-real), Vista Perfil NO debe montar el formulario de edición de perfil');
 
-// MC-04: formulario de alta -- ids EXACTOS del Adendum R9 punto 6.
+// MC-04 + F-03: formulario de alta -- ids EXACTOS del Adendum R9 punto 6,
+// ahora envuelto en una card centrada (#hz-card-alta-cliente, hz-form-card).
+var cardAltaBase = buscarPorId(rootPerfil, 'hz-card-alta-cliente');
+afirmar(!!cardAltaBase, 'F-03: debe existir #hz-card-alta-cliente');
+afirmar(clasesDe(cardAltaBase).indexOf('hz-card') !== -1 && clasesDe(cardAltaBase).indexOf('hz-form-card') !== -1,
+  'F-03: #hz-card-alta-cliente debe llevar las clases hz-card y hz-form-card (720px, sistema de formularios)');
+afirmar(cardAltaBase.hasAttribute('hidden') && cardAltaBase.style.display === 'none',
+  'F-03.2: la card de alta debe estar oculta por default (hidden + style.display=none, cinturón verificado)');
 var formAltaBase = buscarPorId(rootPerfil, 'hz-form-alta-cliente');
 afirmar(!!formAltaBase, 'MC-04: debe existir #hz-form-alta-cliente');
-afirmar(formAltaBase.hasAttribute('hidden'), 'MC-04: #hz-form-alta-cliente debe estar oculto por default');
+afirmar(formAltaBase.hasAttribute('hidden'), 'MC-04: #hz-form-alta-cliente debe estar oculto por default (togglea junto con la card)');
+afirmar(clasesDe(formAltaBase).indexOf('hz-form') !== -1 && clasesDe(formAltaBase).indexOf('hz-form-columnas') !== -1,
+  'F-03.2: el form de alta debe llevar las clases hz-form y hz-form-columnas');
 ['hz-alta-nombre', 'hz-alta-sexo', 'hz-alta-edad', 'hz-alta-talla', 'hz-alta-peso', 'hz-alta-actividad', 'hz-alta-objetivo',
   'hz-btn-crear-cliente', 'hz-alta-error'].forEach(function (id) {
   afirmar(!!buscarPorId(formAltaBase, id), 'MC-04: el formulario de alta debe traer el id exacto #' + id);
 });
 afirmar(!!buscarPorId(formAltaBase, 'hz-btn-cancelar-alta'),
   'MC-04: con 0 clientes y Almacen ausente (equivalente a demo), el botón Cancelar debe estar presente');
-var tituloAltaBase = recolectarNodos(formAltaBase).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
+// F-03.3: el campo Nombre cae en fila completa (hz-form-ancho).
+var campoNombreAltaBase = buscarPorId(formAltaBase, 'hz-alta-nombre');
+var wrapperNombreAltaBase = campoNombreAltaBase.parentNode;
+afirmar(clasesDe(wrapperNombreAltaBase).indexOf('hz-form-ancho') !== -1,
+  'F-03.3: el campo Nombre del alta debe caer en fila completa (hz-form-ancho)');
+// F-03.5: jerarquía de botones -- Crear cliente primario, Cancelar secundario.
+var botonCrearBase = buscarPorId(formAltaBase, 'hz-btn-crear-cliente');
+afirmar(clasesDe(botonCrearBase).indexOf('hz-btn') !== -1 && clasesDe(botonCrearBase).indexOf('hz-btn-primario') !== -1,
+  'F-02/F-03.5: #hz-btn-crear-cliente debe llevar hz-btn hz-btn-primario');
+var botonCancelarAltaBase = buscarPorId(formAltaBase, 'hz-btn-cancelar-alta');
+afirmar(clasesDe(botonCancelarAltaBase).indexOf('hz-btn') !== -1 && clasesDe(botonCancelarAltaBase).indexOf('hz-btn-secundario') !== -1,
+  'F-02/F-03.5: #hz-btn-cancelar-alta debe llevar hz-btn hz-btn-secundario');
+// F-03.1: título, subtítulo de primer uso y nota de privacidad son hijos de
+// la CARD (ANTES del form), no del form.
+var tituloAltaBase = recolectarNodos(cardAltaBase).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
 afirmar(!!tituloAltaBase && tituloAltaBase.textContent === 'Nuevo cliente', 'MC-04: el título del formulario de alta debe ser "Nuevo cliente"');
-var textosFormAltaBase = textosDe(formAltaBase).join(' ');
-afirmar(textosFormAltaBase.indexOf('Registra a tu primer cliente para empezar a capturar mediciones.') !== -1,
+afirmar(tituloAltaBase.parentNode === cardAltaBase, 'F-03.1: el título de alta debe ser hijo directo de la card, no del form');
+var textosCardAltaBase = textosDe(cardAltaBase).join(' ');
+afirmar(textosCardAltaBase.indexOf('Registra a tu primer cliente para empezar a capturar mediciones.') !== -1,
   'MC-04: con 0 clientes debe aparecer el subtítulo de primer uso exacto');
-afirmar(textosFormAltaBase.indexOf('Los datos de cada cliente se guardan solo en este dispositivo.') !== -1,
+afirmar(textosCardAltaBase.indexOf('Los datos de cada cliente se guardan solo en este dispositivo.') !== -1,
   'MC-04: debe aparecer la nota fija de privacidad exacta');
 var errorAltaBase = buscarPorId(formAltaBase, 'hz-alta-error');
 afirmar(errorAltaBase.style.color === 'var(--delta-bad)', 'MC-04: #hz-alta-error debe usar var(--delta-bad) (patrón T-029)');
+afirmar(clasesDe(errorAltaBase).indexOf('hz-form-error') !== -1 && clasesDe(errorAltaBase).indexOf('hz-form-ancho') !== -1,
+  'F-03.4: #hz-alta-error debe llevar hz-form-error y hz-form-ancho');
 
 // ---------------------------------------------------------------------
 // 5. Vista Seguimiento (baseline: Herzon.Almacen AUSENTE, con el markup
@@ -794,6 +908,9 @@ conBusDeEventosAislado(function (listeners) {
 
   var formAlta = buscarPorId(rootPerfilMC04, 'hz-form-alta-cliente');
   afirmar(formAlta.hasAttribute('hidden'), 'MC-04: el formulario de alta debe seguir oculto al montar (sin solicitud de alta)');
+  var cardAltaMC04 = buscarPorId(rootPerfilMC04, 'hz-card-alta-cliente');
+  afirmar(cardAltaMC04.hasAttribute('hidden') && cardAltaMC04.style.display === 'none',
+    'F-03.2: la card de alta también debe estar oculta al montar (togglea junto con el form)');
   // El formulario de alta se construye COMPLETO (solo oculto con `hidden`)
   // desde el primer montaje: con 1 cliente ya registrado en el mock,
   // clientesCount>=1 y el botón Cancelar debe existir desde ya (MC-04:
@@ -817,7 +934,10 @@ conBusDeEventosAislado(function (listeners) {
   afirmar(almacenMock._llamadas.crearCliente.length === 1, 'MC-04: el submit debe llamar Almacen.crearCliente exactamente una vez');
   afirmar(almacenMock._llamadas.crearCliente[0].nombre === 'Ana', 'MC-04: crearCliente debe recibir el nombre capturado en #hz-alta-nombre');
   afirmar(errorAlta.textContent === resultadoCrear.errores.join(' '), 'MC-04: en fallo, #hz-alta-error debe mostrar el mensaje EXACTO devuelto por Almacen.crearCliente');
-  afirmar(campoNombreAlta.style.borderColor === 'var(--delta-bad)', 'MC-04: en fallo, el campo nombre debe marcarse con var(--delta-bad) (patrón T-029)');
+  // C-6: validación canónica en código nuevo -- SOLO aria-invalid + la
+  // regla CSS F-01.6, sin inline borderColor.
+  afirmar(campoNombreAlta.getAttribute('aria-invalid') === 'true', 'C-6: en fallo, el campo nombre debe marcarse con aria-invalid="true" (sin borderColor inline)');
+  afirmar(campoNombreAlta.style.borderColor !== 'var(--delta-bad)', 'C-6: el campo nombre NO debe usar borderColor inline en código nuevo (solo aria-invalid)');
   afirmar(buscarPorId(rootPerfilMC04, 'hz-form-alta-cliente') === formAltaAbierto,
     'MC-04: un fallo de validación NO debe remontar la vista (el formulario sigue siendo el mismo nodo)');
 
@@ -868,9 +988,25 @@ conBusDeEventosAislado(function () {
 
   var botonEliminar = buscarPorId(rootPerfilMC06, 'hz-btn-eliminar-cliente');
   afirmar(!!botonEliminar, 'MC-06: en modo real con cliente activo, debe existir #hz-btn-eliminar-cliente');
-  afirmar(clasesDe(botonEliminar).indexOf('hz-doc-btn') !== -1, 'MC-06: el botón eliminar debe llevar la clase hz-doc-btn');
+  // F-05.2: el botón cambia SOLO de clases: de hz-doc-btn a hz-btn/hz-btn-peligro.
+  afirmar(clasesDe(botonEliminar).indexOf('hz-doc-btn') === -1, 'F-05.2: el botón eliminar ya NO debe llevar la clase hz-doc-btn');
+  afirmar(clasesDe(botonEliminar).indexOf('hz-btn') !== -1 && clasesDe(botonEliminar).indexOf('hz-btn-peligro') !== -1,
+    'F-05.2: el botón eliminar debe llevar hz-btn hz-btn-peligro');
   afirmar(botonEliminar.textContent === 'Eliminar este cliente', 'MC-06: el texto inicial debe ser exactamente "Eliminar este cliente"');
   afirmar(botonEliminar.getAttribute('data-confirmar') === 'false', 'MC-06: data-confirmar debe iniciar en "false"');
+  // F-05.1/F-05.3: descendiente de .hz-form-pie DENTRO de la card de Editar
+  // perfil, NO hijo directo de rootPerfil (jamás banda de ancho completo).
+  afirmar(rootPerfilMC06.children.indexOf(botonEliminar) === -1,
+    'F-05.1: #hz-btn-eliminar-cliente NO debe ser hijo directo del root de Perfil (jamás banda destructiva de ancho completo)');
+  var piePadreEliminar = botonEliminar.parentNode;
+  afirmar(!!piePadreEliminar && clasesDe(piePadreEliminar).indexOf('hz-form-pie') !== -1,
+    'F-05.1: #hz-btn-eliminar-cliente debe ser descendiente directo de .hz-form-pie');
+  var cardEditarPerfilMC06 = piePadreEliminar.parentNode;
+  afirmar(!!cardEditarPerfilMC06 && clasesDe(cardEditarPerfilMC06).indexOf('hz-form-card') !== -1,
+    'F-05.1: .hz-form-pie del botón eliminar debe vivir dentro de la card de Editar perfil (hz-form-card)');
+  var tituloCardEditarMC06 = recolectarNodos(cardEditarPerfilMC06).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
+  afirmar(!!tituloCardEditarMC06 && tituloCardEditarMC06.textContent === 'Editar perfil',
+    'F-05.1: el pie de eliminación debe estar en la card titulada "Editar perfil"');
 
   botonEliminar.despachar('click', {});
   afirmar(almacenMock._llamadas.eliminarCliente.length === 0, 'MC-06: el PRIMER click NO debe invocar Almacen.eliminarCliente todavía');
@@ -969,6 +1105,11 @@ conBusDeEventosAislado(function () {
   afirmar(textosCaptura.indexOf('Tus datos se guardan solo en este dispositivo.') !== -1,
     'Adendum R8 punto 4/5: la captura debe declarar la nota de privacidad exacta');
 
+  // F-06.1/F-06.2: card hz-form-card, form hz-form-columnas.
+  var cardCaptura = fixtureCap.captura.children[0];
+  afirmar(clasesDe(cardCaptura).indexOf('hz-card') !== -1 && clasesDe(cardCaptura).indexOf('hz-form-card') !== -1,
+    'F-06.1: la card de captura debe llevar hz-card y hz-form-card');
+
   var campoPeso = buscarPorId(fixtureCap.captura, 'hz-cap-peso');
   var campoGrasa = buscarPorId(fixtureCap.captura, 'hz-cap-grasa');
   var campoMusculo = buscarPorId(fixtureCap.captura, 'hz-cap-musculo');
@@ -978,12 +1119,30 @@ conBusDeEventosAislado(function () {
   var formCaptura = campoPeso;
   while (formCaptura && (formCaptura.tagName || '').toLowerCase() !== 'form') { formCaptura = formCaptura.parentNode; }
   afirmar(!!formCaptura, 'R8 punto 5: los campos de captura deben vivir dentro de un <form>');
+  afirmar(clasesDe(formCaptura).indexOf('hz-form-columnas') !== -1, 'F-06.2: el form de captura debe llevar hz-form-columnas');
+
+  // F-06.3: el <details> de plicometría gana hz-form-ancho y los 4 campos
+  // viven en un sub-grid .hz-form-sub, no directo en <details>.
+  var detallesCaptura = recolectarNodos(formCaptura).filter(function (n) { return (n.tagName || '').toLowerCase() === 'details'; })[0];
+  afirmar(!!detallesCaptura && clasesDe(detallesCaptura).indexOf('hz-form-ancho') !== -1,
+    'F-06.3: <details> de plicometría debe llevar hz-form-ancho');
+  var subPlicometria = nodosPorClase(detallesCaptura, 'hz-form-sub')[0];
+  afirmar(!!subPlicometria, 'F-06.3: debe existir un .hz-form-sub dentro de <details> con los 4 campos de plicometría');
+  afirmar(subPlicometria.children.length === 4, 'F-06.3: .hz-form-sub debe contener los 4 campos de plicometría');
+
+  // F-06.5: botón primario dentro de hz-form-acciones.
+  var botonCaptura = recolectarNodos(formCaptura).filter(function (n) { return (n.tagName || '').toLowerCase() === 'button'; })[0];
+  afirmar(clasesDe(botonCaptura).indexOf('hz-btn') !== -1 && clasesDe(botonCaptura).indexOf('hz-btn-primario') !== -1,
+    'F-06.5: el botón "Registrar medición" debe llevar hz-btn hz-btn-primario');
 
   // Caso 1: campos vacíos -- validación bloquea, NO llama agregarMedicion.
   formCaptura.despachar('submit', {});
   afirmar(almacenMock._llamadas.agregarMedicion.length === 0, 'T-029: con campos vacíos, el submit NO debe llamar Almacen.agregarMedicion');
   afirmar(campoPeso.style.borderColor === 'var(--delta-bad)', 'T-029: el campo peso vacío debe marcarse con var(--delta-bad)');
-  var notaValidacionCaptura = recolectarNodos(formCaptura).filter(function (n) { return clasesDe(n).indexOf('hz-nota') !== -1; })[0];
+  // F-06.4: notaValidacion pasa de hz-nota a hz-form-error + hz-form-ancho.
+  var notaValidacionCaptura = nodosPorClase(formCaptura, 'hz-form-error')[0];
+  afirmar(!!notaValidacionCaptura, 'F-06.4: debe existir la nota de validación con clase hz-form-error');
+  afirmar(clasesDe(notaValidacionCaptura).indexOf('hz-form-ancho') !== -1, 'F-06.4: la nota de validación debe llevar hz-form-ancho');
   afirmar(notaValidacionCaptura.textContent.indexOf('No se guardó') !== -1, 'T-029: debe explicar que no se guardó, nunca en silencio');
 
   // Caso 2: campos requeridos válidos, plicometría PARCIAL -- inválido.
@@ -1109,6 +1268,460 @@ conBusDeEventosAislado(function (listeners) {
     'herzon:modo-cambiado: el formulario de captura debe seguir montado (modo real) tras el remontaje');
 
   globalThis.Herzon.Almacen = undefined;
+  globalThis.HERZON_DATA = DATA;
+});
+
+// ---------------------------------------------------------------------
+// 20. S-05: casilla #hz-perfil-labs-ocultos en Editar perfil -- precargada
+// del config vigente; "Guardar cambios" llama actualizarConfig SOLO si el
+// valor de la casilla cambió (nunca si quedó igual, evita un remontaje
+// redundante).
+// ---------------------------------------------------------------------
+conBusDeEventosAislado(function () {
+  var almacenMock = crearAlmacenMock({ modo: 'real', actualizarPerfil: function () { return true; } });
+  globalThis.Herzon.Almacen = almacenMock;
+  var datosS05a = datosClienteVacio();
+  datosS05a.config = { labsOcultos: false };
+  globalThis.HERZON_DATA = datosS05a;
+
+  var rootS05a = contenedorNuevo();
+  Herzon.Views.perfil(rootS05a);
+  var checkboxLabsA = buscarPorId(rootS05a, 'hz-perfil-labs-ocultos');
+  afirmar(!!checkboxLabsA, 'S-05: debe existir #hz-perfil-labs-ocultos en Editar perfil');
+  afirmar(checkboxLabsA.getAttribute('type') === 'checkbox', 'S-05: #hz-perfil-labs-ocultos debe ser type=checkbox');
+  afirmar(checkboxLabsA.checked === false, 'S-05: con config.labsOcultos=false, la casilla debe iniciar SIN marcar');
+  afirmar(clasesDe(checkboxLabsA.parentNode).indexOf('hz-form-ancho') !== -1, 'S-05: la fila de la casilla debe caer en hz-form-ancho');
+
+  var formEditarS05a = checkboxLabsA;
+  while (formEditarS05a && (formEditarS05a.tagName || '').toLowerCase() !== 'form') { formEditarS05a = formEditarS05a.parentNode; }
+  formEditarS05a.despachar('submit', {});
+  afirmar(almacenMock._llamadas.actualizarPerfil.length === 1, 'S-05: "Guardar cambios" siempre debe llamar actualizarPerfil');
+  afirmar(almacenMock._llamadas.actualizarConfig.length === 0, 'S-05: si la casilla NO cambió, actualizarConfig NO debe llamarse');
+
+  globalThis.Herzon.Almacen = undefined;
+  globalThis.HERZON_DATA = DATA;
+});
+
+conBusDeEventosAislado(function () {
+  var almacenMock = crearAlmacenMock({ modo: 'real', actualizarPerfil: function () { return true; } });
+  globalThis.Herzon.Almacen = almacenMock;
+  var datosS05b = datosClienteVacio();
+  datosS05b.config = { labsOcultos: true };
+  globalThis.HERZON_DATA = datosS05b;
+
+  var rootS05b = contenedorNuevo();
+  Herzon.Views.perfil(rootS05b);
+  var checkboxLabsB = buscarPorId(rootS05b, 'hz-perfil-labs-ocultos');
+  afirmar(checkboxLabsB.checked === true, 'S-05: con config.labsOcultos=true, la casilla debe iniciar MARCADA');
+
+  checkboxLabsB.checked = false;
+  var formEditarS05b = checkboxLabsB;
+  while (formEditarS05b && (formEditarS05b.tagName || '').toLowerCase() !== 'form') { formEditarS05b = formEditarS05b.parentNode; }
+  formEditarS05b.despachar('submit', {});
+  afirmar(almacenMock._llamadas.actualizarConfig.length === 1, 'S-05: si la casilla SÍ cambió, actualizarConfig debe llamarse exactamente una vez');
+  afirmar(almacenMock._llamadas.actualizarConfig[0].labsOcultos === false, 'S-05: actualizarConfig debe recibir el valor NUEVO de la casilla');
+
+  globalThis.Herzon.Almacen = undefined;
+  globalThis.HERZON_DATA = DATA;
+});
+
+// ---------------------------------------------------------------------
+// 21. S-05: con labsOcultos=true en modo REAL, la vista Perfil OMITE la
+// card "Laboratorios - estado actual" (decisión clínica, nunca un vacío);
+// en DEMO la card SIEMPRE se monta, sin importar config.labsOcultos.
+// ---------------------------------------------------------------------
+function cardPorTituloEn(raiz, titulo) {
+  return recolectarNodos(raiz).filter(function (n) {
+    return clasesDe(n).indexOf('hz-card') !== -1 &&
+      recolectarNodos(n).some(function (t) { return clasesDe(t).indexOf('hz-card-title') !== -1 && t.textContent === titulo; });
+  })[0];
+}
+conBusDeEventosAislado(function () {
+  var almacenReal = crearAlmacenMock({ modo: 'real' });
+  globalThis.Herzon.Almacen = almacenReal;
+  var datosRealOcultos = datosClienteVacio();
+  datosRealOcultos.config = { labsOcultos: true };
+  globalThis.HERZON_DATA = datosRealOcultos;
+  var rootPerfilOcultoReal = contenedorNuevo();
+  Herzon.Views.perfil(rootPerfilOcultoReal);
+  afirmar(!cardPorTituloEn(rootPerfilOcultoReal, 'Laboratorios - estado actual'),
+    'S-05: en modo real con labsOcultos=true, Perfil NO debe montar la card de laboratorios');
+
+  var almacenDemo = crearAlmacenMock({ modo: 'demo' });
+  globalThis.Herzon.Almacen = almacenDemo;
+  var datosDemoOcultos = datosClienteVacio();
+  datosDemoOcultos.config = { labsOcultos: true };
+  globalThis.HERZON_DATA = datosDemoOcultos;
+  var rootPerfilOcultoDemo = contenedorNuevo();
+  Herzon.Views.perfil(rootPerfilOcultoDemo);
+  afirmar(!!cardPorTituloEn(rootPerfilOcultoDemo, 'Laboratorios - estado actual'),
+    'S-05: en modo demo, la card de laboratorios de Perfil SIEMPRE debe montarse (aunque labsOcultos sea true en los datos)');
+
+  globalThis.Herzon.Almacen = undefined;
+  globalThis.HERZON_DATA = DATA;
+});
+
+// ---------------------------------------------------------------------
+// 22. S-05: mismo comportamiento de omisión en Vista Seguimiento, para la
+// card "Laboratorios en 3 cortes".
+// ---------------------------------------------------------------------
+conBusDeEventosAislado(function () {
+  var almacenReal = crearAlmacenMock({ modo: 'real' });
+  globalThis.Herzon.Almacen = almacenReal;
+  var datosSegRealOcultos = datosClienteVacio();
+  datosSegRealOcultos.config = { labsOcultos: true };
+  globalThis.HERZON_DATA = datosSegRealOcultos;
+  var fixtureSegOcultoReal = contenedorSeguimientoConEstatico();
+  Herzon.Views.seguimiento(fixtureSegOcultoReal.root);
+  afirmar(!cardPorTituloEn(fixtureSegOcultoReal.root, 'Laboratorios en 3 cortes'),
+    'S-05: en modo real con labsOcultos=true, Seguimiento NO debe montar "Laboratorios en 3 cortes"');
+
+  var almacenDemo = crearAlmacenMock({ modo: 'demo' });
+  globalThis.Herzon.Almacen = almacenDemo;
+  var datosSegDemoOcultos = datosClienteVacio();
+  datosSegDemoOcultos.config = { labsOcultos: true };
+  globalThis.HERZON_DATA = datosSegDemoOcultos;
+  var fixtureSegOcultoDemo = contenedorSeguimientoConEstatico();
+  Herzon.Views.seguimiento(fixtureSegOcultoDemo.root);
+  afirmar(!!cardPorTituloEn(fixtureSegOcultoDemo.root, 'Laboratorios en 3 cortes'),
+    'S-05: en modo demo, "Laboratorios en 3 cortes" SIEMPRE debe montarse (aunque labsOcultos sea true en los datos)');
+
+  globalThis.Herzon.Almacen = undefined;
+  globalThis.HERZON_DATA = DATA;
+});
+
+// ---------------------------------------------------------------------
+// 23. S-02: card #hz-card-desbloqueo -- SOLO mientras
+// Almacen.bloqueado()===true, como PRIMERA card (C-3); textos EXACTOS
+// (C-10); estado ocupado "Descifrando…"; error nunca silencioso;
+// contraseña limpiada tras un intento fallido; ruta de recuperación
+// (S-04) presente; el éxito desmonta la card vía el remontaje real.
+// ---------------------------------------------------------------------
+conBusDeEventosAislado(function () {
+  var almacenDesbloqueado = crearAlmacenMock({ modo: 'real', bloqueado: false });
+  globalThis.Herzon.Almacen = almacenDesbloqueado;
+  var rootSinBloqueo = contenedorNuevo();
+  Herzon.Views.perfil(rootSinBloqueo);
+  afirmar(!buscarPorId(rootSinBloqueo, 'hz-card-desbloqueo'), 'S-02: con bloqueado()===false, #hz-card-desbloqueo NO debe montarse');
+  globalThis.Herzon.Almacen = undefined;
+});
+
+conBusDeEventosAislado(function (listeners) {
+  var bloqueadoActual = true;
+  var promesaDesbloqueo = null;
+  var almacenMock = crearAlmacenMock({
+    modo: 'real',
+    bloqueado: function () { return bloqueadoActual; },
+    desbloquearYMontar: function (contrasena) {
+      promesaDesbloqueo = promesaControlada();
+      return promesaDesbloqueo;
+    }
+  });
+  globalThis.Herzon.Almacen = almacenMock;
+
+  var rootBloqueado = contenedorNuevo();
+  Herzon.Views.perfil(rootBloqueado);
+
+  afirmar(rootBloqueado.children[0] === buscarPorId(rootBloqueado, 'hz-card-desbloqueo'),
+    'S-02/C-3: #hz-card-desbloqueo debe ser la PRIMERA card mientras bloqueado()===true');
+  var cardDesbloqueo = buscarPorId(rootBloqueado, 'hz-card-desbloqueo');
+  afirmar(clasesDe(cardDesbloqueo).indexOf('hz-card') !== -1 && clasesDe(cardDesbloqueo).indexOf('hz-form-card') !== -1,
+    'S-02: #hz-card-desbloqueo debe llevar hz-card hz-form-card');
+
+  var tituloDesbloqueo = recolectarNodos(cardDesbloqueo).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
+  afirmar(!!tituloDesbloqueo && tituloDesbloqueo.textContent === 'Tus datos están protegidos', 'C-10: título EXACTO de la card de desbloqueo');
+  var textosDesbloqueo = textosDe(cardDesbloqueo).join(' ');
+  afirmar(textosDesbloqueo.indexOf('La información de tus clientes está cifrada en este dispositivo. Escribe tu contraseña para desbloquearla.') !== -1,
+    'C-10: cuerpo EXACTO de la card de desbloqueo');
+  afirmar(textosDesbloqueo.indexOf('Si olvidaste tu contraseña, no es posible recuperarla. Puedes restaurar un respaldo o borrar todos los datos para empezar de cero.') !== -1,
+    'C-10: pie de recuperación EXACTO');
+
+  var campoPass = buscarPorId(cardDesbloqueo, 'hz-desbloqueo-pass');
+  afirmar(!!campoPass && campoPass.getAttribute('type') === 'password', 'S-02: #hz-desbloqueo-pass debe ser type=password');
+  afirmar(campoPass.getAttribute('autocomplete') === 'current-password', 'S-02: #hz-desbloqueo-pass debe llevar autocomplete=current-password');
+
+  var botonDesbloquear = buscarPorId(cardDesbloqueo, 'hz-btn-desbloquear');
+  afirmar(!!botonDesbloquear && botonDesbloquear.textContent === 'Desbloquear', 'C-10: texto EXACTO del botón "Desbloquear"');
+  afirmar(clasesDe(botonDesbloquear).indexOf('hz-btn') !== -1 && clasesDe(botonDesbloquear).indexOf('hz-btn-primario') !== -1,
+    'F-02: #hz-btn-desbloquear debe llevar hz-btn hz-btn-primario');
+
+  var errorDesbloqueo = buscarPorId(cardDesbloqueo, 'hz-desbloqueo-error');
+  afirmar(!!errorDesbloqueo && clasesDe(errorDesbloqueo).indexOf('hz-form-error') !== -1, 'S-02: #hz-desbloqueo-error debe llevar hz-form-error');
+
+  var botonBorrarTodo = buscarPorId(cardDesbloqueo, 'hz-btn-desbloqueo-borrar-todo');
+  afirmar(!!botonBorrarTodo && botonBorrarTodo.textContent === 'Borrar todos los datos', 'S-02: debe existir el botón "Borrar todos los datos" en el pie');
+
+  // S-04 (ruta de recuperación desde bloqueado): restaurar un respaldo con
+  // la frase EXTRA que advierte que desactiva la contraseña actual.
+  var labelRestaurarBloqueado = buscarPorId(cardDesbloqueo, 'hz-desbloqueo-import-label');
+  var inputRestaurarBloqueado = buscarPorId(cardDesbloqueo, 'hz-desbloqueo-input-restaurar');
+  afirmar(!!labelRestaurarBloqueado && !!inputRestaurarBloqueado, 'S-04: la card de desbloqueo debe ofrecer restaurar un respaldo');
+  function FileReaderStubBloqueado() { this.onload = null; this.onerror = null; this.result = null; }
+  FileReaderStubBloqueado.prototype.readAsText = function (archivo) {
+    this.result = archivo && archivo._contenidoTexto;
+    if (typeof this.onload === 'function') { this.onload({ target: this }); }
+  };
+  globalThis.FileReader = FileReaderStubBloqueado;
+  var respaldoParaBloqueado = { _contenidoTexto: JSON.stringify({ formato: 'rinde-respaldo-1', exportado: '2026-08-01', datos: { version: 2, activoId: null, clientes: { 'c-1': {} } } }) };
+  inputRestaurarBloqueado.files = [respaldoParaBloqueado];
+  inputRestaurarBloqueado.despachar('change');
+  afirmar(textosDe(cardDesbloqueo).join(' ').indexOf('Esto reemplaza los datos cifrados de este dispositivo y desactiva la contraseña actual. Podrás activar una nueva después.') !== -1,
+    'C-10/S-04: la ruta desde bloqueado debe agregar la advertencia EXACTA de que desactiva la contraseña actual');
+  delete globalThis.FileReader;
+
+  // Envía la contraseña: estado ocupado ANTES de que la promesa resuelva.
+  campoPass.value = 'clave-mala';
+  var formDesbloqueo = campoPass;
+  while (formDesbloqueo && (formDesbloqueo.tagName || '').toLowerCase() !== 'form') { formDesbloqueo = formDesbloqueo.parentNode; }
+  formDesbloqueo.despachar('submit', {});
+  afirmar(almacenMock._llamadas.desbloquearYMontar.length === 1 && almacenMock._llamadas.desbloquearYMontar[0] === 'clave-mala',
+    'S-02: el submit debe llamar Almacen.desbloquearYMontar con la contraseña capturada');
+  afirmar(botonDesbloquear.getAttribute('disabled') === 'disabled', 'S-02: durante el descifrado, el botón debe deshabilitarse (estado ocupado)');
+  afirmar(botonDesbloquear.textContent === 'Descifrando…', 'C-10: el botón ocupado debe decir EXACTAMENTE "Descifrando…"');
+  afirmar(campoPass.getAttribute('disabled') === 'disabled', 'S-02: el campo de contraseña también debe deshabilitarse mientras descifra');
+
+  // Resuelve con fallo (contraseña incorrecta): error nunca silencioso +
+  // contraseña limpiada + botón vuelve a su estado normal.
+  promesaDesbloqueo.resolver({ ok: false, error: 'Contraseña incorrecta. Vuelve a intentarlo.' });
+  afirmar(errorDesbloqueo.textContent === 'Contraseña incorrecta. Vuelve a intentarlo.',
+    'C-10: mensaje de error EXACTO tras una contraseña incorrecta (nunca silencioso)');
+  afirmar(botonDesbloquear.getAttribute('disabled') === null, 'S-02: tras el fallo, el botón debe volver a habilitarse');
+  afirmar(botonDesbloquear.textContent === 'Desbloquear', 'S-02: tras el fallo, el texto del botón vuelve a "Desbloquear"');
+  afirmar(campoPass.value === '', 'S-02: tras un intento fallido, el campo de contraseña debe limpiarse');
+
+  // Segundo intento, ahora exitoso: simula la secuencia de eventos que
+  // Almacen dispara en la implementación real (clientes-actualizados ->
+  // cliente-cambiado -> modo-cambiado) bajando bloqueadoActual y
+  // remontando -- la card de desbloqueo debe desaparecer.
+  campoPass.value = 'clave-buena';
+  formDesbloqueo.despachar('submit', {});
+  bloqueadoActual = false;
+  promesaDesbloqueo.resolver({ ok: true });
+  afirmar((listeners['herzon:modo-cambiado'] || []).length === 1, 'S-02: Vista Perfil debe registrar UN listener de herzon:modo-cambiado');
+  listeners['herzon:modo-cambiado'][0]({ type: 'herzon:modo-cambiado', detail: { modo: 'real', clienteId: 'c-x' } });
+  afirmar(!buscarPorId(rootBloqueado, 'hz-card-desbloqueo'), 'S-02: tras un desbloqueo exitoso y el remontaje, #hz-card-desbloqueo debe desaparecer');
+
+  globalThis.Herzon.Almacen = undefined;
+});
+
+// ---------------------------------------------------------------------
+// 24. S-03: card #hz-card-seguridad -- SOLO en modo real Y desbloqueado
+// (ausente en demo, ausente mientras bloqueado); estado SIN protección
+// completo (C-10): checkbox de confirmación habilita el primario,
+// validación nunca silenciosa, estado ocupado "Cifrando…", contraseñas
+// limpiadas tras el resultado (éxito incluido), mensaje de éxito
+// consumo-único.
+// ---------------------------------------------------------------------
+conBusDeEventosAislado(function () {
+  var almacenDemo = crearAlmacenMock({ modo: 'demo' });
+  globalThis.Herzon.Almacen = almacenDemo;
+  var rootDemoSeg = contenedorNuevo();
+  Herzon.Views.perfil(rootDemoSeg);
+  afirmar(!buscarPorId(rootDemoSeg, 'hz-card-seguridad'), 'S-03: en modo demo, #hz-card-seguridad NO debe montarse');
+
+  var almacenBloqueado = crearAlmacenMock({ modo: 'real', bloqueado: true });
+  globalThis.Herzon.Almacen = almacenBloqueado;
+  var rootBloqueadoSeg = contenedorNuevo();
+  Herzon.Views.perfil(rootBloqueadoSeg);
+  afirmar(!buscarPorId(rootBloqueadoSeg, 'hz-card-seguridad'), 'S-03: mientras bloqueado()===true, #hz-card-seguridad NO debe montarse (en su lugar va #hz-card-desbloqueo)');
+
+  globalThis.Herzon.Almacen = undefined;
+});
+
+conBusDeEventosAislado(function () {
+  var promesaActivar = null;
+  var seguridadMock = crearSeguridadMock({
+    activa: false,
+    activar: function (contrasena) {
+      promesaActivar = promesaControlada();
+      return promesaActivar;
+    }
+  });
+  globalThis.Herzon.Seguridad = seguridadMock;
+  var almacenMock = crearAlmacenMock({ modo: 'real', bloqueado: false });
+  globalThis.Herzon.Almacen = almacenMock;
+
+  var rootSeg = contenedorNuevo();
+  Herzon.Views.perfil(rootSeg);
+  var cardSeg = buscarPorId(rootSeg, 'hz-card-seguridad');
+  afirmar(!!cardSeg, 'S-03: en modo real desbloqueado, #hz-card-seguridad debe montarse');
+  afirmar(clasesDe(cardSeg).indexOf('hz-card') !== -1 && clasesDe(cardSeg).indexOf('hz-form-card') !== -1, 'S-03: #hz-card-seguridad debe llevar hz-card hz-form-card');
+  var tituloSeg = recolectarNodos(cardSeg).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
+  afirmar(!!tituloSeg && tituloSeg.textContent === 'Seguridad y respaldo', 'C-10: título EXACTO "Seguridad y respaldo"');
+  afirmar(textosDe(cardSeg).join(' ').indexOf('La contraseña protege todos los clientes guardados en este dispositivo. Los datos se cifran aquí mismo: nadie puede recuperarlos sin la contraseña, ni siquiera tú.') !== -1,
+    'C-10: nota de ámbito EXACTA');
+
+  var botonRespaldoSinProteccion = buscarPorId(cardSeg, 'hz-btn-seg-respaldo');
+  afirmar(!!botonRespaldoSinProteccion, 'S-03.1: debe ofrecerse "Descargar respaldo (.json)" ANTES de activar la protección');
+
+  var campoPass1 = buscarPorId(cardSeg, 'hz-seg-pass-1');
+  var campoPass2 = buscarPorId(cardSeg, 'hz-seg-pass-2');
+  afirmar(campoPass1.getAttribute('minlength') === '8' && campoPass1.getAttribute('autocomplete') === 'new-password',
+    'S-03.2: #hz-seg-pass-1 debe llevar minlength=8 y autocomplete=new-password');
+  var checkboxConfirmo = buscarPorId(cardSeg, 'hz-seg-confirmo');
+  var botonActivar = buscarPorId(cardSeg, 'hz-btn-seg-activar');
+  afirmar(clasesDe(botonActivar).indexOf('hz-btn') !== -1 && clasesDe(botonActivar).indexOf('hz-btn-primario') !== -1,
+    'F-02: #hz-btn-seg-activar debe llevar hz-btn hz-btn-primario');
+  afirmar(botonActivar.getAttribute('disabled') === 'disabled', 'S-03.4: el botón Activar protección debe iniciar deshabilitado hasta marcar la casilla');
+
+  checkboxConfirmo.checked = true;
+  checkboxConfirmo.despachar('change', {});
+  afirmar(botonActivar.getAttribute('disabled') === null, 'S-03.3: al marcar la casilla de confirmación, el botón debe habilitarse');
+
+  var errorSeg = buscarPorId(cardSeg, 'hz-seg-error');
+  var formSeg = campoPass1;
+  while (formSeg && (formSeg.tagName || '').toLowerCase() !== 'form') { formSeg = formSeg.parentNode; }
+
+  formSeg.despachar('submit', {});
+  afirmar(errorSeg.textContent === 'Escribe la contraseña en ambos campos.', 'S-03.4: campos vacíos -- error nunca silencioso');
+  afirmar(seguridadMock._llamadas.activar.length === 0, 'S-03.4: con campos vacíos, Seguridad.activar NO debe llamarse');
+
+  campoPass1.value = '123'; campoPass2.value = '123';
+  formSeg.despachar('submit', {});
+  afirmar(errorSeg.textContent === 'La contraseña debe tener al menos 8 caracteres.', 'S-03.4: contraseña corta -- error nunca silencioso');
+
+  campoPass1.value = 'abcdefgh'; campoPass2.value = 'abcdefgx';
+  formSeg.despachar('submit', {});
+  afirmar(errorSeg.textContent === 'Las contraseñas no coinciden.', 'S-03.4: contraseñas distintas -- error nunca silencioso');
+
+  // Válido: estado ocupado ANTES de resolver, luego fallo (asíncrono).
+  campoPass1.value = 'abcdefgh'; campoPass2.value = 'abcdefgh';
+  formSeg.despachar('submit', {});
+  afirmar(seguridadMock._llamadas.activar.length === 1 && seguridadMock._llamadas.activar[0] === 'abcdefgh',
+    'S-03.4: con datos válidos, debe llamar Seguridad.activar con la contraseña');
+  afirmar(botonActivar.getAttribute('disabled') === 'disabled', 'S-03.4: durante el cifrado, el botón debe deshabilitarse (estado ocupado)');
+  afirmar(botonActivar.textContent === 'Cifrando…', 'C-10: el botón ocupado debe decir EXACTAMENTE "Cifrando…"');
+
+  promesaActivar.resolver({ ok: false, errores: ['No se pudo activar la protección en este dispositivo.'] });
+  afirmar(errorSeg.textContent === 'No se pudo activar la protección en este dispositivo.', 'S-03.4: fallo de activar -- error nunca silencioso');
+  afirmar(botonActivar.getAttribute('disabled') === null, 'S-03.4: tras el fallo, el botón vuelve a habilitarse');
+  afirmar(campoPass1.value === '' && campoPass2.value === '', 'S-03: los campos de contraseña se limpian tras la operación (también en fallo, nunca se persisten)');
+
+  // Reintento exitoso: contraseñas limpiadas tras éxito + mensaje de éxito
+  // consumo-único en el remontaje.
+  campoPass1.value = 'abcdefgh'; campoPass2.value = 'abcdefgh';
+  formSeg.despachar('submit', {});
+  promesaActivar.resolver({ ok: true, errores: [] });
+  afirmar(campoPass1.value === '' && campoPass2.value === '', 'S-03: los campos de contraseña deben limpiarse tras un ÉXITO de activar');
+  var cardSegTrasExito = buscarPorId(rootSeg, 'hz-card-seguridad');
+  var notaExitoSeg = buscarPorId(cardSegTrasExito, 'hz-seg-exito');
+  afirmar(!!notaExitoSeg && notaExitoSeg.textContent === 'Protección activada. Tus datos quedaron cifrados en este dispositivo.',
+    'C-10: tras activar con éxito, el remontaje debe mostrar el mensaje EXACTO de confirmación');
+
+  globalThis.Herzon.Almacen = undefined;
+  globalThis.Herzon.Seguridad = undefined;
+});
+
+// ---------------------------------------------------------------------
+// 25. S-03: estado CON protección (Seguridad.activa()===true) -- bloquear/
+// cambiar/quitar/respaldo; "Bloquear ahora" llama Seguridad.bloquear() +
+// Almacen.volverADemo(); "Quitar protección" con confirmación en dos
+// pasos (F-02); respaldo (S-04) presente en ambos bloques.
+// ---------------------------------------------------------------------
+conBusDeEventosAislado(function () {
+  var seguridadMock = crearSeguridadMock({ activa: true });
+  globalThis.Herzon.Seguridad = seguridadMock;
+  var almacenMock = crearAlmacenMock({ modo: 'real', bloqueado: false });
+  globalThis.Herzon.Almacen = almacenMock;
+
+  var rootProtegido = contenedorNuevo();
+  Herzon.Views.perfil(rootProtegido);
+  var cardProtegido = buscarPorId(rootProtegido, 'hz-card-seguridad');
+  afirmar(!!cardProtegido, 'S-03: con Seguridad.activa()===true, #hz-card-seguridad debe montarse en el estado protegido');
+  afirmar(textosDe(cardProtegido).join(' ').indexOf('Protección activada') !== -1, 'C-10: debe mostrarse la línea de estado "Protección activada"');
+
+  var botonBloquear = buscarPorId(cardProtegido, 'hz-btn-seg-bloquear');
+  afirmar(!!botonBloquear && botonBloquear.textContent === 'Bloquear ahora', 'C-10: texto EXACTO "Bloquear ahora"');
+  afirmar(clasesDe(botonBloquear).indexOf('hz-btn-secundario') !== -1, 'F-02: #hz-btn-seg-bloquear debe ser hz-btn-secundario');
+  botonBloquear.despachar('click', {});
+  afirmar(seguridadMock._llamadas.bloquear.length === 1, 'S-02: "Bloquear ahora" debe llamar Seguridad.bloquear()');
+  afirmar(almacenMock._llamadas.volverADemo.length === 1, 'S-02: "Bloquear ahora" también debe llamar Almacen.volverADemo()');
+
+  ['hz-seg-actual', 'hz-seg-nueva-1', 'hz-seg-nueva-2'].forEach(function (id) {
+    afirmar(!!buscarPorId(cardProtegido, id), 'S-03: debe existir el campo #' + id + ' de "Cambiar contraseña"');
+  });
+  var botonCambiar = buscarPorId(cardProtegido, 'hz-btn-seg-cambiar');
+  afirmar(!!botonCambiar && botonCambiar.textContent === 'Cambiar contraseña' && clasesDe(botonCambiar).indexOf('hz-btn-primario') !== -1,
+    'C-10/F-02: botón "Cambiar contraseña" primario');
+
+  var campoQuitarPass = buscarPorId(cardProtegido, 'hz-seg-quitar-pass');
+  var botonQuitar = buscarPorId(cardProtegido, 'hz-btn-seg-desactivar');
+  afirmar(!!campoQuitarPass && !!botonQuitar && botonQuitar.textContent === 'Quitar contraseña', 'C-10: campo y botón EXACTOS de "Quitar protección"');
+  afirmar(clasesDe(botonQuitar).indexOf('hz-btn-peligro') !== -1, 'F-02: #hz-btn-seg-desactivar debe ser hz-btn-peligro');
+  afirmar(botonQuitar.getAttribute('data-confirmar') === 'false', 'F-02: "Quitar protección" inicia con data-confirmar=false (2 pasos)');
+  botonQuitar.despachar('click', {});
+  afirmar(seguridadMock._llamadas.desactivar.length === 0, 'F-02: el PRIMER click de "Quitar protección" NO debe ejecutar la baja todavía');
+  afirmar(botonQuitar.getAttribute('data-confirmar') === 'true', 'F-02: tras el primer click, data-confirmar pasa a true');
+  afirmar(textosDe(cardProtegido).join(' ').indexOf('Al quitar la contraseña, los datos quedan guardados SIN cifrar en este dispositivo.') !== -1,
+    'C-10: advertencia EXACTA antes de quitar la contraseña');
+
+  afirmar(!!buscarPorId(cardProtegido, 'hz-btn-seg-respaldo'), 'S-04: la sección Respaldo (con protección) debe ofrecer "Descargar respaldo (.json)"');
+  afirmar(textosDe(cardProtegido).join(' ').indexOf('El respaldo se descarga SIN cifrar. Incluye a todos los clientes: guárdalo en un lugar seguro.') !== -1,
+    'C-10: nota de custodia EXACTA del respaldo');
+  afirmar(!!buscarPorId(cardProtegido, 'hz-seg-input-restaurar'), 'S-04: la sección Respaldo debe ofrecer restaurar (input file)');
+
+  globalThis.Herzon.Almacen = undefined;
+  globalThis.Herzon.Seguridad = undefined;
+});
+
+// ---------------------------------------------------------------------
+// 26. S-04: restaurar respaldo desde la card de seguridad (con
+// protección) -- confirmación con conteos REALES (N actuales / M del
+// archivo, C-11), confirmación en dos pasos, y Almacen.restaurarRespaldo
+// recibe el objeto leído del archivo.
+// ---------------------------------------------------------------------
+conBusDeEventosAislado(function () {
+  var seguridadMock = crearSeguridadMock({ activa: true });
+  globalThis.Herzon.Seguridad = seguridadMock;
+  var almacenMock = crearAlmacenMock({
+    modo: 'real', bloqueado: false,
+    clientes: [{ id: 'c-1' }, { id: 'c-2' }]
+  });
+  globalThis.Herzon.Almacen = almacenMock;
+  globalThis.HERZON_DATA = datosClienteVacio();
+
+  var rootS04 = contenedorNuevo();
+  Herzon.Views.perfil(rootS04);
+  var cardSegS04 = buscarPorId(rootS04, 'hz-card-seguridad');
+  var inputRestaurar = buscarPorId(cardSegS04, 'hz-seg-input-restaurar');
+  afirmar(!!inputRestaurar, 'S-04: debe existir #hz-seg-input-restaurar en la card de seguridad');
+
+  function FileReaderStubS04() { this.onload = null; this.onerror = null; this.result = null; }
+  FileReaderStubS04.prototype.readAsText = function (archivo) {
+    this.result = archivo && archivo._contenidoTexto;
+    if (typeof this.onload === 'function') { this.onload({ target: this }); }
+  };
+  globalThis.FileReader = FileReaderStubS04;
+
+  var respaldoValido = {
+    _contenidoTexto: JSON.stringify({ formato: 'rinde-respaldo-1', exportado: '2026-08-01', datos: { version: 2, activoId: 'c-1', clientes: { 'c-1': {}, 'c-2': {}, 'c-3': {} } } })
+  };
+  inputRestaurar.value = 'C:\\fakepath\\respaldo.json';
+  inputRestaurar.files = [respaldoValido];
+  inputRestaurar.despachar('change');
+
+  afirmar(textosDe(cardSegS04).join(' ').indexOf('Restaurar este respaldo reemplaza los 2 clientes actuales de este dispositivo por los 3 clientes del archivo (exportado el 2026-08-01). Esta acción no se puede deshacer.') !== -1,
+    'C-11/S-04: la confirmación debe mostrar los conteos REALES (N actuales / M del archivo) y la fecha exportada');
+
+  var botonRespaldarAntes = recolectarNodos(cardSegS04).filter(function (n) { return (n.tagName || '').toLowerCase() === 'button' && n.textContent === 'Descargar respaldo de lo actual antes de continuar'; })[0];
+  afirmar(!!botonRespaldarAntes, 'S-04: con N>0 clientes actuales, debe ofrecerse "Descargar respaldo de lo actual antes de continuar"');
+
+  var botonConfirmarRestaurar = buscarPorId(cardSegS04, 'hz-btn-seg-restaurar-confirmar');
+  afirmar(!!botonConfirmarRestaurar && botonConfirmarRestaurar.textContent === 'Reemplazar todo y restaurar', 'C-10: texto EXACTO del botón de confirmación');
+  afirmar(clasesDe(botonConfirmarRestaurar).indexOf('hz-btn-peligro') !== -1, 'F-02: el botón de restaurar confirmado debe ser hz-btn-peligro');
+  afirmar(botonConfirmarRestaurar.getAttribute('data-confirmar') === 'false', 'S-04: confirmación en dos pasos -- inicia en false');
+
+  botonConfirmarRestaurar.despachar('click', {});
+  afirmar(almacenMock._llamadas.restaurarRespaldo.length === 0, 'S-04: el PRIMER click no debe restaurar todavía (2 pasos)');
+  afirmar(botonConfirmarRestaurar.getAttribute('data-confirmar') === 'true', 'S-04: tras el primer click, data-confirmar pasa a true');
+
+  botonConfirmarRestaurar.despachar('click', {});
+  afirmar(almacenMock._llamadas.restaurarRespaldo.length === 1, 'S-04: el SEGUNDO click (confirmado) debe llamar Almacen.restaurarRespaldo');
+  afirmar(almacenMock._llamadas.restaurarRespaldo[0].datos.clientes['c-3'] !== undefined, 'S-04: restaurarRespaldo debe recibir el objeto EXACTO leído del archivo');
+
+  delete globalThis.FileReader;
+  globalThis.Herzon.Almacen = undefined;
+  globalThis.Herzon.Seguridad = undefined;
   globalThis.HERZON_DATA = DATA;
 });
 

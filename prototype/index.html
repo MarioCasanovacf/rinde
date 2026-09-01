@@ -628,7 +628,11 @@ button, input, select { font-family: inherit; }
    (:root base, @media dark, [data-theme="dark"], [data-theme="light"])
    quedan intactos -- esto no los modifica, solo los sobre-escribe en
    tiempo de impresión (Adendum R5 punto 5: "sin tokens de tema oscuro,
-   documento siempre claro para impresión"). */
+   documento siempre claro para impresión").
+   Adendum R10 (R-01.6): el selector maestro gana un segundo :not() para
+   #documento-rutina (compuerta de impresión por documento, ver las reglas
+   justo después de él, más abajo); con el atributo data-imprimir ausente
+   el resultado impreso del plan queda idéntico al de antes de R10. */
 @media print {
   :root {
     --page: #f9f9f7 !important;
@@ -649,7 +653,17 @@ button, input, select { font-family: inherit; }
     --shadow-card: none !important;
   }
 
-  body > *:not(#documento-plan) { display: none !important; }
+  body > *:not(#documento-plan):not(#documento-rutina) { display: none !important; }
+
+  /* Adendum R10 (R-01.6): compuerta de impresión por documento. Con el
+     atributo data-imprimir ausente, el resultado impreso del plan es
+     idéntico al de antes: #documento-rutina queda oculto por la regla de
+     ID de abajo (gana por especificidad sobre .hz-doc-documento{display:
+     block} aunque aparezca antes en la cascada) y #documento-plan sigue
+     siendo el único documento visible. */
+  body[data-imprimir="rutina"] #documento-plan { display: none !important; }
+  #documento-rutina { display: none; }
+  body[data-imprimir="rutina"] #documento-rutina { display: block; }
 
   .hz-doc-documento {
     display: block;
@@ -763,6 +777,90 @@ button, input, select { font-family: inherit; }
   outline: 2px solid var(--series-1);
   outline-offset: 2px;
 }
+
+/* ---------- 12. Adendum R10 (F-01/F-02): sistema de formularios ----------
+   Sistema único de formularios (F-01) y jerarquía de botones (F-02) que
+   consumen alta/editar perfil/captura (vista_metricas.js), el editor de
+   rutina (vista_rutina.js) y las cards de seguridad (vista_metricas.js).
+   Nadie fuera de esta sección define clases hz-form-* ni hz-btn-* (C-1/C-2). */
+
+/* F-01.1 */
+.hz-form-card { width: 100%; max-width: 720px; margin-inline: auto; }
+
+/* F-01.2 -- la regla .hz-form base (sección 6) NO se toca; todo es aditivo
+   por composición (class="hz-form hz-form-columnas"). */
+.hz-form.hz-form-columnas { display: grid; grid-template-columns: 1fr; gap: 14px 20px; max-width: none; }
+@media (min-width: 600px) {
+  .hz-form.hz-form-columnas { grid-template-columns: 1fr 1fr; }
+}
+
+/* F-01.3 */
+.hz-form-ancho { grid-column: 1 / -1; }
+
+/* F-01.4 */
+.hz-form-sub { display: grid; grid-template-columns: 1fr; gap: 14px 20px; margin-top: 12px; }
+@media (min-width: 600px) {
+  .hz-form-sub { grid-template-columns: 1fr 1fr; }
+}
+
+/* F-01.5 */
+.hz-form summary { cursor: pointer; font-size: 0.9rem; font-weight: 600; color: var(--text-secondary); }
+.hz-form summary:hover { color: var(--text-primary); }
+.hz-form summary:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+
+/* F-01.6 */
+.hz-form-campo input[aria-invalid="true"], .hz-form-campo select[aria-invalid="true"] { border-color: var(--delta-bad); }
+
+/* F-01.7 */
+.hz-form-campo input[type="number"] { font-variant-numeric: tabular-nums; }
+
+/* F-01.8 */
+.hz-form-error { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--delta-bad); }
+.hz-form-error:empty { display: none; }
+
+/* F-01.9 */
+.hz-form-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
+
+/* F-01.10 */
+.hz-form-pie { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+/* F-01.11 -- AL FINAL de la sección (ganan por orden ante empate 0-2-0);
+   el inline style.display='none' del JS se conserva como cinturón
+   verificado. */
+.hz-form[hidden] { display: none; }
+.hz-form-card[hidden] { display: none; }
+
+/* F-02 -- jerarquía de botones hz-btn-*. Radius 8px (píldora 999px
+   reservada a badge/filtro). Un solo primario por formulario. */
+.hz-btn { appearance: none; border: 1px solid transparent; border-radius: 8px; padding: 8px 18px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+.hz-btn:focus-visible { outline: 2px solid var(--series-1); outline-offset: 2px; }
+.hz-btn:disabled, .hz-btn[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+
+.hz-btn-primario { background: var(--series-1); border-color: var(--series-1); color: var(--surface-1); }
+.hz-btn-primario:hover { filter: brightness(0.94); }
+
+.hz-btn-secundario { background: var(--surface-1); border-color: var(--border); color: var(--text-primary); }
+.hz-btn-secundario:hover { background: var(--page); }
+
+.hz-btn-peligro { background: transparent; border-color: transparent; color: var(--delta-bad); font-size: 0.85rem; padding: 6px 12px; }
+.hz-btn-peligro:hover { border-color: var(--delta-bad); }
+.hz-btn-peligro:focus-visible { outline: 2px solid var(--delta-bad); outline-offset: 2px; }
+.hz-btn-peligro[data-confirmar="true"] { background: var(--delta-bad); border-color: var(--delta-bad); color: var(--surface-1); font-weight: 700; }
+
+/* Targets táctiles (extiende la regla R6 resp-3 sin tocarla, sección 11
+   arriba: ese bloque no incluye .hz-btn). */
+@media (pointer: coarse), (max-width: 640px) {
+  .hz-btn { min-height: 44px; padding: 10px 18px; display: inline-flex; align-items: center; justify-content: center; }
+}
+
+/* ---------- 13. Adendum R10 (R-01): clases hz-rutina- (lectura de la
+   rutina) ---------- */
+.hz-rutina-lista {display:flex;flex-direction:column;gap:10px;margin-top:4px;}
+.hz-rutina-item {display:flex;flex-wrap:wrap;align-items:baseline;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--page);}
+.hz-rutina-nombre {flex:1 1 200px;min-width:140px;color:var(--text-primary);font-size:0.92rem;white-space:normal;overflow-wrap:break-word;}
+.hz-rutina-dosis {flex:0 0 auto;font-weight:600;color:var(--text-primary);font-variant-numeric:tabular-nums;}
+.hz-rutina-descanso {flex:0 0 auto;color:var(--text-secondary);font-size:0.85rem;}
+.hz-rutina-nota {flex:1 1 100%;color:var(--text-secondary);font-size:0.8rem;}
 </style>
 </head>
 <body>
@@ -786,6 +884,7 @@ button, input, select { font-family: inherit; }
   <button type="button" id="tab-resumen" class="hz-tab" role="tab" aria-selected="true" aria-controls="vista-resumen" tabindex="0">Resumen</button>
   <button type="button" id="tab-perfil" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-perfil" tabindex="-1">Perfil</button>
   <button type="button" id="tab-plan" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-plan" tabindex="-1">Plan de dieta</button>
+  <button type="button" id="tab-rutina" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-rutina" tabindex="-1">Rutina</button>
   <button type="button" id="tab-seguimiento" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-seguimiento" tabindex="-1">Seguimiento</button>
   <button type="button" id="tab-suplementos" class="hz-tab" role="tab" aria-selected="false" aria-controls="vista-suplementos" tabindex="-1">Suplementos</button>
 </nav>
@@ -801,6 +900,9 @@ button, input, select { font-family: inherit; }
          .hz-menu-fila del Adendum R4). -->
     <div id="reco-plan" class="hz-card hz-reco-panel"></div>
   </section>
+  <!-- Adendum R10 (T-049, R-01.2): contenedor vacío; build/vista_rutina.js
+       (T-053) lo llena vía JS, mismo patrón que las demás vistas. -->
+  <section id="vista-rutina" class="hz-vista" role="tabpanel" aria-labelledby="tab-rutina" hidden></section>
   <div id="filtro-rango" class="hz-filtros" hidden>
     <span class="hz-filtros-label">Rango de fechas:</span>
     <button type="button" class="hz-filtro-btn" data-weeks="4">4 semanas</button>
@@ -839,7 +941,7 @@ button, input, select { font-family: inherit; }
   G.Herzon = G.Herzon || {};
   var Herzon = G.Herzon;
 
-  var TAB_ORDER = ['resumen', 'perfil', 'plan', 'seguimiento', 'suplementos'];
+  var TAB_ORDER = ['resumen', 'perfil', 'plan', 'rutina', 'seguimiento', 'suplementos'];
   var views = {};
   var activeTab = 'resumen';
   var rangeWeeks = 12;
@@ -1602,6 +1704,64 @@ button, input, select { font-family: inherit; }
   ];
 
   // ---------------------------------------------------------------------
+  // Rutina de entrenamiento (R10, contrato R-04): rutina demo de Daniela,
+  // 4 días, tupla literal por ejercicio (nombre, series, repeticiones,
+  // descanso_s, notas), copiada del documento sin parafrasear. `actualizado`
+  // coincide con el inicio del seguimiento sintético (fechasSemanales[0]).
+  // Es dato de la DEMO: build/almacen.js jamás escribe este slot para un
+  // cliente real a partir de esta constante (R-02, MC-05).
+  // ---------------------------------------------------------------------
+  var rutina = {
+    actualizado: fechasSemanales[0],
+    dias: [
+      {
+        dia: 1,
+        titulo: 'Tren inferior y core',
+        ejercicios: [
+          { nombre: 'Sentadilla goblet con mancuerna', series: 4, repeticiones: '10-12', descanso_s: 90, notas: 'Bajada controlada en 2 segundos; peso moderado.' },
+          { nombre: 'Peso muerto rumano con mancuernas', series: 3, repeticiones: '10-12', descanso_s: 90, notas: 'Espalda neutra; sentir isquiotibiales.' },
+          { nombre: 'Zancada caminando', series: 3, repeticiones: '10 por pierna', descanso_s: 60, notas: '' },
+          { nombre: 'Elevación de talones de pie', series: 3, repeticiones: '15', descanso_s: 45, notas: '' },
+          { nombre: 'Plancha abdominal', series: 3, repeticiones: '30-45 s', descanso_s: 45, notas: 'Cadera alineada, sin arquear la zona lumbar.' }
+        ]
+      },
+      {
+        dia: 2,
+        titulo: 'Tren superior (empuje y jalón)',
+        ejercicios: [
+          { nombre: 'Press de banca con mancuernas', series: 4, repeticiones: '8-10', descanso_s: 90, notas: '' },
+          { nombre: 'Remo con mancuerna a una mano', series: 3, repeticiones: '10-12 por lado', descanso_s: 75, notas: 'Apoyo en banco; sin girar el tronco.' },
+          { nombre: 'Press militar sentado con mancuernas', series: 3, repeticiones: '10', descanso_s: 75, notas: '' },
+          { nombre: 'Jalón al pecho en polea', series: 3, repeticiones: '10-12', descanso_s: 75, notas: '' },
+          { nombre: 'Curl de bíceps alterno', series: 2, repeticiones: '12', descanso_s: 45, notas: '' },
+          { nombre: 'Extensión de tríceps en polea', series: 2, repeticiones: '12', descanso_s: 45, notas: '' }
+        ]
+      },
+      {
+        dia: 3,
+        titulo: 'Cuerpo completo en circuito',
+        ejercicios: [
+          { nombre: 'Empuje de cadera con barra', series: 3, repeticiones: '12', descanso_s: 60, notas: 'Pausa de 1 segundo arriba.' },
+          { nombre: 'Sentadilla con peso corporal a ritmo', series: 3, repeticiones: '15', descanso_s: 30, notas: '' },
+          { nombre: 'Remo invertido en barra baja', series: 3, repeticiones: '8-10', descanso_s: 60, notas: 'Ajustar la altura de la barra según la fuerza.' },
+          { nombre: 'Caminata del granjero con mancuernas', series: 3, repeticiones: '30 metros', descanso_s: 60, notas: 'Hombros atrás, paso corto.' },
+          { nombre: 'Escaladores', series: 3, repeticiones: '20 por lado', descanso_s: 30, notas: '' }
+        ]
+      },
+      {
+        dia: 4,
+        titulo: 'Acondicionamiento y movilidad',
+        ejercicios: [
+          { nombre: 'Caminata inclinada en caminadora', series: 1, repeticiones: '30 min', descanso_s: null, notas: 'Ritmo que permita hablar con frases cortas.' },
+          { nombre: 'Bicicleta estática en intervalos suaves', series: 10, repeticiones: '1 min rápido / 1 min lento', descanso_s: null, notas: 'Opcional según la fatiga de la semana.' },
+          { nombre: 'Movilidad de cadera y tobillo', series: 1, repeticiones: '10 min', descanso_s: null, notas: '' },
+          { nombre: 'Estiramiento general', series: 1, repeticiones: '10 min', descanso_s: null, notas: '' }
+        ]
+      }
+    ]
+  };
+
+  // ---------------------------------------------------------------------
   // Meta y supuestos.
   // ---------------------------------------------------------------------
   var meta = {
@@ -1660,17 +1820,549 @@ button, input, select { font-family: inherit; }
     planes: planes,
     factoresActividad: factoresActividad,
     suplementos: suplementos,
-    supuestos: supuestos
+    supuestos: supuestos,
+    rutina: rutina
+  };
+})();
+
+</script>
+<script id="hz-seguridad">
+// build/seguridad.js
+// R10 SEGURIDAD (T-050, contrato S-01 de .harness/justesse-r10-diseno.md,
+// sección 2.3): Herzon.Seguridad — módulo de CRIPTO PURO, sin DOM, sin el
+// objeto de datos en memoria del prototipo, sin red. Cifra/descifra el
+// payload v2 completo que vive en la MISMA clave de localStorage
+// `rinde.datos.v1` (dueño de esa clave: build/almacen.js), envolviéndolo
+// en un SOBRE versionado `version:"cifrado-1"`.
+//
+// Separación estricta (C-4 del documento de diseño): seguridad.js NO
+// conoce clientes ni la forma del payload v2 más allá de tratarlo como
+// texto JSON opaco que cifra/descifra; almacen.js NO conoce WebCrypto y
+// solo llama a esta API. Este módulo JAMÁS toca `document` ni el objeto
+// de datos global del runtime, ni monta interfaz.
+//
+// Preámbulo obligatorio (plan.md 3.A): script clásico, IIFE, sin
+// import/export, sin tocar `document` en el nivel superior (aquí ni
+// siquiera existe esa noción: el módulo no usa DOM en absoluto). En los
+// selfchecks de Node se hace `globalThis.crypto = require('crypto').webcrypto`
+// ANTES de requerir este archivo (mismo patrón que documenta el contrato
+// S-01): en el navegador `window.crypto` ya trae `subtle` y
+// `getRandomValues` de forma nativa, incluso bajo `file://` (contexto
+// seguro en Chrome/Firefox/Safari).
+//
+// SOBRE (formato exacto, JSON, contrato S-01):
+// {"version":"cifrado-1","kdf":{"algoritmo":"PBKDF2","sal":"<base64 16 bytes>",
+//  "iteraciones":600000,"hash":"SHA-256"},
+//  "cifrado":{"algoritmo":"AES-GCM","iv":"<base64 12 bytes>","datos":"<base64 ciphertext+tag>"}}
+// El texto plano cifrado es `JSON.stringify` del payload v2 completo
+// `{version:2,activoId,clientes}` en UTF-8. La clave se deriva con
+// PBKDF2-SHA-256 -> AES-GCM 256 bits, SIEMPRE no extraíble.
+// `desbloquear`/`desactivar`/`cambiar` leen SIEMPRE la sal y las
+// iteraciones DEL SOBRE (nunca de una constante): un aumento futuro de
+// `ITERACIONES_MINIMAS` no rompe sobres viejos.
+//
+// INVARIANTE DE IV: `crypto.getRandomValues` genera un IV de 12 bytes
+// FRESCO en cada llamada a `cifrarYPersistir` (reutilizar un IV bajo la
+// misma clave AES-GCM es catastrófico: revela el XOR de los dos textos
+// planos y compromete la autenticación). El selfcheck asierta
+// literalmente `iv1 !== iv2` entre dos escrituras consecutivas.
+//
+// COLA DE ESCRITURA: las escrituras son asíncronas (derivar/cifrar toma
+// tiempo). Se serializan y COALESCEN: como máximo una escritura en vuelo y
+// una pendiente; si llegan más peticiones mientras hay una pendiente,
+// SOLO la última sobrevive (gana la última). La memoria del llamador
+// (almacen.js) es la fuente de verdad: este módulo nunca lee de vuelta lo
+// que va a escribir, solo serializa el `payload` que recibe en cada
+// llamada.
+(function () {
+  'use strict';
+
+  var G = (typeof window !== 'undefined') ? window : globalThis;
+  G.Herzon = G.Herzon || {};
+
+  var CLAVE_ALMACEN = 'rinde.datos.v1';
+  var VERSION_SOBRE = 'cifrado-1';
+  var ITERACIONES_MINIMAS = 600000;
+  var LONGITUD_SAL = 16;
+  var LONGITUD_IV = 12;
+  var BASE64_ALFABETO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+  // -----------------------------------------------------------------------
+  // Estado de sesión (closure del módulo; jamás expuesto). `claveSesion` es
+  // el CryptoKey no extraíble derivado en activar/desbloquear/cambiar;
+  // `salSesion`/`iteracionesSesion` acompañan a esa clave para poder
+  // reconstruir el bloque `kdf` del sobre en cada escritura sin volver a
+  // derivar.
+  // -----------------------------------------------------------------------
+  var claveSesion = null;
+  var salSesion = null;
+  var iteracionesSesion = null;
+
+  // Cola serializada y coalescente de escrituras (ver nota de cabecera).
+  var trabajoEnVuelo = null;
+  var trabajoPendiente = null;
+
+  // -----------------------------------------------------------------------
+  // Base64 propio (bytes <-> texto), sin depender de btoa/atob: idéntico en
+  // Node y en el navegador, sin límites de tamaño de argumento.
+  // -----------------------------------------------------------------------
+  function bytesABase64(bytes) {
+    var resultado = '';
+    var i;
+    for (i = 0; i + 3 <= bytes.length; i += 3) {
+      var b0 = bytes[i];
+      var b1 = bytes[i + 1];
+      var b2 = bytes[i + 2];
+      resultado += BASE64_ALFABETO[b0 >> 2];
+      resultado += BASE64_ALFABETO[((b0 & 3) << 4) | (b1 >> 4)];
+      resultado += BASE64_ALFABETO[((b1 & 15) << 2) | (b2 >> 6)];
+      resultado += BASE64_ALFABETO[b2 & 63];
+    }
+    var restantes = bytes.length - i;
+    if (restantes === 1) {
+      var c0 = bytes[i];
+      resultado += BASE64_ALFABETO[c0 >> 2];
+      resultado += BASE64_ALFABETO[(c0 & 3) << 4];
+      resultado += '==';
+    } else if (restantes === 2) {
+      var d0 = bytes[i];
+      var d1 = bytes[i + 1];
+      resultado += BASE64_ALFABETO[d0 >> 2];
+      resultado += BASE64_ALFABETO[((d0 & 3) << 4) | (d1 >> 4)];
+      resultado += BASE64_ALFABETO[(d1 & 15) << 2];
+      resultado += '=';
+    }
+    return resultado;
+  }
+
+  function base64ABytes(texto) {
+    var cadena = String(texto == null ? '' : texto);
+    var sinPadding = cadena.replace(/=+$/, '');
+    var bytesEsperados = Math.floor((sinPadding.length * 6) / 8);
+    var bytes = new Uint8Array(bytesEsperados);
+    var buffer = 0;
+    var bitsAcumulados = 0;
+    var indiceByte = 0;
+    for (var i = 0; i < sinPadding.length; i++) {
+      var valor = BASE64_ALFABETO.indexOf(sinPadding[i]);
+      if (valor === -1) { continue; }
+      buffer = (buffer << 6) | valor;
+      bitsAcumulados += 6;
+      if (bitsAcumulados >= 8) {
+        bitsAcumulados -= 8;
+        bytes[indiceByte] = (buffer >> bitsAcumulados) & 0xFF;
+        indiceByte += 1;
+      }
+    }
+    return bytes;
+  }
+
+  // -----------------------------------------------------------------------
+  // Acceso a localStorage: TOLERANTE por diseño (mismo patrón que
+  // build/almacen.js, copia propia porque seguridad.js no depende de otros
+  // módulos). El módulo no debe lanzar si `localStorage` no existe.
+  // -----------------------------------------------------------------------
+  function localStorageDisponible() {
+    try {
+      if (typeof G.localStorage === 'undefined' || G.localStorage === null) { return false; }
+      var claveDePrueba = '__rinde_seguridad_prueba__';
+      G.localStorage.setItem(claveDePrueba, '1');
+      G.localStorage.removeItem(claveDePrueba);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function leerCrudo() {
+    try {
+      if (!localStorageDisponible()) { return null; }
+      return G.localStorage.getItem(CLAVE_ALMACEN);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function escribirCrudo(texto) {
+    try {
+      if (!localStorageDisponible()) { return false; }
+      G.localStorage.setItem(CLAVE_ALMACEN, texto);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Sobre cifrado-1: construcción y parseo.
+  // -----------------------------------------------------------------------
+  function construirSobre(salBytes, iteraciones, ivBytes, datosBytes) {
+    return JSON.stringify({
+      version: VERSION_SOBRE,
+      kdf: {
+        algoritmo: 'PBKDF2',
+        sal: bytesABase64(salBytes),
+        iteraciones: iteraciones,
+        hash: 'SHA-256'
+      },
+      cifrado: {
+        algoritmo: 'AES-GCM',
+        iv: bytesABase64(ivBytes),
+        datos: bytesABase64(datosBytes)
+      }
+    });
+  }
+
+  function parsearSobre(crudo) {
+    if (crudo === null || crudo === undefined) { return null; }
+    var objeto;
+    try {
+      objeto = JSON.parse(crudo);
+    } catch (e) {
+      return null;
+    }
+    if (!objeto || typeof objeto !== 'object') { return null; }
+    if (objeto.version !== VERSION_SOBRE) { return null; }
+    if (!objeto.kdf || !objeto.cifrado) { return null; }
+    if (typeof objeto.kdf.sal !== 'string' || typeof objeto.kdf.iteraciones !== 'number') { return null; }
+    if (typeof objeto.cifrado.iv !== 'string' || typeof objeto.cifrado.datos !== 'string') { return null; }
+    return objeto;
+  }
+
+  // -----------------------------------------------------------------------
+  // Primitivas WebCrypto (todas asíncronas, todas leen `G.crypto`: nunca el
+  // identificador suelto `crypto`, para que el patrón `globalThis.crypto = ...`
+  // de los selfchecks y de la app real sea la única fuente).
+  // -----------------------------------------------------------------------
+  function bytesAleatorios(n) {
+    var bytes = new Uint8Array(n);
+    G.crypto.getRandomValues(bytes);
+    return bytes;
+  }
+
+  function derivarClave(contrasena, salBytes, iteraciones) {
+    var codificador = new TextEncoder();
+    return G.crypto.subtle.importKey(
+      'raw',
+      codificador.encode(String(contrasena)),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveKey']
+    ).then(function (materialClave) {
+      return G.crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: salBytes, iterations: iteraciones, hash: 'SHA-256' },
+        materialClave,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      );
+    });
+  }
+
+  function cifrarBytes(clave, ivBytes, textoPlano) {
+    var codificador = new TextEncoder();
+    return G.crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: ivBytes },
+      clave,
+      codificador.encode(textoPlano)
+    ).then(function (bufferCifrado) {
+      return new Uint8Array(bufferCifrado);
+    });
+  }
+
+  function descifrarBytes(clave, ivBytes, datosBytes) {
+    return G.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: ivBytes },
+      clave,
+      datosBytes
+    ).then(function (bufferPlano) {
+      var decodificador = new TextDecoder();
+      return decodificador.decode(bufferPlano);
+    }).catch(function () {
+      return null;
+    });
+  }
+
+  // Descifra un sobre YA PARSEADO con una contrasena candidata, derivando
+  // SIEMPRE desde cero (nunca confía en la clave de sesión cacheada: eso es
+  // lo que hace a `desactivar`/`cambiar` verificaciones reales). Devuelve
+  // null ante CUALQUIER fallo (contrasena incorrecta, sobre manipulado o
+  // JSON inválido son indistinguibles por diseño).
+  function descifrarSobreConContrasena(sobre, contrasena) {
+    var salBytes;
+    var ivBytes;
+    var datosBytes;
+    try {
+      salBytes = base64ABytes(sobre.kdf.sal);
+      ivBytes = base64ABytes(sobre.cifrado.iv);
+      datosBytes = base64ABytes(sobre.cifrado.datos);
+    } catch (e) {
+      return Promise.resolve(null);
+    }
+    var iteraciones = sobre.kdf.iteraciones;
+    return derivarClave(contrasena, salBytes, iteraciones).then(function (clave) {
+      return descifrarBytes(clave, ivBytes, datosBytes).then(function (textoPlano) {
+        if (textoPlano === null) { return null; }
+        var payload;
+        try {
+          payload = JSON.parse(textoPlano);
+        } catch (e) {
+          return null;
+        }
+        return { payload: payload, clave: clave, sal: salBytes, iteraciones: iteraciones };
+      });
+    }).catch(function () {
+      return null;
+    });
+  }
+
+  function limpiarSesion() {
+    claveSesion = null;
+    salSesion = null;
+    iteracionesSesion = null;
+  }
+
+  function fijarSesion(clave, salBytes, iteraciones) {
+    claveSesion = clave;
+    salSesion = salBytes;
+    iteracionesSesion = iteraciones;
+  }
+
+  // -----------------------------------------------------------------------
+  // API pública
+  // -----------------------------------------------------------------------
+
+  // activa(): SÍNCRONA, sin cripto (solo JSON.parse) — invocable desde el
+  // boot síncrono de almacen.js.
+  function activa() {
+    var crudo = leerCrudo();
+    if (crudo === null) { return false; }
+    return parsearSobre(crudo) !== null;
+  }
+
+  // activar(contrasena): lee el v2 plano vigente (o cifra el esqueleto
+  // vacío si la clave no existe todavía), genera sal nueva, cifra y escribe
+  // el sobre. Deja la sesión DESBLOQUEADA.
+  function activar(contrasena) {
+    return new Promise(function (resolve) {
+      if (!localStorageDisponible()) {
+        resolve({ ok: false, errores: ['No hay almacenamiento disponible en este dispositivo.'] });
+        return;
+      }
+      var crudo = leerCrudo();
+      if (crudo !== null && parsearSobre(crudo) !== null) {
+        resolve({ ok: false, errores: ['La protección ya está activa en este dispositivo.'] });
+        return;
+      }
+      var plano;
+      if (crudo === null) {
+        plano = { version: 2, activoId: null, clientes: {} };
+      } else {
+        try {
+          plano = JSON.parse(crudo);
+        } catch (e) {
+          resolve({ ok: false, errores: ['Los datos existentes de este dispositivo no se pudieron leer; no es seguro activar la protección sobre ellos.'] });
+          return;
+        }
+      }
+      var sal = bytesAleatorios(LONGITUD_SAL);
+      var iteraciones = ITERACIONES_MINIMAS;
+      derivarClave(contrasena, sal, iteraciones).then(function (clave) {
+        var iv = bytesAleatorios(LONGITUD_IV);
+        var textoPlano = JSON.stringify(plano);
+        return cifrarBytes(clave, iv, textoPlano).then(function (datosBytes) {
+          var sobre = construirSobre(sal, iteraciones, iv, datosBytes);
+          var ok = escribirCrudo(sobre);
+          if (!ok) {
+            resolve({ ok: false, errores: ['No se pudo escribir la protección cifrada en este dispositivo.'] });
+            return;
+          }
+          fijarSesion(clave, sal, iteraciones);
+          resolve({ ok: true, errores: [] });
+        });
+      }).catch(function () {
+        resolve({ ok: false, errores: ['No se pudo activar la protección en este dispositivo.'] });
+      });
+    });
+  }
+
+  // desactivar(contrasena): verifica descifrando DESDE CERO (nunca confía
+  // en la clave cacheada), escribe el v2 PLANO de vuelta y borra la sesión.
+  function desactivar(contrasena) {
+    return new Promise(function (resolve) {
+      var crudo = leerCrudo();
+      var sobre = parsearSobre(crudo);
+      if (sobre === null) {
+        resolve({ ok: false, errores: ['No hay protección activa en este dispositivo.'] });
+        return;
+      }
+      descifrarSobreConContrasena(sobre, contrasena).then(function (resultado) {
+        if (resultado === null) {
+          resolve({ ok: false, errores: ['Contraseña incorrecta.'] });
+          return;
+        }
+        var ok = escribirCrudo(JSON.stringify(resultado.payload));
+        if (!ok) {
+          resolve({ ok: false, errores: ['No se pudo escribir los datos sin cifrar en este dispositivo.'] });
+          return;
+        }
+        limpiarSesion();
+        resolve({ ok: true, errores: [] });
+      });
+    });
+  }
+
+  // cambiar(actual, nueva): descifra con `actual`, re-deriva con SAL NUEVA
+  // y re-cifra con `nueva`.
+  function cambiar(actual, nueva) {
+    return new Promise(function (resolve) {
+      var crudo = leerCrudo();
+      var sobre = parsearSobre(crudo);
+      if (sobre === null) {
+        resolve({ ok: false, errores: ['No hay protección activa en este dispositivo.'] });
+        return;
+      }
+      descifrarSobreConContrasena(sobre, actual).then(function (resultado) {
+        if (resultado === null) {
+          resolve({ ok: false, errores: ['La contraseña actual es incorrecta.'] });
+          return;
+        }
+        var salNueva = bytesAleatorios(LONGITUD_SAL);
+        var iteracionesNueva = ITERACIONES_MINIMAS;
+        derivarClave(nueva, salNueva, iteracionesNueva).then(function (claveNueva) {
+          var iv = bytesAleatorios(LONGITUD_IV);
+          var textoPlano = JSON.stringify(resultado.payload);
+          return cifrarBytes(claveNueva, iv, textoPlano).then(function (datosBytes) {
+            var sobreNuevo = construirSobre(salNueva, iteracionesNueva, iv, datosBytes);
+            var ok = escribirCrudo(sobreNuevo);
+            if (!ok) {
+              resolve({ ok: false, errores: ['No se pudo escribir la nueva protección en este dispositivo.'] });
+              return;
+            }
+            fijarSesion(claveNueva, salNueva, iteracionesNueva);
+            resolve({ ok: true, errores: [] });
+          });
+        }).catch(function () {
+          resolve({ ok: false, errores: ['No se pudo cambiar la contraseña en este dispositivo.'] });
+        });
+      });
+    });
+  }
+
+  // desbloquear(contrasena): null ante fallo de autenticación GCM
+  // (contrasena incorrecta y sobre manipulado son indistinguibles por
+  // diseño). En éxito cachea la clave de sesión y devuelve el payload v2.
+  function desbloquear(contrasena) {
+    return new Promise(function (resolve) {
+      var crudo = leerCrudo();
+      var sobre = parsearSobre(crudo);
+      if (sobre === null) {
+        resolve(null);
+        return;
+      }
+      descifrarSobreConContrasena(sobre, contrasena).then(function (resultado) {
+        if (resultado === null) {
+          resolve(null);
+          return;
+        }
+        fijarSesion(resultado.clave, resultado.sal, resultado.iteraciones);
+        resolve(resultado.payload);
+      }).catch(function () {
+        resolve(null);
+      });
+    });
+  }
+
+  // bloquear(): SÍNCRONA, borra la clave de sesión (re-bloqueo sin
+  // recargar la página).
+  function bloquear() {
+    limpiarSesion();
+  }
+
+  // cifrarYPersistir(payload): rechaza/false sin clave de sesión. IV
+  // fresco en CADA escritura. Cola serializada y coalescente: una en
+  // vuelo, una pendiente máximo, gana la última.
+  function cifrarYPersistir(payload) {
+    return new Promise(function (resolve) {
+      if (!claveSesion) {
+        resolve(false);
+        return;
+      }
+      var instantanea = { clave: claveSesion, sal: salSesion, iteraciones: iteracionesSesion };
+      if (trabajoEnVuelo) {
+        if (trabajoPendiente) {
+          trabajoPendiente.payload = payload;
+          trabajoPendiente.instantanea = instantanea;
+          trabajoPendiente.resolvers.push(resolve);
+        } else {
+          trabajoPendiente = { payload: payload, instantanea: instantanea, resolvers: [resolve] };
+        }
+        return;
+      }
+      ejecutarTrabajo(payload, instantanea, [resolve]);
+    });
+  }
+
+  function procesarEscritura(payload, instantanea) {
+    var iv = bytesAleatorios(LONGITUD_IV);
+    var textoPlano = JSON.stringify(payload);
+    return cifrarBytes(instantanea.clave, iv, textoPlano).then(function (datosBytes) {
+      var sobre = construirSobre(instantanea.sal, instantanea.iteraciones, iv, datosBytes);
+      return escribirCrudo(sobre);
+    });
+  }
+
+  function ejecutarTrabajo(payload, instantanea, resolvers) {
+    trabajoEnVuelo = procesarEscritura(payload, instantanea).then(function (ok) {
+      for (var i = 0; i < resolvers.length; i++) { resolvers[i](ok); }
+    }).catch(function () {
+      for (var i = 0; i < resolvers.length; i++) { resolvers[i](false); }
+    }).then(function () {
+      trabajoEnVuelo = null;
+      if (trabajoPendiente) {
+        var siguiente = trabajoPendiente;
+        trabajoPendiente = null;
+        ejecutarTrabajo(siguiente.payload, siguiente.instantanea, siguiente.resolvers);
+      }
+    });
+  }
+
+  G.Herzon.Seguridad = {
+    activa: activa,
+    activar: activar,
+    desactivar: desactivar,
+    cambiar: cambiar,
+    desbloquear: desbloquear,
+    cifrarYPersistir: cifrarYPersistir,
+    bloquear: bloquear
   };
 })();
 
 </script>
 <script id="hz-almacen">
 /* build/almacen.js
- * R8 (T-039) + R9 (T-045): Herzon.Almacen -- modo demo/real, multi-cliente y
- * persistencia local. Dueño único de este archivo. Contrato congelado en
- * .harness/plan.md Adendum R8 punto 1 y Adendum R9 punto 3 (SUPERSEDE
- * parcial de R8: ver `activarReal` más abajo).
+ * R8 (T-039) + R9 (T-045) + R10 (T-052): Herzon.Almacen -- modo demo/real,
+ * multi-cliente y persistencia local. Dueño único de este archivo. Contrato
+ * congelado en .harness/plan.md Adendum R8 punto 1, Adendum R9 punto 3
+ * (SUPERSEDE parcial de R8: ver `activarReal` más abajo) y Adendum R10
+ * (R-02/R-03/S-02/S-04/S-05, ver el documento normativo consolidado de la
+ * ronda 10 dentro de `.harness/`).
+ *
+ * R10 -- ampliación aditiva, NINGUNA firma previa cambia:
+ *   - Slot `rutina` por cliente (R-02/R-03): `guardarRutina`, normalización
+ *     tolerante, expuesto en `HERZON_DATA.rutina`.
+ *   - Slot `config` por cliente (S-05): `{labsOcultos}`, `actualizarConfig`,
+ *     expuesto en `HERZON_DATA.config` (SIEMPRE `{labsOcultos:false}` en
+ *     demo, aunque el catálogo no traiga la clave).
+ *   - Respaldo exportable/importable (S-04): `exportarRespaldo`,
+ *     `restaurarRespaldo` (reemplazo TOTAL, nunca fusión).
+ *   - Boot bloqueado + embudo único de escritura (S-02): con
+ *     `Herzon.Seguridad.activa()===true` el boot arranca en demo funcional
+ *     con `bloqueado()===true`; `desbloquearYMontar(contrasena)` asíncrono
+ *     levanta el bloqueo. `escribirAlmacenCrudo` es el ÚNICO sitio de este
+ *     archivo que escribe la clave `rinde.datos.v1` (assert de selfcheck).
+ *     Tolerancia total: si `Herzon.Seguridad` no existe, comportamiento
+ *     IDÉNTICO al de antes de esta ronda (sin flag day).
  *
  * Responsabilidad EXCLUSIVA de este módulo: datos, persistencia, modo,
  * clientes y el cableado del botón/badge/selector del header
@@ -1742,6 +2434,14 @@ button, input, select { font-family: inherit; }
   var VALOR_NUEVO_SELECTOR = '__nuevo__';
   var TEXTO_NUEVO_CLIENTE = '+ Nuevo cliente…';
 
+  // R10 (S-02/S-04/C-12): textos y valores nuevos, acentos pinneados por el
+  // documento normativo de la ronda 10, sección 2.3 (C-10).
+  var VALOR_BLOQUEADO_SELECTOR = '__bloqueado__';
+  var TEXTO_BLOQUEADO_SELECTOR = 'Mis datos (con contraseña)…';
+  var MSG_DESBLOQUEO_INCORRECTO = 'Contraseña incorrecta. Vuelve a intentarlo.';
+  var FORMATO_RESPALDO = 'rinde-respaldo-1';
+  var MSG_RESPALDO_INVALIDO = 'El archivo no es un respaldo válido de Rinde.';
+
   // -----------------------------------------------------------------------
   // Estado del módulo (closure, no se expone directo). `datosOriginalDemo`
   // se captura UNA sola vez, ANTES de cualquier patch sobre G.HERZON_DATA
@@ -1762,6 +2462,19 @@ button, input, select { font-family: inherit; }
   var estadoClientes = { activoId: null, clientes: {} };
   var refsUI = { badge: null, boton: null, selector: null, doc: null };
   var eventosGlobalesCableados = false;
+
+  // R10 (S-02, C-4): `bloqueadoActual` es la bookkeeping PROPIA de este
+  // módulo sobre si la sesión tiene clave activa. Es la representación
+  // local de "hay clave de sesión" que consulta el embudo único (Herzon.
+  // Seguridad no expone ese booleano por contrato S-01: cripto puro, sin
+  // estado de aplicación). Transiciones: `cargar()` la fija en true si
+  // `Seguridad.activa()` es true al arrancar (sobre cifrado, nada
+  // desbloqueado todavía); `desbloquearYMontar` la baja a false tras un
+  // descifrado exitoso. Mientras es true, `modoActual` es siempre 'demo'
+  // (R8/R9: la demo nunca escribe), así que las rutas de mutación real
+  // jamás alcanzan el embudo en este estado -- pero el embudo igual cierra
+  // la rama por construcción (ver `escribirAlmacenCrudo`).
+  var bloqueadoActual = false;
 
   // -----------------------------------------------------------------------
   // Utilidades locales.
@@ -1788,8 +2501,46 @@ button, input, select { font-family: inherit; }
     return yyyy + '-' + mm + '-' + dd;
   }
 
+  // Adendum R10 punto 7: robusta a colisiones Y a la carrera de creación
+  // simultánea (flake documentado en T-048, asercion número 160 de este
+  // selfcheck: `Math.random()` como único desempate entre dos clientes
+  // creados en el MISMO milisegundo -- mismo prefijo `c-<ts>-` -- no
+  // garantiza que el id ordene igual que el orden real de creación, y
+  // `clientes()`/`primeroClientePorCreado` desempatan por comparación de
+  // string cuando `creado`, granularidad de día, coincide). Fix: el último
+  // segmento CONSERVA LA MISMA FORMA visible (string base36) pero se
+  // deriva de un contador de proceso MONÓTONO en vez de aleatorio, así dos
+  // ids generados en el mismo tick SIEMPRE ordenan en el mismo orden en
+  // que se generaron. Acotado y declarado (no oculto): el relleno a 4
+  // dígitos base36 garantiza el orden correcto hasta 36^4 (~1.68 millones)
+  // clientes por proceso, muy por encima de cualquier uso real de esta app.
+  var contadorSufijoId = 0;
+
+  function siguienteSufijoIdOrdenado() {
+    contadorSufijoId++;
+    var sufijo = contadorSufijoId.toString(36);
+    while (sufijo.length < 4) { sufijo = '0' + sufijo; }
+    return sufijo;
+  }
+
+  // Colisión residual (id ya presente en `estadoClientes.clientes`, p.ej.
+  // tras una recarga con el contador reiniciado en 0 y el mismo `Date.now`
+  // congelado bajo prueba): se cierra regenerando/sufijando un contador
+  // ADICIONAL, sin cambiar la forma del id (Adendum R10 punto 7).
+  // Determinístico incluso con Date.now Y el contador congelados: cada id
+  // generado se registra en `estadoClientes.clientes` ANTES de la
+  // siguiente llamada (mismo tick de `crearCliente`), así que el sufijo de
+  // colisión siempre avanza.
   function generarIdCliente() {
-    return 'c-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+    var base = 'c-' + Date.now().toString(36) + '-' + siguienteSufijoIdOrdenado();
+    if (!Object.prototype.hasOwnProperty.call(estadoClientes.clientes, base)) { return base; }
+    var sufijoColision = 1;
+    var candidato = base + '-' + sufijoColision;
+    while (Object.prototype.hasOwnProperty.call(estadoClientes.clientes, candidato)) {
+      sufijoColision++;
+      candidato = base + '-' + sufijoColision;
+    }
+    return candidato;
   }
 
   // -----------------------------------------------------------------------
@@ -1826,7 +2577,32 @@ button, input, select { font-family: inherit; }
     }
   }
 
-  function escribirAlmacenCrudo(payload) {
+  // EMBUDO ÚNICO DE ESCRITURA (S-02, Adendum R10 punto 4, C-14): este es el
+  // ÚNICO sitio de todo el archivo que hace `localStorage.setItem` sobre la
+  // clave `rinde.datos.v1` (el selfcheck lo asierta contando ocurrencias en
+  // la fuente). Tres ramas, en este orden:
+  //   1. Seguridad activa + CON clave de sesión (bloqueadoActual===false):
+  //      delega a `Seguridad.cifrarYPersistir` (asíncrono, cola propia de
+  //      S-01) y devuelve `true` OPTIMISTA sin esperar la promesa.
+  //   2. Seguridad activa + SIN clave de sesión (bloqueadoActual===true):
+  //      `false`, NO escribe -- jamás texto plano sobre un almacén cifrado,
+  //      jamás una escritura a ciegas.
+  //   3. Seguridad ausente/inactiva: escritura plana de siempre.
+  // `forzarPlano` es un escape interno EXCLUSIVO de la ruta de recuperación
+  // de `restaurarRespaldo` cuando `bloqueadoActual` era true al llamar
+  // (S-04 "ruta de recuperación desde bloqueado"): sin contraseña vigente
+  // no hay forma de re-cifrar, así que el respaldo se escribe en plano,
+  // sustituyendo el sobre, y la protección queda desactivada por el simple
+  // hecho de que el siguiente `Seguridad.activa()` ya no encuentra un
+  // sobre `cifrado-1`. Sigue siendo el mismo (y único) call-site de
+  // `setItem`.
+  function escribirAlmacenCrudo(payload, forzarPlano) {
+    var seg = G.Herzon && G.Herzon.Seguridad;
+    if (!forzarPlano && seg && typeof seg.activa === 'function' && seg.activa()) {
+      if (bloqueadoActual) { return false; }
+      if (typeof seg.cifrarYPersistir === 'function') { seg.cifrarYPersistir(payload); }
+      return true;
+    }
     try {
       if (!localStorageDisponible()) { return false; }
       G.localStorage.setItem(CLAVE_ALMACEN, JSON.stringify(payload));
@@ -1849,12 +2625,12 @@ button, input, select { font-family: inherit; }
   // Escribe el estado COMPLETO de clientes (independiente del cliente
   // montado en G.HERZON_DATA): la usan tanto las operaciones de gestión de
   // la lista (crear/renombrar/eliminar) como `persistir()`.
-  function persistirEstado() {
+  function persistirEstado(forzarPlano) {
     return escribirAlmacenCrudo({
       version: VERSION_ALMACEN,
       activoId: estadoClientes.activoId,
       clientes: estadoClientes.clientes
-    });
+    }, forzarPlano);
   }
 
   // Vuelca G.HERZON_DATA sobre el cliente activo antes de persistir (así
@@ -1907,6 +2683,16 @@ button, input, select { font-family: inherit; }
   function despacharClienteNuevoSolicitado() {
     if (typeof G.dispatchEvent !== 'function' || typeof CustomEvent === 'undefined') { return false; }
     G.dispatchEvent(new CustomEvent('herzon:cliente-nuevo-solicitado', { detail: {} }));
+    return true;
+  }
+
+  // R10 (S-02): evento NUEVO que el botón/selector del header despachan
+  // mientras bloqueado()===true, EN VEZ de activarReal(). La vista Perfil
+  // (T-054, #hz-card-desbloqueo) lo escucha para navegar y enfocar el
+  // campo de contraseña.
+  function despacharDesbloqueoSolicitado() {
+    if (typeof G.dispatchEvent !== 'function' || typeof CustomEvent === 'undefined') { return false; }
+    G.dispatchEvent(new CustomEvent('herzon:desbloqueo-solicitado', { detail: {} }));
     return true;
   }
 
@@ -2035,7 +2821,14 @@ button, input, select { font-family: inherit; }
       factoresActividad: copiaProfunda(catalogo.factoresActividad),
       suplementos: copiaProfunda(patch.suplementos),
       supuestos: copiaProfunda(catalogo.supuestos),
-      planAplicado: patch.plan ? copiaProfunda(patch.plan) : null
+      planAplicado: patch.plan ? copiaProfunda(patch.plan) : null,
+      // R-02/R-03 (rutina): dato de paciente, nunca catálogo -- null si el
+      // cliente no tiene rutina prescrita (payloads v2 previos a esta
+      // ronda no traen la clave y también resuelven aquí en null).
+      rutina: patch.rutina ? copiaProfunda(patch.rutina) : null,
+      // S-05 (config): clave ADITIVA como planAplicado; payloads viejos sin
+      // la clave se leen como {labsOcultos:false} (tolerancia declarada).
+      config: (patch.config && typeof patch.config === 'object') ? copiaProfunda(patch.config) : { labsOcultos: false }
     };
   }
 
@@ -2051,6 +2844,10 @@ button, input, select { font-family: inherit; }
 
   function montarComoDemo() {
     G.HERZON_DATA = montarDemo(datosOriginalDemo);
+    // S-05: en demo, config.labsOcultos es SIEMPRE false, sin importar lo
+    // que traiga el catálogo (la demo no tiene un cliente real con su
+    // propio slot de configuración).
+    G.HERZON_DATA.config = { labsOcultos: false };
     modoActual = 'demo';
   }
 
@@ -2070,6 +2867,25 @@ button, input, select { font-family: inherit; }
       return ca < cb ? -1 : 1;
     });
     return ids.length ? ids[0] : null;
+  }
+
+  // R10 (S-02/S-04): monta el cliente activo si existe alguno en
+  // `estadoClientes.clientes`, o cae a demo si la lista quedó vacía.
+  // Compartido por `cargar()` (rama sin bloqueo), `desbloquearYMontar` y
+  // `restaurarRespaldo`: las tres rutas resuelven "qué mostrar" con
+  // exactamente la misma regla (MC-06: primero por fecha de creación si el
+  // activoId persistido está colgante).
+  function montarSegunClientesDisponibles() {
+    var idsClientes = Object.keys(estadoClientes.clientes);
+    if (!idsClientes.length) {
+      montarComoDemo();
+      return;
+    }
+    if (!estadoClientes.activoId || !estadoClientes.clientes[estadoClientes.activoId]) {
+      estadoClientes.activoId = primeroClientePorCreado(estadoClientes.clientes);
+      persistirEstado();
+    }
+    montarClienteActivo();
   }
 
   // Migración v1 -> v2 + resolución de corrupción, dentro de `cargar()`.
@@ -2097,6 +2913,10 @@ button, input, select { font-family: inherit; }
         plicometria: (crudo.plicometria && typeof crudo.plicometria === 'object') ? crudo.plicometria : { unidad: 'mm', cortes: [], sitios: [], sumaPliegues_mm: [] },
         suplementos: Array.isArray(crudo.suplementos) ? crudo.suplementos : [],
         plan: null,
+        // R-02: la migración v1->v2 escribe rutina:null explícito (nunca
+        // existió en v1); S-05: config por defecto explícito.
+        rutina: null,
+        config: { labsOcultos: false },
         creado: fechaHoy()
       };
       escribirAlmacenCrudo({ version: VERSION_ALMACEN, activoId: idMigrado, clientes: clientesMigrados });
@@ -2203,21 +3023,25 @@ button, input, select { font-family: inherit; }
     if (!G.HERZON_DATA && datosOriginalDemo === null) { return modoActual; }
     garantizarOriginal();
 
+    // S-02 (Adendum R10 punto 5): con un sobre cifrado presente, los datos
+    // reales son ILEGIBLES sin desbloquear -- arranca en demo funcional con
+    // bloqueado()===true, sin siquiera intentar leer/parsear el crudo.
+    // Tolerancia total: si Herzon.Seguridad no existe (ronda anterior a
+    // R10, o módulo aún no inyectado), este bloque no corre nunca (sin
+    // flag day).
+    var seg = G.Herzon && G.Herzon.Seguridad;
+    if (seg && typeof seg.activa === 'function' && seg.activa()) {
+      bloqueadoActual = true;
+      estadoClientes = { activoId: null, clientes: {} };
+      montarComoDemo();
+      emitirClientesActualizados();
+      return modoActual;
+    }
+    bloqueadoActual = false;
+
     var crudo = leerAlmacenCrudo();
     estadoClientes = resolverEstadoDesdeCrudo(crudo);
-
-    var idsClientes = Object.keys(estadoClientes.clientes);
-    if (!idsClientes.length) {
-      montarComoDemo();
-    } else {
-      if (!estadoClientes.activoId || !estadoClientes.clientes[estadoClientes.activoId]) {
-        // activoId ausente o colgante con clientes presentes: monta el
-        // primero por fecha de creación y corrige lo persistido.
-        estadoClientes.activoId = primeroClientePorCreado(estadoClientes.clientes);
-        persistirEstado();
-      }
-      montarClienteActivo();
-    }
+    montarSegunClientesDisponibles();
 
     emitirClientesActualizados();
     return modoActual;
@@ -2266,6 +3090,9 @@ button, input, select { font-family: inherit; }
       plicometria: estructuras.plicometria,
       suplementos: estructuras.suplementos,
       plan: null,
+      // R-02/S-05: explícitos desde la creación (Adendum R10).
+      rutina: null,
+      config: { labsOcultos: false },
       creado: fechaHoy()
     };
     var anteriorId = estadoClientes.activoId;
@@ -2368,6 +3195,205 @@ button, input, select { font-family: inherit; }
     return persistir();
   }
 
+  // ===========================================================================
+  // R10 -- R-02/R-03: slot rutina.
+  // ===========================================================================
+
+  function enteroFinitoEnRango(v, minimo, maximo) {
+    if (typeof v !== 'number' || !isFinite(v)) { return null; }
+    var entero = Math.round(v);
+    return (entero < minimo || entero > maximo) ? null : entero;
+  }
+
+  function stringODefecto(v, porDefecto) {
+    return (typeof v === 'string') ? v : porDefecto;
+  }
+
+  function fechaValidaOAhora(v) {
+    return (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : fechaHoy();
+  }
+
+  // Normalización tolerante de UN ejercicio (R-02): nombre requerido (se
+  // descarta el ejercicio entero si queda vacío tras castear a String y
+  // recortar espacios); series/descanso_s enteros finitos en rango o null;
+  // repeticiones/notas casteados a String. Los límites de longitud
+  // (nombre<=80, repeticiones<=40, etc.) son responsabilidad del EDITOR
+  // (R-06): el almacén normaliza tipos y forma, no trunca contenido.
+  function normalizarEjercicioRutina(x) {
+    if (!x || typeof x !== 'object') { return null; }
+    var nombre = String(x.nombre != null ? x.nombre : '').trim();
+    if (!nombre) { return null; }
+    return {
+      nombre: nombre,
+      series: enteroFinitoEnRango(x.series, 1, 10),
+      repeticiones: stringODefecto(x.repeticiones, ''),
+      descanso_s: enteroFinitoEnRango(x.descanso_s, 0, 600),
+      notas: stringODefecto(x.notas, '')
+    };
+  }
+
+  // Normalización tolerante del slot completo (R-02/R-03.1): null/no-objeto
+  // => null; si objeto, `dias` = entradas con >=1 ejercicio VÁLIDO tras
+  // normalizar (un día cuyos ejercicios quedan todos descartados también se
+  // descarta), renumeradas secuencial 1..n; `actualizado` = fecha válida o
+  // `fechaHoy()`.
+  function normalizarRutina(rutina) {
+    if (!rutina || typeof rutina !== 'object' || !Array.isArray(rutina.dias)) { return null; }
+    var diasNormalizados = [];
+    rutina.dias.forEach(function (d) {
+      if (!d || typeof d !== 'object' || !Array.isArray(d.ejercicios) || !d.ejercicios.length) { return; }
+      var ejercicios = [];
+      d.ejercicios.forEach(function (x) {
+        var e = normalizarEjercicioRutina(x);
+        if (e) { ejercicios.push(e); }
+      });
+      if (!ejercicios.length) { return; }
+      diasNormalizados.push({ dia: diasNormalizados.length + 1, titulo: stringODefecto(d.titulo, ''), ejercicios: ejercicios });
+    });
+    return { dias: diasNormalizados, actualizado: fechaValidaOAhora(rutina.actualizado) };
+  }
+
+  // guardarRutina(rutina) -> boolean (R-03.1): false si no hay cliente real
+  // activo (misma guarda que guardarPlan/persistir). Escribe
+  // clientes[activoId].rutina y HERZON_DATA.rutina en el mismo tick;
+  // persiste vía persistir() (que enruta por el embudo único S-02 -- el
+  // cifrado cubre la rutina sin trabajo adicional, C-14).
+  function guardarRutina(rutina) {
+    if (modoActual !== 'real' || !G.HERZON_DATA || !estadoClientes.activoId) { return false; }
+    var activo = estadoClientes.clientes[estadoClientes.activoId];
+    if (!activo) { return false; }
+    var slot = normalizarRutina(rutina);
+    activo.rutina = slot;
+    G.HERZON_DATA.rutina = slot ? copiaProfunda(slot) : null;
+    return persistir();
+  }
+
+  // ===========================================================================
+  // R10 -- S-05: config {labsOcultos} por cliente.
+  // ===========================================================================
+
+  // actualizarConfig(parcial) -> boolean: solo en real con activo; fusiona
+  // clave por clave sobre clientes[activoId].config (hoy la única clave es
+  // labsOcultos; el merge queda genérico para futuras claves aditivas sin
+  // migración), sincroniza HERZON_DATA.config, persiste vía el embudo único
+  // y emite herzon:modo-cambiado (semántica R9 de remontaje: Perfil y
+  // Seguimiento repintan completos -- que aparezcan/desaparezcan secciones
+  // ES un remontaje).
+  function actualizarConfig(parcial) {
+    if (modoActual !== 'real' || !G.HERZON_DATA || !estadoClientes.activoId) { return false; }
+    var activo = estadoClientes.clientes[estadoClientes.activoId];
+    if (!activo) { return false; }
+    var configActual = (activo.config && typeof activo.config === 'object') ? activo.config : { labsOcultos: false };
+    var configFusionado = { labsOcultos: configActual.labsOcultos === true };
+    if (parcial && typeof parcial === 'object' && Object.prototype.hasOwnProperty.call(parcial, 'labsOcultos')) {
+      configFusionado.labsOcultos = parcial.labsOcultos === true;
+    }
+    activo.config = configFusionado;
+    G.HERZON_DATA.config = copiaProfunda(configFusionado);
+    var ok = persistirEstado();
+    emitirModoCambiado('real', estadoClientes.activoId);
+    return ok;
+  }
+
+  // ===========================================================================
+  // R10 -- S-04: respaldo exportable/importable (reemplazo TOTAL, C-11).
+  // ===========================================================================
+
+  // exportarRespaldo(): serializa estadoClientes EN MEMORIA (con cifrado
+  // activo exporta lo YA desbloqueado, nunca lee el sobre crudo).
+  function exportarRespaldo() {
+    if (!estadoClientes || typeof estadoClientes !== 'object' || !estadoClientes.clientes) {
+      return { ok: false };
+    }
+    var datos = { version: VERSION_ALMACEN, activoId: estadoClientes.activoId, clientes: estadoClientes.clientes };
+    return {
+      ok: true,
+      nombreArchivo: 'rinde-respaldo-' + fechaHoy() + '.json',
+      json: JSON.stringify({ formato: FORMATO_RESPALDO, exportado: fechaHoy(), datos: datos })
+    };
+  }
+
+  // restaurarRespaldo(objeto) -> {ok,errores,clientes}: valida la forma
+  // exacta del sobre de respaldo, REEMPLAZA estadoClientes por completo
+  // (jamás fusiona por id, C-11), persiste vía el embudo único (con sesión
+  // cifrada activa re-cifra con la contraseña vigente; sin cifrado,
+  // plano -- automático, sin trabajo adicional aquí) y emite la MISMA
+  // secuencia de eventos que desbloquearYMontar. Ruta especial "desde
+  // bloqueado" (S-04): si `bloqueadoActual` era true al llamar, no hay
+  // contraseña vigente para re-cifrar -- el respaldo se escribe EN PLANO
+  // (forzarPlano) y la protección queda desactivada.
+  function restaurarRespaldo(objeto) {
+    var formaValida = objeto && typeof objeto === 'object' &&
+      objeto.formato === FORMATO_RESPALDO &&
+      objeto.datos && typeof objeto.datos === 'object' &&
+      objeto.datos.version === VERSION_ALMACEN;
+    if (!formaValida) {
+      return { ok: false, errores: [MSG_RESPALDO_INVALIDO], clientes: 0 };
+    }
+
+    garantizarOriginal();
+    estadoClientes = resolverEstadoDesdeCrudo(objeto.datos);
+
+    var veniaDeBloqueado = bloqueadoActual;
+    if (veniaDeBloqueado) { bloqueadoActual = false; }
+    persistirEstado(veniaDeBloqueado);
+
+    montarSegunClientesDisponibles();
+
+    emitirClientesActualizados();
+    if (modoActual === 'real') {
+      emitirClienteCambiado(estadoClientes.activoId, null);
+      emitirModoCambiado('real', estadoClientes.activoId);
+    } else {
+      emitirModoCambiado('demo', null);
+    }
+    sincronizarUIModo();
+
+    return { ok: true, errores: [], clientes: Object.keys(estadoClientes.clientes).length };
+  }
+
+  // ===========================================================================
+  // R10 -- S-02: boot bloqueado y desbloqueo asíncrono.
+  // ===========================================================================
+
+  function bloqueado() {
+    return bloqueadoActual;
+  }
+
+  // desbloquearYMontar(contrasena) -> Promise<{ok,error}>: delega en
+  // Seguridad.desbloquear; null (contraseña incorrecta o sobre manipulado,
+  // indistinguibles por diseño S-01) => {ok:false,error:MSG} SIN tocar el
+  // estado. Éxito: resuelve el payload v2 EN MEMORIA con la misma
+  // tolerancia del boot, baja bloqueadoActual, monta y emite EN ESTE ORDEN:
+  // clientes-actualizados -> cliente-cambiado -> modo-cambiado (semántica
+  // R9: todas las vistas repintan sin código nuevo).
+  function desbloquearYMontar(contrasena) {
+    var seg = G.Herzon && G.Herzon.Seguridad;
+    if (!seg || typeof seg.desbloquear !== 'function') {
+      return Promise.resolve({ ok: false, error: MSG_DESBLOQUEO_INCORRECTO });
+    }
+    return seg.desbloquear(contrasena).then(function (payload) {
+      if (!payload) {
+        return { ok: false, error: MSG_DESBLOQUEO_INCORRECTO };
+      }
+      garantizarOriginal();
+      estadoClientes = resolverEstadoDesdeCrudo(payload);
+      bloqueadoActual = false;
+      montarSegunClientesDisponibles();
+
+      emitirClientesActualizados();
+      if (modoActual === 'real') {
+        emitirClienteCambiado(estadoClientes.activoId, null);
+        emitirModoCambiado('real', estadoClientes.activoId);
+      } else {
+        emitirModoCambiado('demo', null);
+      }
+      sincronizarUIModo();
+
+      return { ok: true, error: null };
+    });
+  }
+
   // activarReal(perfil): SUPERSEDE parcial del Adendum R8 (Adendum R9
   // punto 3). Con perfil equivale a crearCliente(perfil). Sin perfil y con
   // clientes ya registrados, recupera el activo conocido (seleccionarCliente,
@@ -2412,6 +3438,26 @@ button, input, select { font-family: inherit; }
     // rama demo (option "Demo: ..." seleccionada) tanto en el click directo
     // del botón #hz-btn-modo como en el fallback de eliminarCliente cuando
     // no queda ningún cliente restante.
+    emitirClientesActualizados();
+    return modoActual;
+  }
+
+  // bloquearYVolverADemo() (T-058, fix de S-02): re-bloqueo EXPLÍCITO desde
+  // "Bloquear ahora" -- a diferencia de volverADemo() (alterna DEMO/REAL sin
+  // tocar bloqueadoActual; lo usa también el toggle #hz-btn-modo para
+  // previsualizar demo mientras la sesión sigue desbloqueada, caso que NO
+  // debe re-bloquear), esta función SIEMPRE deja bloqueadoActual=true y
+  // limpia estadoClientes en memoria -- el mismo bookkeeping que la rama
+  // bloqueada de cargar() (línea ~690). El caller (vista_metricas.js) ya
+  // llamó Seguridad.bloquear() antes de invocar esto (borra la clave de
+  // sesión); aquí solo se refleja ese re-bloqueo en el estado del almacén y
+  // se repinta la UI, igual que volverADemo().
+  function bloquearYVolverADemo() {
+    bloqueadoActual = true;
+    estadoClientes = { activoId: null, clientes: {} };
+    montarComoDemo();
+    emitirModoCambiado('demo', null);
+    sincronizarUIModo();
     emitirClientesActualizados();
     return modoActual;
   }
@@ -2617,9 +3663,18 @@ button, input, select { font-family: inherit; }
   // MC-03: opciones del selector, textContent siempre. Demo:
   // "Demo: <nombre del sintético>" seleccionada + clientes + "+ Nuevo
   // cliente…". Real: clientes (activo con selected) + "+ Nuevo cliente…",
-  // SIN opción demo.
+  // SIN opción demo. R10 (S-02): bloqueado === true es un CUARTO estado,
+  // exclusivo entre sí con demo/real -- exactamente 2 opciones (Demo
+  // seleccionada + "Mis datos (con contraseña)…"), SIN "+ Nuevo cliente…"
+  // (crear un cliente escribiría sobre el sobre cifrado).
   function construirOpcionesSelector() {
     var opciones = [];
+    if (bloqueadoActual) {
+      var nombreDemoBloqueado = (datosOriginalDemo && datosOriginalDemo.paciente && datosOriginalDemo.paciente.nombre) || '';
+      opciones.push({ valor: VALOR_DEMO_SELECTOR, texto: 'Demo: ' + nombreDemoBloqueado, seleccionada: true });
+      opciones.push({ valor: VALOR_BLOQUEADO_SELECTOR, texto: TEXTO_BLOQUEADO_SELECTOR, seleccionada: false });
+      return opciones;
+    }
     var enReal = (modoActual === 'real');
     if (!enReal) {
       var nombreDemo = (datosOriginalDemo && datosOriginalDemo.paciente && datosOriginalDemo.paciente.nombre) || '';
@@ -2674,6 +3729,13 @@ button, input, select { font-family: inherit; }
     sincronizarUIModo();
 
     boton.addEventListener('click', function () {
+      // R10 (S-02): bloqueado() manda sobre cualquier otro estado -- el
+      // botón despacha el desbloqueo EN VEZ de activarReal (no hay real
+      // anónimo que recuperar: los datos siguen ilegibles).
+      if (bloqueadoActual) {
+        despacharDesbloqueoSolicitado();
+        return;
+      }
       if (modo() === 'real') {
         volverADemo();
       } else {
@@ -2689,6 +3751,14 @@ button, input, select { font-family: inherit; }
       refsUI.selector.addEventListener('change', function (ev) {
         var valor = (ev && ev.target) ? ev.target.value : refsUI.selector.value;
         if (!valor) { return; }
+        if (valor === VALOR_BLOQUEADO_SELECTOR) {
+          // R10 (S-02): elegir "Mis datos (con contraseña)…" restaura la
+          // selección Demo (el estado real no cambió: sigue bloqueado) y
+          // despacha el mismo evento que el botón.
+          reconstruirSelectorCliente();
+          despacharDesbloqueoSolicitado();
+          return;
+        }
         if (valor === VALOR_NUEVO_SELECTOR) {
           // Restaura la selección anterior (el estado real no cambió) y
           // delega el alta a la vista Perfil.
@@ -2720,6 +3790,9 @@ button, input, select { font-family: inherit; }
     cargar: cargar,
     activarReal: activarReal,
     volverADemo: volverADemo,
+    // R10 (T-058): re-bloqueo explícito, distinto de volverADemo() (ver
+    // comentario junto a la definición).
+    bloquearYVolverADemo: bloquearYVolverADemo,
     actualizarPerfil: actualizarPerfil,
     agregarMedicion: agregarMedicion,
     mergeMediciones: mergeMediciones,
@@ -2731,7 +3804,14 @@ button, input, select { font-family: inherit; }
     renombrarCliente: renombrarCliente,
     eliminarCliente: eliminarCliente,
     clienteActivo: clienteActivo,
-    guardarPlan: guardarPlan
+    guardarPlan: guardarPlan,
+    // R10 (Adendum R10, T-052): API aditiva -- ninguna firma previa cambia.
+    guardarRutina: guardarRutina,
+    actualizarConfig: actualizarConfig,
+    exportarRespaldo: exportarRespaldo,
+    restaurarRespaldo: restaurarRespaldo,
+    bloqueado: bloqueado,
+    desbloquearYMontar: desbloquearYMontar
   };
 
   // cargar() síncrono en cuanto este módulo se define (Adendum R8 punto 6):
@@ -7315,6 +8395,790 @@ button, input, select { font-family: inherit; }
 })();
 
 </script>
+<script id="hz-vista-rutina">
+// build/vista_rutina.js
+// R10 (T-053): vista nueva "Rutina" -- lectura (R-05), editor solo en modo
+// real (R-06) y documento imprimible/descargable (R-07). Registra
+// window.Herzon.Views.rutina y Herzon.registerView('rutina', ...) (API
+// publicada por T-002/build/shell.html, contrato .harness/plan.md 3.C).
+//
+// Consume window.HERZON_DATA (T-001 + claves aditivas R-02/R-03 de
+// build/almacen.js), window.Herzon.Almacen (T-039/T-045, opcional -- puede
+// no existir) y window.Herzon.Docs.descargarArchivo / .nombreArchivoExportable
+// (T-023, YA publicados). build/documentos.js NO se modifica en esta ronda
+// (.harness/justesse-r10-diseno.md C-7): este módulo solo CONSUME esas dos
+// funciones; el resto de lo que necesita (render del documento vivo, HTML
+// descargable autocontenido, escape de texto) lo define e implementa por su
+// cuenta, mismo patrón de build/documentos.js pero SIN importarlo.
+//
+// Preámbulo obligatorio (plan.md 3.A): script clásico, IIFE, sin
+// import/export. Prohibido tocar `document` en el nivel superior del módulo:
+// todo acceso al DOM ocurre dentro de `montarVistaRutina` (invocada por el
+// shell, o por el selfcheck con el contenedor ya presente) y las funciones
+// que llama.
+//
+// Reactividad multi-cliente (R-05.6): el patrón manejarRemontajeDatos +
+// listener herzon:modo-cambiado está COPIADO literalmente de
+// build/vista_dieta_supl.js (ese archivo NO se toca en R10, C-7) -- Views
+// solo se montan UNA vez (Herzon.registerView), así que el repintado ante
+// cambio de cliente/modo depende de guardar una referencia de remontaje al
+// montar y de un listener a nivel de módulo que la usa.
+//
+// Sistema de formularios y botones (F-01/F-02, sección 12 de shell.html):
+// el editor (R-06) y sus botones son el ÚNICO vocabulario permitido (C-1);
+// este módulo no define clases hz-form-*/hz-btn-* nuevas. Las clases
+// hz-rutina-* (R-01.5) las define shell.html; este módulo solo las aplica.
+(function () {
+  var G = (typeof window !== 'undefined') ? window : globalThis;
+  G.Herzon = G.Herzon || {};
+  G.Herzon.Views = G.Herzon.Views || {};
+
+  // -----------------------------------------------------------------------
+  // Textos exactos (R-05/R-06, .harness/justesse-r10-diseno.md secciones
+  // 2.2 y 4/C-10): literales, con acentos, fijados por el contrato.
+  // -----------------------------------------------------------------------
+  var TEXTO_VACIO_RUTINA = 'Aún no hay una rutina prescrita para este cliente. Ármala con el editor de abajo para poder imprimirla.';
+  var TEXTO_DEMO_RUTINA = 'En modo demo la rutina es un ejemplo de solo lectura; con el botón Usar mis datos puedes prescribir y guardar la rutina de cada cliente.';
+  var TITULO_CARD_LECTURA = 'Rutina de entrenamiento';
+  var LABEL_HERO_RUTINA = 'Días de entrenamiento por semana';
+  var TITULO_EDITOR = 'Editar rutina';
+  var LABEL_TITULO_DIA = 'Título del día';
+  var LABEL_EJERCICIO = 'Ejercicio';
+  var LABEL_SERIES = 'Series';
+  var LABEL_REPETICIONES = 'Repeticiones';
+  var LABEL_DESCANSO = 'Descanso (s)';
+  var LABEL_NOTAS = 'Notas';
+  var TEXTO_BOTON_QUITAR = 'Quitar';
+  var TEXTO_BOTON_QUITAR_DIA = 'Quitar día';
+  var TEXTO_BOTON_AGREGAR_EJERCICIO = 'Agregar ejercicio';
+  var TEXTO_BOTON_AGREGAR_DIA = 'Agregar día';
+  var TEXTO_BOTON_GUARDAR_RUTINA = 'Guardar rutina';
+  var TEXTO_BOTON_IMPRIMIR_RUTINA = 'Imprimir / PDF';
+  var TEXTO_BOTON_DESCARGAR_RUTINA = 'Descargar rutina (.html)';
+  var TITULO_DOCUMENTO_RUTINA = 'Rutina de entrenamiento — Rinde';
+  var MSG_GUARDADO_FALLIDO = 'No se pudo guardar en este dispositivo.';
+  var MAX_DIAS = 7;
+  var MAX_EJERCICIOS_POR_DIA = 12;
+
+  // -----------------------------------------------------------------------
+  // Utilidades de DOM locales (patrón crear/limpiar de
+  // build/vista_metricas.js -- sin `document` en el nivel superior: reciben
+  // siempre `doc` = rootEl.ownerDocument).
+  // -----------------------------------------------------------------------
+  function crear(doc, tag, clases, texto) {
+    var elemento = doc.createElement(tag);
+    if (clases) {
+      for (var i = 0; i < clases.length; i++) { elemento.classList.add(clases[i]); }
+    }
+    if (texto != null) { elemento.textContent = texto; }
+    return elemento;
+  }
+
+  function limpiar(elemento) {
+    while (elemento.childNodes && elemento.childNodes.length) {
+      elemento.removeChild(elemento.childNodes[0]);
+    }
+  }
+
+  // Busca un descendiente (o el propio nodo) por atributo id, sin depender
+  // de querySelector/getElementById: build/testdom.js no los implementa
+  // (mismo patrón buscarHijoPorId de build/vista_metricas.js).
+  function buscarHijoPorId(raizEl, id) {
+    if (raizEl.getAttribute && raizEl.getAttribute('id') === id) { return raizEl; }
+    var hijos = raizEl.children || [];
+    for (var i = 0; i < hijos.length; i++) {
+      var encontrado = buscarHijoPorId(hijos[i], id);
+      if (encontrado) { return encontrado; }
+    }
+    return null;
+  }
+
+  function crearCard(doc, contenedorEl, tituloTexto) {
+    var card = crear(doc, 'div', ['hz-card']);
+    if (tituloTexto) {
+      card.appendChild(crear(doc, 'div', ['hz-card-title'], tituloTexto));
+    }
+    contenedorEl.appendChild(card);
+    return card;
+  }
+
+  // Número héroe manual (regla 11 del contrato de diseño: exactamente UN
+  // .hz-hero por vista -- mismo patrón que build/vista_dieta_supl.js).
+  function crearHero(doc, contenedorEl, etiquetaTexto) {
+    var raiz = crear(doc, 'div', ['hz-hero']);
+    var num = crear(doc, 'div', ['hz-hero-num']);
+    var label = crear(doc, 'div', ['hz-hero-label'], etiquetaTexto);
+    raiz.appendChild(num);
+    raiz.appendChild(label);
+    contenedorEl.appendChild(raiz);
+    return { raiz: raiz, num: num };
+  }
+
+  function crearCampoInput(doc, contenedorEl, idCampo, etiquetaTexto, tipo, valorInicial, atributosExtra) {
+    var campo = crear(doc, 'div', ['hz-form-campo']);
+    var etiqueta = crear(doc, 'label', null, etiquetaTexto);
+    etiqueta.setAttribute('for', idCampo);
+    var input = crear(doc, 'input');
+    input.setAttribute('id', idCampo);
+    input.setAttribute('type', tipo);
+    if (atributosExtra) {
+      for (var clave in atributosExtra) {
+        if (Object.prototype.hasOwnProperty.call(atributosExtra, clave)) {
+          input.setAttribute(clave, String(atributosExtra[clave]));
+        }
+      }
+    }
+    input.value = (valorInicial != null) ? valorInicial : '';
+    campo.appendChild(etiqueta);
+    campo.appendChild(input);
+    contenedorEl.appendChild(campo);
+    return { campo: campo, input: input };
+  }
+
+  // Documento (R-07): hz-doc-seccion/hz-table -- COPIA del patrón de
+  // build/documentos.js (crearSeccion/construirTabla), no importado (C-7).
+  function crearSeccionDoc(doc, contenedorEl, tituloTexto) {
+    var seccion = crear(doc, 'div', ['hz-doc-seccion']);
+    seccion.appendChild(crear(doc, 'h3', ['hz-doc-seccion-titulo'], tituloTexto));
+    contenedorEl.appendChild(seccion);
+    return seccion;
+  }
+
+  function construirTablaDoc(doc, contenedorEl, columnas, filas) {
+    var wrap = crear(doc, 'div', ['hz-table-wrap']);
+    var tabla = crear(doc, 'table', ['hz-table']);
+
+    var thead = crear(doc, 'thead');
+    var trEncabezado = crear(doc, 'tr');
+    for (var c = 0; c < columnas.length; c++) {
+      var th = crear(doc, 'th', null, columnas[c]);
+      th.setAttribute('scope', 'col');
+      trEncabezado.appendChild(th);
+    }
+    thead.appendChild(trEncabezado);
+    tabla.appendChild(thead);
+
+    var tbody = crear(doc, 'tbody');
+    for (var f = 0; f < filas.length; f++) {
+      var tr = crear(doc, 'tr');
+      var fila = filas[f];
+      for (var i = 0; i < fila.length; i++) {
+        var esPrimera = i === 0;
+        var valor = fila[i];
+        var celda = crear(doc, esPrimera ? 'th' : 'td', null, (valor === null || valor === undefined) ? '' : String(valor));
+        if (esPrimera) { celda.setAttribute('scope', 'row'); }
+        tr.appendChild(celda);
+      }
+      tbody.appendChild(tr);
+    }
+    tabla.appendChild(tbody);
+    wrap.appendChild(tabla);
+    contenedorEl.appendChild(wrap);
+    return wrap;
+  }
+
+  // -----------------------------------------------------------------------
+  // Fechas (mismo patrón UTC que build/data.js/build/documentos.js: sin
+  // dependencia de zona horaria local).
+  // -----------------------------------------------------------------------
+  function formatoFechaHoy(fecha) {
+    var yyyy = fecha.getUTCFullYear();
+    var mm = String(fecha.getUTCMonth() + 1);
+    if (mm.length < 2) { mm = '0' + mm; }
+    var dd = String(fecha.getUTCDate());
+    if (dd.length < 2) { dd = '0' + dd; }
+    return yyyy + '-' + mm + '-' + dd;
+  }
+
+  // -----------------------------------------------------------------------
+  // Acceso a Herzon.Almacen (R8/R9): SIEMPRE opcional/defensivo -- mismo
+  // patrón que build/vista_metricas.js y build/vista_dieta_supl.js.
+  // -----------------------------------------------------------------------
+  function obtenerAlmacen() {
+    return (G.Herzon && G.Herzon.Almacen) ? G.Herzon.Almacen : null;
+  }
+
+  function esModoReal(Almacen) {
+    return !!(Almacen && typeof Almacen.modo === 'function' && Almacen.modo() === 'real');
+  }
+
+  function tituloDia(dia) {
+    return 'Día ' + dia.dia + (dia.titulo ? (' — ' + dia.titulo) : '');
+  }
+
+  // =========================================================================
+  // R-07: documento imprimible/descargable. Fuente del payload SIEMPRE en
+  // vivo (HERZON_DATA.rutina + HERZON_DATA.paciente + meta.nota), nunca
+  // cacheada al montar (R-07.4) -- por eso `datosDocumentoRutina` recibe
+  // HERZON_DATA como parámetro y se invoca en cada clic, no una sola vez.
+  // =========================================================================
+  function datosDocumentoRutina(HERZON_DATA, opciones) {
+    opciones = opciones || {};
+    return {
+      paciente: HERZON_DATA.paciente,
+      rutina: HERZON_DATA.rutina || null,
+      notaDatos: HERZON_DATA.meta.nota,
+      fechaGeneracion: opciones.fechaGeneracion || formatoFechaHoy(opciones.ahora || new Date())
+    };
+  }
+
+  // renderDocumentoRutina(doc, contenedorEl, payload): llena #documento-rutina
+  // (R-07.1) con clases congeladas hz-doc-* (build/shell.html, T-021/R-01) --
+  // cero clases nuevas, todo textContent.
+  function renderDocumentoRutina(doc, contenedorEl, payload) {
+    limpiar(contenedorEl);
+    var rutina = payload.rutina || { dias: [], actualizado: '' };
+
+    contenedorEl.appendChild(crear(doc, 'h2', ['hz-doc-titulo'], TITULO_DOCUMENTO_RUTINA));
+
+    var meta = crear(doc, 'div', ['hz-doc-meta']);
+    [
+      'Cliente: ' + payload.paciente.nombre,
+      'Objetivo: ' + payload.paciente.objetivo,
+      'Actualizada: ' + (rutina.actualizado || ''),
+      'Generado: ' + payload.fechaGeneracion
+    ].forEach(function (texto) {
+      meta.appendChild(crear(doc, 'span', null, texto));
+    });
+    contenedorEl.appendChild(meta);
+
+    var dias = rutina.dias || [];
+    for (var d = 0; d < dias.length; d++) {
+      var dia = dias[d];
+      var seccion = crearSeccionDoc(doc, contenedorEl, tituloDia(dia));
+      var filas = dia.ejercicios.map(function (ej) {
+        return [
+          ej.nombre,
+          ej.series,
+          ej.repeticiones,
+          (ej.descanso_s != null) ? (ej.descanso_s + ' s') : '—',
+          ej.notas || ''
+        ];
+      });
+      construirTablaDoc(doc, seccion, ['Ejercicio', 'Series', 'Repeticiones', 'Descanso', 'Notas'], filas);
+    }
+
+    contenedorEl.appendChild(crear(doc, 'p', ['hz-doc-pie'], payload.notaDatos));
+    return contenedorEl;
+  }
+
+  // Descarga .html autocontenida (Blob local, R-07.3): documento SEPARADO
+  // del prototipo, con su propio <style> mínimo -- mismos hexes claros
+  // VALIDADOS que usa generarHtmlDescargable de build/documentos.js
+  // (precedente bendecido: documento fuera del árbol vivo, sin var(--token)).
+  // escaparHtml propio del módulo (COPIA, no importado -- C-7).
+  function escaparHtml(texto) {
+    return String(texto === null || texto === undefined ? '' : texto)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function generarHtmlRutinaDescargable(payload) {
+    var rutina = payload.rutina || { dias: [], actualizado: '' };
+    var partes = [];
+    partes.push('<!DOCTYPE html>');
+    partes.push('<html lang="es">');
+    partes.push('<head>');
+    partes.push('<meta charset="utf-8">');
+    partes.push('<title>' + escaparHtml(TITULO_DOCUMENTO_RUTINA) + '</title>');
+    partes.push(
+      '<style>' +
+      'body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:820px;margin:32px auto;padding:0 16px;color:#0b0b0b;}' +
+      'h1{font-size:1.4rem;margin-bottom:4px;}' +
+      'h2{font-size:1.05rem;margin-top:28px;}' +
+      'p{color:#52514e;font-size:0.9rem;}' +
+      'table{border-collapse:collapse;width:100%;margin:8px 0 20px;}' +
+      'th,td{border:1px solid #c3c2b7;padding:6px 8px;text-align:left;font-size:0.82rem;color:#0b0b0b;}' +
+      '.hz-doc-pie{margin-top:24px;padding-top:12px;border-top:1px solid #e1e0d9;font-size:0.75rem;color:#52514e;}' +
+      '</style>'
+    );
+    partes.push('</head>');
+    partes.push('<body>');
+    partes.push('<h1>' + escaparHtml(TITULO_DOCUMENTO_RUTINA) + '</h1>');
+    partes.push(
+      '<p>' + [
+        'Cliente: ' + escaparHtml(payload.paciente.nombre),
+        'Objetivo: ' + escaparHtml(payload.paciente.objetivo),
+        'Actualizada: ' + escaparHtml(rutina.actualizado || ''),
+        'Generado: ' + escaparHtml(payload.fechaGeneracion)
+      ].join(' &middot; ') + '</p>'
+    );
+    var dias = rutina.dias || [];
+    for (var d = 0; d < dias.length; d++) {
+      var dia = dias[d];
+      partes.push('<h2>' + escaparHtml(tituloDia(dia)) + '</h2>');
+      partes.push('<table><thead><tr><th>Ejercicio</th><th>Series</th><th>Repeticiones</th><th>Descanso</th><th>Notas</th></tr></thead><tbody>');
+      for (var e = 0; e < dia.ejercicios.length; e++) {
+        var ej = dia.ejercicios[e];
+        var descansoTexto = (ej.descanso_s != null) ? (ej.descanso_s + ' s') : '—';
+        partes.push(
+          '<tr><td>' + escaparHtml(ej.nombre) + '</td><td>' + escaparHtml(ej.series) + '</td><td>' +
+          escaparHtml(ej.repeticiones) + '</td><td>' + escaparHtml(descansoTexto) + '</td><td>' +
+          escaparHtml(ej.notas || '') + '</td></tr>'
+        );
+      }
+      partes.push('</tbody></table>');
+    }
+    partes.push('<p class="hz-doc-pie">' + escaparHtml(payload.notaDatos) + '</p>');
+    partes.push('</body>');
+    partes.push('</html>');
+    return partes.join('\n');
+  }
+
+  // =========================================================================
+  // R-06: validación del borrador (patrón T-029, C-6: nunca guardar en
+  // silencio). Función PURA -- no toca Almacen ni DOM (testeable en
+  // aislamiento, expuesta como rutinaInterno.validarBorrador).
+  // =========================================================================
+  function nombreCampoLegible(campo) {
+    if (campo === 'nombre') { return LABEL_EJERCICIO; }
+    if (campo === 'series') { return LABEL_SERIES; }
+    if (campo === 'repeticiones') { return LABEL_REPETICIONES; }
+    if (campo === 'descanso') { return LABEL_DESCANSO; }
+    return campo;
+  }
+
+  function validarBorrador(dias) {
+    var errores = [];
+    var invalidos = [];
+    if (!Array.isArray(dias) || !dias.length) {
+      errores.push('agrega al menos un día con un ejercicio');
+    }
+    (dias || []).forEach(function (dia, di) {
+      if (!dia || !Array.isArray(dia.ejercicios) || !dia.ejercicios.length) {
+        errores.push('el día ' + (di + 1) + ' necesita al menos un ejercicio');
+        return;
+      }
+      dia.ejercicios.forEach(function (ej, ei) {
+        var ubicacion = ' (día ' + (di + 1) + ', ejercicio ' + (ei + 1) + ')';
+        var nombre = String((ej && ej.nombre) || '').trim();
+        if (!nombre) {
+          errores.push(nombreCampoLegible('nombre') + ubicacion);
+          invalidos.push({ d: di, e: ei, campo: 'nombre' });
+        }
+        var seriesTexto = String((ej && ej.series != null) ? ej.series : '').trim();
+        var series = parseInt(seriesTexto, 10);
+        if (seriesTexto === '' || isNaN(series) || series < 1 || series > 10) {
+          errores.push(nombreCampoLegible('series') + ubicacion);
+          invalidos.push({ d: di, e: ei, campo: 'series' });
+        }
+        var repeticiones = String((ej && ej.repeticiones) || '').trim();
+        if (!repeticiones) {
+          errores.push(nombreCampoLegible('repeticiones') + ubicacion);
+          invalidos.push({ d: di, e: ei, campo: 'repeticiones' });
+        }
+        var descansoTexto = String((ej && ej.descanso != null) ? ej.descanso : '').trim();
+        if (descansoTexto !== '') {
+          var descanso = parseInt(descansoTexto, 10);
+          if (isNaN(descanso) || descanso < 0 || descanso > 600) {
+            errores.push(nombreCampoLegible('descanso') + ubicacion);
+            invalidos.push({ d: di, e: ei, campo: 'descanso' });
+          }
+        }
+      });
+    });
+    return { valido: errores.length === 0, errores: errores, invalidos: invalidos };
+  }
+
+  // -----------------------------------------------------------------------
+  // Estado del módulo (R-05.6/R-06.4): referencia de re-montaje para
+  // herzon:modo-cambiado (patrón manejarRemontajeDatos COPIADO de
+  // build/vista_dieta_supl.js), borrador del editor EN MEMORIA (se
+  // reconstruye desde HERZON_DATA.rutina en cada remontaje de cliente) y
+  // mensaje de éxito de consumo-único (mismo patrón que mensajeExitoPerfil
+  // de build/vista_metricas.js F-04.5).
+  // -----------------------------------------------------------------------
+  var refsMontajeRutina = null;
+  var borradorDias = [];
+  var mensajeExitoRutina = '';
+
+  function ejercicioVacio() {
+    return { nombre: '', series: '', repeticiones: '', descanso: '', notas: '' };
+  }
+
+  function diaVacio() {
+    return { titulo: '', ejercicios: [ejercicioVacio()] };
+  }
+
+  function reconstruirBorrador(rutina) {
+    if (!rutina || !Array.isArray(rutina.dias) || !rutina.dias.length) { return []; }
+    return rutina.dias.map(function (d) {
+      return {
+        titulo: d.titulo || '',
+        ejercicios: (d.ejercicios || []).map(function (e) {
+          return {
+            nombre: e.nombre || '',
+            series: (e.series != null) ? String(e.series) : '',
+            repeticiones: e.repeticiones || '',
+            descanso: (e.descanso_s != null) ? String(e.descanso_s) : '',
+            notas: e.notas || ''
+          };
+        })
+      };
+    });
+  }
+
+  function idCampoDia(i) { return 'hz-rut-d' + (i + 1) + '-titulo'; }
+  function idCampoEjercicio(i, j, campo) { return 'hz-rut-d' + (i + 1) + '-e' + (j + 1) + '-' + campo; }
+
+  // Relee TODOS los valores actualmente tecleados en el DOM hacia
+  // `borradorDias` ANTES de cualquier mutación estructural (agregar/quitar
+  // día o ejercicio) o de validar al guardar -- así ninguna tecla se pierde
+  // (R-06.4): el DOM es la fuente de verdad mientras no hay remontaje.
+  function sincronizarDesdeDOM(formEl) {
+    borradorDias.forEach(function (dia, i) {
+      var campoTitulo = buscarHijoPorId(formEl, idCampoDia(i));
+      if (campoTitulo) { dia.titulo = campoTitulo.value; }
+      dia.ejercicios.forEach(function (ej, j) {
+        ['nombre', 'series', 'repeticiones', 'descanso', 'notas'].forEach(function (campo) {
+          var el = buscarHijoPorId(formEl, idCampoEjercicio(i, j, campo));
+          if (el) { ej[campo] = el.value; }
+        });
+      });
+    });
+  }
+
+  function limpiarInvalidos(formEl) {
+    ['nombre', 'series', 'repeticiones', 'descanso'].forEach(function (campo) {
+      borradorDias.forEach(function (dia, i) {
+        dia.ejercicios.forEach(function (ej, j) {
+          var el = buscarHijoPorId(formEl, idCampoEjercicio(i, j, campo));
+          if (el) { el.removeAttribute('aria-invalid'); }
+        });
+      });
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Montaje de la vista completa: lectura (R-05) + editor solo real (R-06).
+  // Una sola función `render()` reconstruye TODO desde cero en cada llamada
+  // (montaje inicial, herzon:modo-cambiado y tras un guardado exitoso) --
+  // así el editor SIEMPRE arranca con un borrador fiel a HERZON_DATA.rutina
+  // recién guardado/remontado (R-06.4).
+  // -----------------------------------------------------------------------
+  function montarVistaRutina(rootEl) {
+    var doc = rootEl.ownerDocument;
+
+    function render() {
+      limpiar(rootEl);
+      var HERZON_DATA = G.HERZON_DATA;
+      var Almacen = obtenerAlmacen();
+      var enModoReal = esModoReal(Almacen);
+      var rutina = HERZON_DATA && HERZON_DATA.rutina;
+      var dias = (rutina && Array.isArray(rutina.dias)) ? rutina.dias : [];
+
+      var contenedorDocumento = (typeof doc.getElementById === 'function') ? doc.getElementById('documento-rutina') : null;
+
+      // --- R-05.1: fila de herramientas (imprimir / descargar) ---
+      var toolbar = crear(doc, 'div', ['hz-doc-herramientas']);
+      var botonImprimir = crear(doc, 'button', ['hz-doc-btn'], TEXTO_BOTON_IMPRIMIR_RUTINA);
+      botonImprimir.setAttribute('type', 'button');
+      botonImprimir.setAttribute('id', 'hz-btn-imprimir-rutina');
+      var botonDescargar = crear(doc, 'button', ['hz-doc-btn'], TEXTO_BOTON_DESCARGAR_RUTINA);
+      botonDescargar.setAttribute('type', 'button');
+      botonDescargar.setAttribute('id', 'hz-btn-descargar-rutina');
+      var sinRutinaReal = enModoReal && !rutina;
+      if (sinRutinaReal) {
+        [botonImprimir, botonDescargar].forEach(function (b) {
+          b.setAttribute('disabled', 'disabled');
+          b.setAttribute('aria-disabled', 'true');
+        });
+      }
+      toolbar.appendChild(botonImprimir);
+      toolbar.appendChild(botonDescargar);
+      rootEl.appendChild(toolbar);
+
+      botonImprimir.addEventListener('click', function () {
+        if (!G.HERZON_DATA || !G.HERZON_DATA.rutina || !contenedorDocumento) { return; }
+        var payload = datosDocumentoRutina(G.HERZON_DATA);
+        renderDocumentoRutina(doc, contenedorDocumento, payload);
+        doc.body.setAttribute('data-imprimir', 'rutina');
+        if (typeof G.print === 'function') { G.print(); }
+        doc.body.removeAttribute('data-imprimir');
+        if (typeof G.addEventListener === 'function') {
+          var limpiarAfterPrint = function () {
+            doc.body.removeAttribute('data-imprimir');
+            if (typeof G.removeEventListener === 'function') { G.removeEventListener('afterprint', limpiarAfterPrint); }
+          };
+          G.addEventListener('afterprint', limpiarAfterPrint);
+        }
+      });
+
+      botonDescargar.addEventListener('click', function () {
+        if (!G.HERZON_DATA || !G.HERZON_DATA.rutina) { return; }
+        var Docs = G.Herzon && G.Herzon.Docs;
+        if (!Docs || typeof Docs.descargarArchivo !== 'function' || typeof Docs.nombreArchivoExportable !== 'function') { return; }
+        var payload = datosDocumentoRutina(G.HERZON_DATA);
+        var html = generarHtmlRutinaDescargable(payload);
+        var nombre = Docs.nombreArchivoExportable('rutina', payload.fechaGeneracion, 'html');
+        Docs.descargarArchivo(doc, html, nombre, 'text/html');
+      });
+
+      // --- R-05.2: card con el ÚNICO hz-hero de la vista ---
+      var gridHero = crear(doc, 'div', ['hz-grid']);
+      rootEl.appendChild(gridHero);
+      var cardHero = crearCard(doc, gridHero, TITULO_CARD_LECTURA);
+      var hero = crearHero(doc, cardHero, LABEL_HERO_RUTINA);
+      hero.num.textContent = dias.length ? String(dias.length) : '—';
+      if (rutina && rutina.actualizado) {
+        cardHero.appendChild(crear(doc, 'p', ['hz-nota'], 'Actualizada: ' + rutina.actualizado));
+      }
+      if (!enModoReal) {
+        cardHero.appendChild(crear(doc, 'p', ['hz-nota'], TEXTO_DEMO_RUTINA));
+      }
+
+      // --- R-05.3/R-05.4: grid de días por lectura, o estado vacío real ---
+      if (dias.length) {
+        var gridDias = crear(doc, 'div', ['hz-grid', 'hz-grid-pares']);
+        rootEl.appendChild(gridDias);
+        dias.forEach(function (dia) {
+          var cardDia = crearCard(doc, gridDias, tituloDia(dia));
+          var lista = crear(doc, 'div', ['hz-rutina-lista']);
+          dia.ejercicios.forEach(function (ej) {
+            var item = crear(doc, 'div', ['hz-rutina-item']);
+            item.appendChild(crear(doc, 'span', ['hz-rutina-nombre'], ej.nombre));
+            item.appendChild(crear(doc, 'span', ['hz-rutina-dosis'], ej.series + ' x ' + ej.repeticiones));
+            if (ej.descanso_s != null) {
+              item.appendChild(crear(doc, 'span', ['hz-rutina-descanso'], 'descanso ' + ej.descanso_s + ' s'));
+            }
+            if (ej.notas) {
+              item.appendChild(crear(doc, 'span', ['hz-rutina-nota'], ej.notas));
+            }
+            lista.appendChild(item);
+          });
+          cardDia.appendChild(lista);
+        });
+      } else if (enModoReal) {
+        rootEl.appendChild(crear(doc, 'p', ['hz-vacio'], TEXTO_VACIO_RUTINA));
+      }
+
+      rootEl.setAttribute('data-rutina-dias', String(dias.length));
+
+      // --- R-06: editor, SOLO en modo real (C-1: consume F-01/F-02 tal
+      // cual; la cláusula de fallback de la propuesta cruda queda ANULADA) ---
+      if (enModoReal) {
+        montarEditorRutina(doc, rootEl, Almacen, HERZON_DATA, render);
+      }
+    }
+
+    render();
+    refsMontajeRutina = { render: render };
+  }
+
+  // -----------------------------------------------------------------------
+  // R-06: editor de rutina completo. Recibe `render` (la función de
+  // remontaje completo de arriba) para poder re-disparar TODA la vista tras
+  // un guardado exitoso (la lectura y el editor deben reflejar el nuevo
+  // HERZON_DATA.rutina, R-06.3).
+  // -----------------------------------------------------------------------
+  function montarEditorRutina(doc, rootEl, Almacen, HERZON_DATA, render) {
+    borradorDias = reconstruirBorrador(HERZON_DATA && HERZON_DATA.rutina);
+
+    var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
+    card.setAttribute('id', 'hz-rutina-editor');
+    card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_EDITOR));
+
+    var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
+    var contenedorDias = crear(doc, 'div', ['hz-form-ancho']);
+    form.appendChild(contenedorDias);
+
+    var botonAgregarDia = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_AGREGAR_DIA);
+    botonAgregarDia.setAttribute('type', 'button');
+    botonAgregarDia.setAttribute('id', 'hz-btn-agregar-dia');
+    form.appendChild(botonAgregarDia);
+
+    var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+    var botonGuardar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_GUARDAR_RUTINA);
+    botonGuardar.setAttribute('type', 'submit');
+    botonGuardar.setAttribute('id', 'hz-btn-guardar-rutina');
+    acciones.appendChild(botonGuardar);
+    form.appendChild(acciones);
+
+    var errorEl = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
+    errorEl.setAttribute('id', 'hz-rutina-error');
+    form.appendChild(errorEl);
+
+    var estadoEl = crear(doc, 'p', ['hz-nota', 'hz-form-ancho']);
+    estadoEl.setAttribute('id', 'hz-rutina-estado');
+    // C-9 (patrón mensajeExitoPerfil de build/vista_metricas.js F-04.5):
+    // consumo único -- si un guardado exitoso dejó un mensaje pendiente, se
+    // pinta aquí una sola vez y se limpia la variable de módulo.
+    if (mensajeExitoRutina) {
+      estadoEl.textContent = mensajeExitoRutina;
+      estadoEl.style.color = 'var(--delta-good)';
+      mensajeExitoRutina = '';
+    }
+    form.appendChild(estadoEl);
+
+    function actualizarBotonAgregarDia() {
+      if (borradorDias.length >= MAX_DIAS) {
+        botonAgregarDia.setAttribute('disabled', 'disabled');
+        botonAgregarDia.setAttribute('aria-disabled', 'true');
+      } else {
+        botonAgregarDia.removeAttribute('disabled');
+        botonAgregarDia.removeAttribute('aria-disabled');
+      }
+    }
+
+    function construirCamposEjercicio(subGrid, ej, i, j) {
+      crearCampoInput(doc, subGrid, idCampoEjercicio(i, j, 'nombre'), LABEL_EJERCICIO, 'text', ej.nombre, { maxlength: 80 });
+      crearCampoInput(doc, subGrid, idCampoEjercicio(i, j, 'series'), LABEL_SERIES, 'number', ej.series, { min: 1, max: 10 });
+      crearCampoInput(doc, subGrid, idCampoEjercicio(i, j, 'repeticiones'), LABEL_REPETICIONES, 'text', ej.repeticiones, { maxlength: 40 });
+      crearCampoInput(doc, subGrid, idCampoEjercicio(i, j, 'descanso'), LABEL_DESCANSO, 'number', ej.descanso, { min: 0, max: 600 });
+      crearCampoInput(doc, subGrid, idCampoEjercicio(i, j, 'notas'), LABEL_NOTAS, 'text', ej.notas, { maxlength: 120 });
+
+      var botonQuitarEj = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro', 'hz-form-ancho'], TEXTO_BOTON_QUITAR);
+      botonQuitarEj.setAttribute('type', 'button');
+      botonQuitarEj.addEventListener('click', function () {
+        sincronizarDesdeDOM(form);
+        var dia = borradorDias[i];
+        if (!dia) { return; }
+        var idxEj = dia.ejercicios.indexOf(ej);
+        if (idxEj !== -1) { dia.ejercicios.splice(idxEj, 1); }
+        // R-06.4: quitar el último ejercicio de un día elimina el día del
+        // borrador (reversible mientras no se guarde).
+        if (!dia.ejercicios.length) {
+          var idxDia = borradorDias.indexOf(dia);
+          if (idxDia !== -1) { borradorDias.splice(idxDia, 1); }
+        }
+        repintarCampos();
+      });
+      subGrid.appendChild(botonQuitarEj);
+    }
+
+    function construirFieldsetDia(dia, i) {
+      var fieldset = crear(doc, 'fieldset', ['hz-form-ancho']);
+      fieldset.appendChild(crear(doc, 'legend', null, 'Día ' + (i + 1)));
+
+      crearCampoInput(doc, fieldset, idCampoDia(i), LABEL_TITULO_DIA, 'text', dia.titulo, { maxlength: 60 });
+
+      var subGrid = crear(doc, 'div', ['hz-form-sub']);
+      dia.ejercicios.forEach(function (ej, j) { construirCamposEjercicio(subGrid, ej, i, j); });
+      fieldset.appendChild(subGrid);
+
+      var botonAgregarEj = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_AGREGAR_EJERCICIO);
+      botonAgregarEj.setAttribute('type', 'button');
+      if (dia.ejercicios.length >= MAX_EJERCICIOS_POR_DIA) {
+        botonAgregarEj.setAttribute('disabled', 'disabled');
+        botonAgregarEj.setAttribute('aria-disabled', 'true');
+      }
+      botonAgregarEj.addEventListener('click', function () {
+        sincronizarDesdeDOM(form);
+        if (dia.ejercicios.length >= MAX_EJERCICIOS_POR_DIA) { return; }
+        dia.ejercicios.push(ejercicioVacio());
+        repintarCampos();
+      });
+      fieldset.appendChild(botonAgregarEj);
+
+      var botonQuitarDia = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_QUITAR_DIA);
+      botonQuitarDia.setAttribute('type', 'button');
+      botonQuitarDia.addEventListener('click', function () {
+        sincronizarDesdeDOM(form);
+        var idx = borradorDias.indexOf(dia);
+        if (idx !== -1) { borradorDias.splice(idx, 1); }
+        repintarCampos();
+      });
+      fieldset.appendChild(botonQuitarDia);
+
+      return fieldset;
+    }
+
+    function repintarCampos() {
+      limpiar(contenedorDias);
+      borradorDias.forEach(function (dia, i) { contenedorDias.appendChild(construirFieldsetDia(dia, i)); });
+      actualizarBotonAgregarDia();
+    }
+
+    botonAgregarDia.addEventListener('click', function () {
+      sincronizarDesdeDOM(form);
+      if (borradorDias.length >= MAX_DIAS) { return; }
+      borradorDias.push(diaVacio());
+      repintarCampos();
+    });
+
+    form.addEventListener('submit', function (ev) {
+      if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+      sincronizarDesdeDOM(form);
+      limpiarInvalidos(form);
+      errorEl.textContent = '';
+      estadoEl.textContent = '';
+
+      var resultado = validarBorrador(borradorDias);
+      if (!resultado.valido) {
+        resultado.invalidos.forEach(function (inv) {
+          var el = buscarHijoPorId(form, idCampoEjercicio(inv.d, inv.e, inv.campo));
+          if (el) { el.setAttribute('aria-invalid', 'true'); }
+        });
+        errorEl.textContent = 'Revisa: ' + resultado.errores.join(', ') + '. No se guardó la rutina.';
+        return;
+      }
+
+      var diasPayload = borradorDias.map(function (dia) {
+        return {
+          titulo: dia.titulo,
+          ejercicios: dia.ejercicios.map(function (ej) {
+            var descansoTexto = String(ej.descanso == null ? '' : ej.descanso).trim();
+            return {
+              nombre: ej.nombre,
+              series: parseInt(ej.series, 10),
+              repeticiones: ej.repeticiones,
+              descanso_s: (descansoTexto === '') ? null : parseInt(descansoTexto, 10),
+              notas: ej.notas
+            };
+          })
+        };
+      });
+      var totalEjercicios = diasPayload.reduce(function (acc, d) { return acc + d.ejercicios.length; }, 0);
+
+      if (!Almacen || typeof Almacen.guardarRutina !== 'function') {
+        errorEl.textContent = MSG_GUARDADO_FALLIDO;
+        return;
+      }
+      var ok = Almacen.guardarRutina({ dias: diasPayload, actualizado: formatoFechaHoy(new Date()) });
+      if (!ok) {
+        errorEl.textContent = MSG_GUARDADO_FALLIDO;
+        return;
+      }
+      mensajeExitoRutina = 'Rutina guardada en este dispositivo — ' + diasPayload.length + ' día(s), ' + totalEjercicios + ' ejercicio(s).';
+      render();
+    });
+
+    repintarCampos();
+    card.appendChild(form);
+    rootEl.appendChild(card);
+  }
+
+  // -----------------------------------------------------------------------
+  // R-05.6: reactividad multi-cliente. Views se monta UNA sola vez
+  // (Herzon.registerView, plan.md 3.C); este listener a nivel de módulo es
+  // el único mecanismo de repintado ante herzon:modo-cambiado (demo<->real y
+  // cliente<->cliente). Patrón COPIADO de build/vista_dieta_supl.js
+  // (manejarRemontajeDatos); ese archivo no se toca en R10 (C-7).
+  // -----------------------------------------------------------------------
+  function manejarRemontajeDatos() {
+    if (refsMontajeRutina) { refsMontajeRutina.render(); }
+  }
+  if (typeof G.addEventListener === 'function') {
+    G.addEventListener('herzon:modo-cambiado', manejarRemontajeDatos);
+  }
+
+  // -----------------------------------------------------------------------
+  // Registro (R-08.1): namespace propio Herzon.Views.rutina (plan.md 3.B);
+  // funciones puras expuestas para prueba en Herzon.Views.rutinaInterno.
+  // -----------------------------------------------------------------------
+  G.Herzon.Views.rutina = montarVistaRutina;
+  G.Herzon.Views.rutinaInterno = {
+    renderDocumentoRutina: renderDocumentoRutina,
+    generarHtmlRutinaDescargable: generarHtmlRutinaDescargable,
+    validarBorrador: validarBorrador
+  };
+
+  G.Herzon.registerView('rutina', montarVistaRutina);
+})();
+
+</script>
 <script id="hz-vistas-b">
 // build/vista_metricas.js
 // U-VISTAS-B (T-005): vistas Resumen, Perfil y Seguimiento del prototipo Rinde.
@@ -7370,6 +9234,51 @@ button, input, select { font-family: inherit; }
   var TITULO_NOTA_DEMO = 'Acerca del modo demo';
   var TEXTO_BOTON_ELIMINAR_NORMAL = 'Eliminar este cliente';
   var MS_REVERSION_CONFIRMAR = 6000;
+
+  // -----------------------------------------------------------------------
+  // R10 (S-02/S-03/S-04, F-04/S-05): textos EXACTOS pinneados por
+  // .harness/justesse-r10-diseno.md sección 2.3 (C-10) -- forma canónica,
+  // con acentos, que fijan los selfchecks. El resto de esta lista completa
+  // los textos que la sección 2.3 deja a criterio del implementador (sin
+  // debilitar ni contradecir el contrato).
+  // -----------------------------------------------------------------------
+  var TITULO_DESBLOQUEO = 'Tus datos están protegidos';
+  var CUERPO_DESBLOQUEO = 'La información de tus clientes está cifrada en este dispositivo. Escribe tu contraseña para desbloquearla.';
+  var TEXTO_BOTON_DESBLOQUEAR = 'Desbloquear';
+  var TEXTO_BOTON_DESBLOQUEANDO = 'Descifrando…';
+  var MSG_DESBLOQUEO_INCORRECTO = 'Contraseña incorrecta. Vuelve a intentarlo.';
+  var TEXTO_PIE_RECUPERACION = 'Si olvidaste tu contraseña, no es posible recuperarla. Puedes restaurar un respaldo o borrar todos los datos para empezar de cero.';
+  var TEXTO_BOTON_BORRAR_TODO = 'Borrar todos los datos';
+
+  var TITULO_SEGURIDAD = 'Seguridad y respaldo';
+  var NOTA_AMBITO_SEGURIDAD = 'La contraseña protege todos los clientes guardados en este dispositivo. Los datos se cifran aquí mismo: nadie puede recuperarlos sin la contraseña, ni siquiera tú.';
+  var NOTA_RESPALDO_PREVIO = 'Antes de activar, descarga un respaldo. Si olvidas la contraseña, será tu única forma de recuperar los datos.';
+  var TEXTO_BOTON_RESPALDO = 'Descargar respaldo (.json)';
+  var LABEL_PASS_1 = 'Contraseña (mínimo 8 caracteres)';
+  var LABEL_PASS_2 = 'Repite la contraseña';
+  var LABEL_CONFIRMO = 'Entiendo que si olvido la contraseña mis datos no se pueden recuperar';
+  var TEXTO_BOTON_ACTIVAR = 'Activar protección';
+  var TEXTO_BOTON_CIFRANDO = 'Cifrando…';
+  var MSG_ACTIVADA = 'Protección activada. Tus datos quedaron cifrados en este dispositivo.';
+  var TEXTO_ESTADO_PROTEGIDA = 'Protección activada';
+  var TEXTO_BOTON_BLOQUEAR = 'Bloquear ahora';
+  var LABEL_PASS_ACTUAL = 'Contraseña actual';
+  var LABEL_PASS_NUEVA_1 = 'Contraseña nueva (mínimo 8 caracteres)';
+  var LABEL_PASS_NUEVA_2 = 'Repite la contraseña nueva';
+  var TEXTO_BOTON_CAMBIAR = 'Cambiar contraseña';
+  var TEXTO_BOTON_QUITAR = 'Quitar contraseña';
+  var NOTA_QUITAR_ADVERTENCIA = 'Al quitar la contraseña, los datos quedan guardados SIN cifrar en este dispositivo.';
+
+  var NOTA_RESPALDO_CUSTODIA = 'El respaldo se descarga SIN cifrar. Incluye a todos los clientes: guárdalo en un lugar seguro.';
+  var LABEL_IMPORTAR_RESPALDO = 'Restaurar respaldo (.json)';
+  var TEXTO_BOTON_RESPALDAR_ANTES = 'Descargar respaldo de lo actual antes de continuar';
+  var TEXTO_BOTON_RESTAURAR_CONFIRMAR = 'Reemplazar todo y restaurar';
+  var MSG_RESPALDO_INVALIDO = 'El archivo no es un respaldo válido de Rinde.';
+  var TEXTO_EXTRA_RESTAURAR_BLOQUEADO = 'Esto reemplaza los datos cifrados de este dispositivo y desactiva la contraseña actual. Podrás activar una nueva después.';
+
+  var LABEL_LABS_OCULTOS = 'Este cliente no se realiza laboratorios';
+  var NOTA_LABS_OCULTOS = 'Ocultar no borra los resultados ya capturados.';
+  var MENSAJE_EXITO_PERFIL = 'Cambios guardados.';
 
   var OPCIONES_SEXO = [
     { valor: '', etiqueta: 'Selecciona' },
@@ -7563,6 +9472,39 @@ button, input, select { font-family: inherit; }
     campo.appendChild(select);
     contenedorEl.appendChild(campo);
     return { campo: campo, select: select };
+  }
+
+  // S-05/S-03: checkbox de una fila (mismo patrón que crearCampoInput/
+  // crearCampoSelect de arriba, pero con type=checkbox e input.checked en
+  // vez de input.value).
+  function crearCampoCheckbox(doc, contenedorEl, idCampo, etiquetaTexto, checkedInicial) {
+    var campo = crear(doc, 'div', ['hz-form-campo']);
+    var input = crear(doc, 'input');
+    input.setAttribute('id', idCampo);
+    input.setAttribute('type', 'checkbox');
+    input.checked = !!checkedInicial;
+    var etiqueta = crear(doc, 'label', null, etiquetaTexto);
+    etiqueta.setAttribute('for', idCampo);
+    campo.appendChild(input);
+    campo.appendChild(etiqueta);
+    contenedorEl.appendChild(campo);
+    return { campo: campo, input: input };
+  }
+
+  // S-04: lectura de archivo local para restaurar un respaldo. Mismo patrón
+  // que `leerArchivoComoTexto` de build/documentos.js (COPIADO, no
+  // importado -- C-7, documentos.js no se toca en R10): aislado en su
+  // propia función para que el selfcheck pueda ejercitar el resto del
+  // flujo con un stub mínimo de FileReader, sin depender de un navegador.
+  function leerArchivoComoTextoLocal(archivo, callback) {
+    if (typeof FileReader === 'undefined') {
+      callback(null, 'este navegador no soporta FileReader');
+      return;
+    }
+    var lector = new FileReader();
+    lector.onerror = function () { callback(null, 'error de lectura del archivo'); };
+    lector.onload = function () { callback(String(lector.result || ''), null); };
+    lector.readAsText(archivo);
   }
 
   function limpiarBordesValidacion(campos) {
@@ -7766,9 +9708,16 @@ button, input, select { font-family: inherit; }
   // -----------------------------------------------------------------------
   // Vista Perfil: UN número héroe (IMC actual) DENTRO del grid de 3 tarjetas
   // (LY-02), tarjeta clínica, tarjeta antropométrica, semáforos de
-  // laboratorios en grid anidado (LY-02), edición de perfil y eliminación de
-  // cliente en modo real (R8 punto 5, MC-06), y el formulario de alta de
-  // cliente (MC-04, ids congelados en Adendum R9 punto 6).
+  // laboratorios en grid anidado (LY-02, omitida por S-05 si el cliente
+  // tiene labsOcultos), edición de perfil (F-04, con la casilla S-05 y el
+  // pie de eliminación F-05) y eliminación de cliente en modo real (R8
+  // punto 5, MC-06), el formulario de alta de cliente en card centrada
+  // (F-03, MC-04, ids congelados en Adendum R9 punto 6), la card de
+  // desbloqueo (S-02, primera card mientras Almacen.bloqueado()===true) y
+  // la card de seguridad y respaldo (S-03/S-04, solo real desbloqueado).
+  // Orden real de la vista (C-3): [bloqueado: desbloqueo primera] -> cards
+  // actuales -> Editar perfil (casilla labs + pie de eliminación) ->
+  // seguridad -> (alta, normalmente oculta).
   // -----------------------------------------------------------------------
   function mountPerfil(rootEl) {
     var doc = rootEl.ownerDocument;
@@ -7777,6 +9726,17 @@ button, input, select { font-family: inherit; }
     // montaje perezoso ocurriera (fix BUG 1); se consume una sola vez.
     var mostrarAlta = altaPendienteAlMontar;
     altaPendienteAlMontar = false;
+    // F-04.5: mensaje de éxito de "Guardar cambios" -- patrón consumo-único
+    // (como altaPendienteAlMontar arriba): el submit exitoso lo fija ANTES
+    // de provocar el siguiente montaje (propio, o vía herzon:modo-cambiado
+    // si S-05 cambió la configuración); ese siguiente montaje lo consume
+    // una sola vez.
+    var mensajeExitoPerfil = '';
+    // S-03: mismo patrón consumo-único, compartido por las tres acciones de
+    // la card de seguridad (activar/cambiar/quitar) -- solo un panel
+    // (sin protección o con protección) se monta por render, así que
+    // comparten un único mensaje sin colisión posible.
+    var mensajeExitoSeguridad = '';
 
     function render() {
       limpiar(rootEl);
@@ -7785,6 +9745,13 @@ button, input, select { font-family: inherit; }
       var paciente = data.paciente || {};
       var labs = data.labs || {};
       var enReal = esModoReal(Almacen);
+      var bloqueado = !!(Almacen && typeof Almacen.bloqueado === 'function' && Almacen.bloqueado());
+
+      // --- S-02: mientras bloqueado()===true, la vista monta SIEMPRE, como
+      // PRIMERA card, el formulario de desbloqueo (C-3). ---
+      if (bloqueado) {
+        montarCardDesbloqueo();
+      }
 
       // --- LY-02 pieza (a): héroe IMC como PRIMER hijo del grid de 3. ---
       var heroCard = crear(doc, 'div', ['hz-card']);
@@ -7835,64 +9802,81 @@ button, input, select { font-family: inherit; }
 
       rootEl.appendChild(grid);
 
-      // --- LY-02 pieza (b): 7 semáforos en grid anidado dentro de cardLabs. ---
-      var tarjetaLabs = crear(doc, 'div', ['hz-card']);
-      tarjetaLabs.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Laboratorios - estado actual'));
-      var marcadores = labs.marcadores || [];
-      var hayLabs = marcadores.some(function (m) { return (m.valores || []).length > 0; });
-      if (enReal && !hayLabs) {
-        crearVacio(doc, tarjetaLabs);
-      } else {
-        var cortes = labs.cortes || [];
-        var ultimoCorte = cortes.length ? cortes[cortes.length - 1].etiqueta : '';
-        if (ultimoCorte) { tarjetaLabs.appendChild(crear(doc, 'p', null, 'Corte más reciente: ' + ultimoCorte)); }
-        var gridSemaforos = crear(doc, 'div', ['hz-grid']);
-        marcadores.forEach(function (m) {
-          var valores = m.valores || [];
-          var valorFinal = valores.length ? valores[valores.length - 1] : null;
-          var estado = (valorFinal != null) ? calcularEstadoMarcador(valorFinal, m.referencia, m.mejorSi) : 'good';
-          var wrapMarcador = crear(doc, 'div');
-          var punto = crear(doc, 'span', ['hz-status-dot']);
-          punto.setAttribute('data-status', estado);
-          var nombre = crear(doc, 'span', null, m.nombre + ': ');
-          nombre.style.color = 'var(--text-secondary)';
-          nombre.style.fontWeight = '400';
-          var textoValor = (valorFinal != null)
-            ? (formatoNumero(valorFinal, 1) + ' ' + m.unidad + ' - ' + ETIQUETAS_ESTADO[estado])
-            : '—';
-          var valor = crear(doc, 'span', ['hz-status-label'], textoValor);
-          valor.style.fontVariantNumeric = 'tabular-nums';
-          wrapMarcador.appendChild(punto);
-          wrapMarcador.appendChild(nombre);
-          wrapMarcador.appendChild(valor);
-          gridSemaforos.appendChild(wrapMarcador);
-        });
-        tarjetaLabs.appendChild(gridSemaforos);
+      // --- LY-02 pieza (b): 7 semáforos en grid anidado dentro de cardLabs.
+      // S-05: con labsOcultos===true en modo real, la card se OMITE por
+      // completo (decisión clínica del nutriólogo, no un vacío); en demo o
+      // bloqueado (enReal===false) siempre se monta. ---
+      var labsOcultosPerfil = enReal && !!(data.config && data.config.labsOcultos);
+      if (!labsOcultosPerfil) {
+        var tarjetaLabs = crear(doc, 'div', ['hz-card']);
+        tarjetaLabs.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Laboratorios - estado actual'));
+        var marcadores = labs.marcadores || [];
+        var hayLabs = marcadores.some(function (m) { return (m.valores || []).length > 0; });
+        if (enReal && !hayLabs) {
+          crearVacio(doc, tarjetaLabs);
+        } else {
+          var cortes = labs.cortes || [];
+          var ultimoCorte = cortes.length ? cortes[cortes.length - 1].etiqueta : '';
+          if (ultimoCorte) { tarjetaLabs.appendChild(crear(doc, 'p', null, 'Corte más reciente: ' + ultimoCorte)); }
+          var gridSemaforos = crear(doc, 'div', ['hz-grid']);
+          marcadores.forEach(function (m) {
+            var valores = m.valores || [];
+            var valorFinal = valores.length ? valores[valores.length - 1] : null;
+            var estado = (valorFinal != null) ? calcularEstadoMarcador(valorFinal, m.referencia, m.mejorSi) : 'good';
+            var wrapMarcador = crear(doc, 'div');
+            var punto = crear(doc, 'span', ['hz-status-dot']);
+            punto.setAttribute('data-status', estado);
+            var nombre = crear(doc, 'span', null, m.nombre + ': ');
+            nombre.style.color = 'var(--text-secondary)';
+            nombre.style.fontWeight = '400';
+            var textoValor = (valorFinal != null)
+              ? (formatoNumero(valorFinal, 1) + ' ' + m.unidad + ' - ' + ETIQUETAS_ESTADO[estado])
+              : '—';
+            var valor = crear(doc, 'span', ['hz-status-label'], textoValor);
+            valor.style.fontVariantNumeric = 'tabular-nums';
+            wrapMarcador.appendChild(punto);
+            wrapMarcador.appendChild(nombre);
+            wrapMarcador.appendChild(valor);
+            gridSemaforos.appendChild(wrapMarcador);
+          });
+          tarjetaLabs.appendChild(gridSemaforos);
+        }
+        rootEl.appendChild(tarjetaLabs);
       }
-      rootEl.appendChild(tarjetaLabs);
 
-      // --- R8 punto 5 + MC-06: edición de perfil y eliminación de cliente,
-      // SOLO en modo real. ---
+      // --- R8 punto 5 + F-04/F-05/S-05: edición de perfil (con la casilla
+      // de labs ocultos y el pie de eliminación) SOLO en modo real. ---
       if (enReal) {
-        montarFormularioEdicionPerfil();
-        montarBotonEliminarCliente();
+        var cardEditarPerfil = montarFormularioEdicionPerfil();
+        montarBotonEliminarCliente(cardEditarPerfil);
       }
 
-      // --- MC-04: formulario de alta de cliente (ids congelados en Adendum
-      // R9 punto 6). Siempre presente en el DOM; oculto salvo que
-      // `mostrarAlta` esté activo (herzon:cliente-nuevo-solicitado). ---
+      // --- S-03: card de seguridad y respaldo, SOLO real desbloqueado. ---
+      if (enReal && !bloqueado) {
+        montarCardSeguridad();
+      }
+
+      // --- MC-04/F-03: formulario de alta de cliente (ids congelados en
+      // Adendum R9 punto 6), ahora en card centrada (F-03). Siempre
+      // presente en el DOM; oculto salvo que `mostrarAlta` esté activo
+      // (herzon:cliente-nuevo-solicitado). ---
       montarFormularioAlta();
 
       // -----------------------------------------------------------------
-      // R8 punto 5: edición de perfil (nombre/sexo/edad/talla/peso
-      // inicial/actividad/objetivo) -> Herzon.Almacen.actualizarPerfil.
+      // R8 punto 5 + F-04 + S-05: edición de perfil (nombre/sexo/edad/
+      // talla/peso inicial/actividad/objetivo, casilla de labs ocultos) ->
+      // Herzon.Almacen.actualizarPerfil (+ actualizarConfig si la casilla
+      // cambió). Sistema de formularios F-01/F-02: card hz-form-card, form
+      // hz-form-columnas. DEVUELVE la card (F-04.6: la necesitan F-05 y la
+      // llamada de arriba).
       // -----------------------------------------------------------------
       function montarFormularioEdicionPerfil() {
-        var card = crear(doc, 'div', ['hz-card']);
+        var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
         card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Editar perfil'));
-        var form = crear(doc, 'form', ['hz-form']);
+        var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
 
         var campoNombre = crearCampoInput(doc, form, 'hz-editar-nombre', 'Nombre', 'text', paciente.nombre || '');
+        campoNombre.campo.classList.add('hz-form-ancho');
         var campoSexo = crearCampoSelect(doc, form, 'hz-editar-sexo', 'Sexo', OPCIONES_SEXO);
         campoSexo.select.value = paciente.sexo || '';
         var campoEdad = crearCampoInput(doc, form, 'hz-editar-edad', 'Edad (años)', 'number',
@@ -7906,12 +9890,28 @@ button, input, select { font-family: inherit; }
         campoActividad.select.value = paciente.actividad || '';
         var campoObjetivo = crearCampoInput(doc, form, 'hz-editar-objetivo', 'Objetivo', 'text', paciente.objetivo || '');
 
-        var notaEstado = crear(doc, 'p', ['hz-nota']);
-        form.appendChild(notaEstado);
+        // S-05: casilla de laboratorios ocultos, precargada del config
+        // vigente (ausente => false, tolerancia declarada del contrato).
+        var labsOcultosInicial = !!(data.config && data.config.labsOcultos);
+        var campoLabsOcultos = crearCampoCheckbox(doc, form, 'hz-perfil-labs-ocultos', LABEL_LABS_OCULTOS, labsOcultosInicial);
+        campoLabsOcultos.campo.classList.add('hz-form-ancho');
+        form.appendChild(crear(doc, 'p', ['hz-nota', 'hz-form-ancho'], NOTA_LABS_OCULTOS));
 
-        var botonGuardar = crear(doc, 'button', null, 'Guardar cambios');
+        var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+        var botonGuardar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Guardar cambios');
         botonGuardar.setAttribute('type', 'submit');
-        form.appendChild(botonGuardar);
+        acciones.appendChild(botonGuardar);
+        form.appendChild(acciones);
+
+        // F-04.5: notaEstado va DESPUÉS de las acciones (orden final de la
+        // card, F-04.7); consume mensajeExitoPerfil una sola vez.
+        var notaEstado = crear(doc, 'p', ['hz-nota', 'hz-form-ancho']);
+        if (mensajeExitoPerfil) {
+          notaEstado.textContent = mensajeExitoPerfil;
+          notaEstado.style.color = 'var(--delta-good)';
+          mensajeExitoPerfil = '';
+        }
+        form.appendChild(notaEstado);
 
         form.addEventListener('submit', function (ev) {
           if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
@@ -7933,24 +9933,40 @@ button, input, select { font-family: inherit; }
             notaEstado.style.color = 'var(--delta-bad)';
             return;
           }
-          // actualizarPerfil NO emite herzon:modo-cambiado (no es un
-          // remontaje de cliente): esta vista se refresca a sí misma,
-          // llamando de nuevo a la MISMA render() que la montó.
+          mensajeExitoPerfil = MENSAJE_EXITO_PERFIL;
+          var labsOcultosNuevo = campoLabsOcultos.input.checked === true;
+          if (labsOcultosNuevo !== labsOcultosInicial && Almacen && typeof Almacen.actualizarConfig === 'function') {
+            Almacen.actualizarConfig({ labsOcultos: labsOcultosNuevo });
+            // S-05: actualizarConfig ya disparó herzon:modo-cambiado de
+            // forma SÍNCRONA (mismo patrón que crearCliente/BUG 2 más
+            // abajo): el listener de este módulo ya remontó la vista
+            // completa, consumiendo mensajeExitoPerfil. Un segundo
+            // render() aquí perdería el mensaje ya consumido.
+            return;
+          }
+          // actualizarPerfil (sin cambio de configuración) NO emite
+          // herzon:modo-cambiado (no es un remontaje de cliente): esta
+          // vista se refresca a sí misma, llamando de nuevo a la MISMA
+          // render() que la montó.
           render();
         });
 
         card.appendChild(form);
         rootEl.appendChild(card);
+        return card;
       }
 
       // -----------------------------------------------------------------
-      // MC-06: eliminación individual con confirmación en dos pasos (texto
-      // en el botón, reversión automática a los 6s).
+      // MC-06 + F-05: eliminación individual con confirmación en dos pasos
+      // (texto en el botón, reversión automática a los 6s), ahora discreta
+      // en el pie de la card de Editar perfil (jamás banda de ancho
+      // completo).
       // -----------------------------------------------------------------
-      function montarBotonEliminarCliente() {
+      function montarBotonEliminarCliente(cardEditarPerfil) {
         var clienteActual = (Almacen && typeof Almacen.clienteActivo === 'function') ? Almacen.clienteActivo() : null;
         if (!clienteActual) { return; }
-        var boton = crear(doc, 'button', ['hz-doc-btn'], TEXTO_BOTON_ELIMINAR_NORMAL);
+        var pie = crear(doc, 'div', ['hz-form-pie']);
+        var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_ELIMINAR_NORMAL);
         boton.setAttribute('type', 'button');
         boton.setAttribute('id', 'hz-btn-eliminar-cliente');
         boton.setAttribute('data-confirmar', 'false');
@@ -7973,43 +9989,43 @@ button, input, select { font-family: inherit; }
             temporizador = null;
           }, MS_REVERSION_CONFIRMAR);
         });
-        rootEl.appendChild(boton);
+        pie.appendChild(boton);
+        cardEditarPerfil.appendChild(pie);
       }
 
       // -----------------------------------------------------------------
-      // MC-04: formulario de alta de cliente. Ids congelados (Adendum R9
-      // punto 6). Oculto por default; `herzon:cliente-nuevo-solicitado` lo
-      // muestra (ver el listener de abajo, fuera de render()).
+      // MC-04 + F-03: formulario de alta de cliente, ahora en card
+      // centrada. Ids congelados (Adendum R9 punto 6). Oculto por default;
+      // `herzon:cliente-nuevo-solicitado` lo muestra (ver el listener de
+      // abajo, fuera de render()).
       // -----------------------------------------------------------------
       function montarFormularioAlta() {
-        var form = crear(doc, 'form', ['hz-form']);
+        var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
+        card.setAttribute('id', 'hz-card-alta-cliente');
+        var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
         form.setAttribute('id', 'hz-form-alta-cliente');
         if (!mostrarAlta) {
+          // F-03.2: card y form se togglean JUNTOS -- ambos con `hidden`
+          // (assert de selfcheck_vistas_b.js:395 sigue verde sobre el
+          // form), y el inline style.display='none' en la CARD como
+          // cinturón verificado (F-01.11 ya cubre `.hz-form-card[hidden]`
+          // por CSS, pero el inline queda como refuerzo explícito, mismo
+          // patrón defensivo ya usado en R9 para .hz-form).
+          card.setAttribute('hidden', '');
+          card.style.display = 'none';
           form.setAttribute('hidden', '');
-          // build/shell.html (fuera de este POSEE) declara `.hz-form {
-          // display: flex; ... }` como regla de AUTOR, que en la cascada de
-          // CSS gana sobre `[hidden] { display: none; }` del navegador
-          // (origen user-agent) sin importar especificidad -- el mismo
-          // patrón que shell.html ya resuelve para .hz-vista con la regla
-          // aditiva `.hz-vista[hidden] { display: none; }`, pero que NO
-          // existe para .hz-form. Verificado visualmente en Chrome headless
-          // (scratchpad/r9/full-t040.png intento 1: el formulario de alta
-          // se veía SIEMPRE, con o sin `hidden`). En vez de depender de un
-          // cambio en shell.html, se fija el display inline (mayor
-          // precedencia que cualquier regla de hoja de estilos) -- oculta
-          // de forma robusta sin importar el CSS externo.
-          form.style.display = 'none';
         }
 
-        form.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_ALTA));
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_ALTA));
 
         var clientesCount = (Almacen && typeof Almacen.clientes === 'function') ? Almacen.clientes().length : 0;
         if (clientesCount === 0) {
-          form.appendChild(crear(doc, 'p', ['hz-nota'], SUBTITULO_ALTA_PRIMER_USO));
+          card.appendChild(crear(doc, 'p', ['hz-nota'], SUBTITULO_ALTA_PRIMER_USO));
         }
-        form.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_PRIVACIDAD_ALTA));
+        card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_PRIVACIDAD_ALTA));
 
         var campoNombre = crearCampoInput(doc, form, 'hz-alta-nombre', 'Nombre', 'text', '');
+        campoNombre.campo.classList.add('hz-form-ancho');
         var campoSexo = crearCampoSelect(doc, form, 'hz-alta-sexo', 'Sexo', OPCIONES_SEXO);
         var campoEdad = crearCampoInput(doc, form, 'hz-alta-edad', 'Edad (años)', 'number', '', { min: 1, max: 120, step: 1 });
         var campoTalla = crearCampoInput(doc, form, 'hz-alta-talla', 'Talla (cm)', 'number', '', { min: 50, max: 250, step: 1 });
@@ -8018,13 +10034,13 @@ button, input, select { font-family: inherit; }
           opcionesActividad(data.factoresActividad));
         var campoObjetivo = crearCampoInput(doc, form, 'hz-alta-objetivo', 'Objetivo', 'text', '');
 
-        var errorEl = crear(doc, 'p');
+        var errorEl = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
         errorEl.setAttribute('id', 'hz-alta-error');
         errorEl.style.color = 'var(--delta-bad)';
         form.appendChild(errorEl);
 
-        var acciones = crear(doc, 'div');
-        var botonCrear = crear(doc, 'button', null, 'Crear cliente');
+        var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+        var botonCrear = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Crear cliente');
         botonCrear.setAttribute('type', 'submit');
         botonCrear.setAttribute('id', 'hz-btn-crear-cliente');
         acciones.appendChild(botonCrear);
@@ -8032,7 +10048,7 @@ button, input, select { font-family: inherit; }
         // MC-04: "Cancelar" visible solo si ya existe al menos un cliente o
         // se está en demo.
         if (clientesCount >= 1 || !enReal) {
-          var botonCancelar = crear(doc, 'button', null, 'Cancelar');
+          var botonCancelar = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Cancelar');
           botonCancelar.setAttribute('type', 'button');
           botonCancelar.setAttribute('id', 'hz-btn-cancelar-alta');
           botonCancelar.addEventListener('click', function (ev) {
@@ -8047,7 +10063,9 @@ button, input, select { font-family: inherit; }
         form.addEventListener('submit', function (ev) {
           if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
           errorEl.textContent = '';
-          campoNombre.input.style.borderColor = '';
+          // C-6: código nuevo/refactorizado usa SOLO aria-invalid + la
+          // regla CSS F-01.6, sin inline borderColor.
+          campoNombre.input.removeAttribute('aria-invalid');
           if (!Almacen || typeof Almacen.crearCliente !== 'function') {
             errorEl.textContent = 'No se puede crear un cliente en este momento.';
             return;
@@ -8066,7 +10084,7 @@ button, input, select { font-family: inherit; }
           });
           var res = Almacen.crearCliente(perfilObj);
           if (!res || !res.ok) {
-            campoNombre.input.style.borderColor = 'var(--delta-bad)';
+            campoNombre.input.setAttribute('aria-invalid', 'true');
             errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo crear el cliente.';
             return;
           }
@@ -8084,7 +10102,465 @@ button, input, select { font-family: inherit; }
           render();
         });
 
-        rootEl.appendChild(form);
+        card.appendChild(form);
+        rootEl.appendChild(card);
+      }
+
+      // -----------------------------------------------------------------
+      // S-02: card de desbloqueo -- textos exactos C-10. vista_metricas.js
+      // posee el DOM (C-4); Almacen posee estado/eventos.
+      // -----------------------------------------------------------------
+      function montarCardDesbloqueo() {
+        var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
+        card.setAttribute('id', 'hz-card-desbloqueo');
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_DESBLOQUEO));
+        card.appendChild(crear(doc, 'p', null, CUERPO_DESBLOQUEO));
+
+        var form = crear(doc, 'form', ['hz-form']);
+        var campoPass = crearCampoInput(doc, form, 'hz-desbloqueo-pass', 'Contraseña', 'password', '',
+          { autocomplete: 'current-password' });
+
+        var errorEl = crear(doc, 'p', ['hz-form-error']);
+        errorEl.setAttribute('id', 'hz-desbloqueo-error');
+        form.appendChild(errorEl);
+
+        var acciones = crear(doc, 'div', ['hz-form-acciones']);
+        var botonDesbloquear = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_DESBLOQUEAR);
+        botonDesbloquear.setAttribute('type', 'submit');
+        botonDesbloquear.setAttribute('id', 'hz-btn-desbloquear');
+        acciones.appendChild(botonDesbloquear);
+        form.appendChild(acciones);
+
+        form.addEventListener('submit', function (ev) {
+          if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+          errorEl.textContent = '';
+          if (!Almacen || typeof Almacen.desbloquearYMontar !== 'function') {
+            errorEl.textContent = MSG_DESBLOQUEO_INCORRECTO;
+            return;
+          }
+          // S-02: estado ocupado obligatorio -- sin doble submit, sin
+          // ocultar progreso.
+          botonDesbloquear.setAttribute('disabled', 'disabled');
+          botonDesbloquear.textContent = TEXTO_BOTON_DESBLOQUEANDO;
+          campoPass.input.setAttribute('disabled', 'disabled');
+          Almacen.desbloquearYMontar(campoPass.input.value).then(function (res) {
+            if (!res || !res.ok) {
+              botonDesbloquear.removeAttribute('disabled');
+              botonDesbloquear.textContent = TEXTO_BOTON_DESBLOQUEAR;
+              campoPass.input.removeAttribute('disabled');
+              campoPass.input.value = '';
+              errorEl.textContent = (res && res.error) || MSG_DESBLOQUEO_INCORRECTO;
+              return;
+            }
+            // Éxito: desbloquearYMontar ya disparó
+            // clientes-actualizados -> cliente-cambiado -> modo-cambiado de
+            // forma SÍNCRONA (S-02) -- el listener de este mismo módulo
+            // (registrado más abajo, fuera de render()) ya remontó la
+            // vista completa, con bloqueado()===false y el cliente activo
+            // montado. No hace falta ningún trabajo adicional aquí.
+          });
+        });
+
+        card.appendChild(form);
+
+        // Pie fijo de recuperación (S-04): disponible incluso bloqueado --
+        // las DOS salidas del contrato: restaurar un respaldo o borrar
+        // todos los datos.
+        var pie = crear(doc, 'div', ['hz-form-pie']);
+        pie.appendChild(crear(doc, 'p', ['hz-nota'], TEXTO_PIE_RECUPERACION));
+        pie.appendChild(construirBloqueRestaurarRespaldo(
+          'hz-desbloqueo-import-label', 'hz-desbloqueo-input-restaurar',
+          'hz-btn-desbloqueo-restaurar-confirmar', TEXTO_EXTRA_RESTAURAR_BLOQUEADO));
+        pie.appendChild(montarBotonBorrarTodo());
+        card.appendChild(pie);
+
+        rootEl.appendChild(card);
+      }
+
+      // -----------------------------------------------------------------
+      // S-03: card 'Seguridad y respaldo', SOLO real desbloqueado. Estado
+      // sin protección (activar) o con protección (bloquear/cambiar/
+      // quitar/respaldo) -- nunca coexisten (F-02: un solo primario por
+      // formulario).
+      // -----------------------------------------------------------------
+      function montarCardSeguridad() {
+        var Seguridad = G.Herzon && G.Herzon.Seguridad;
+        var protegido = !!(Seguridad && typeof Seguridad.activa === 'function' && Seguridad.activa());
+
+        var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
+        card.setAttribute('id', 'hz-card-seguridad');
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_SEGURIDAD));
+        card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_AMBITO_SEGURIDAD));
+
+        if (mensajeExitoSeguridad) {
+          var notaExitoSeguridad = crear(doc, 'p', ['hz-nota'], mensajeExitoSeguridad);
+          notaExitoSeguridad.setAttribute('id', 'hz-seg-exito');
+          notaExitoSeguridad.style.color = 'var(--delta-good)';
+          card.appendChild(notaExitoSeguridad);
+          mensajeExitoSeguridad = '';
+        }
+
+        if (protegido) {
+          montarSeguridadConProteccion(card, Seguridad);
+        } else {
+          montarSeguridadSinProteccion(card, Seguridad);
+        }
+
+        rootEl.appendChild(card);
+      }
+
+      // ESTADO SIN PROTECCIÓN, bloque #hz-seg-activar (S-03).
+      function montarSeguridadSinProteccion(card, Seguridad) {
+        var bloque = crear(doc, 'div');
+        bloque.setAttribute('id', 'hz-seg-activar');
+
+        bloque.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_RESPALDO_PREVIO));
+        bloque.appendChild(construirBotonDescargarRespaldo());
+
+        var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
+        var campoPass1 = crearCampoInput(doc, form, 'hz-seg-pass-1', LABEL_PASS_1, 'password', '',
+          { autocomplete: 'new-password', minlength: 8 });
+        var campoPass2 = crearCampoInput(doc, form, 'hz-seg-pass-2', LABEL_PASS_2, 'password', '',
+          { autocomplete: 'new-password', minlength: 8 });
+
+        var filaConfirmo = crearCampoCheckbox(doc, form, 'hz-seg-confirmo', LABEL_CONFIRMO, false);
+        filaConfirmo.campo.classList.add('hz-form-ancho');
+
+        var errorEl = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
+        errorEl.setAttribute('id', 'hz-seg-error');
+        form.appendChild(errorEl);
+
+        var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+        var botonActivar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_ACTIVAR);
+        botonActivar.setAttribute('type', 'submit');
+        botonActivar.setAttribute('id', 'hz-btn-seg-activar');
+        // S-03.4: deshabilitado hasta marcar la casilla de confirmación.
+        botonActivar.setAttribute('disabled', 'disabled');
+        acciones.appendChild(botonActivar);
+        form.appendChild(acciones);
+
+        filaConfirmo.input.addEventListener('change', function () {
+          if (filaConfirmo.input.checked) { botonActivar.removeAttribute('disabled'); }
+          else { botonActivar.setAttribute('disabled', 'disabled'); }
+        });
+
+        form.addEventListener('submit', function (ev) {
+          if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+          errorEl.textContent = '';
+          if (!filaConfirmo.input.checked) { return; }
+          var p1 = campoPass1.input.value;
+          var p2 = campoPass2.input.value;
+          if (!p1 || !p2) { errorEl.textContent = 'Escribe la contraseña en ambos campos.'; return; }
+          if (p1.length < 8) { errorEl.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
+          if (p1 !== p2) { errorEl.textContent = 'Las contraseñas no coinciden.'; return; }
+          if (!Seguridad || typeof Seguridad.activar !== 'function') {
+            errorEl.textContent = 'No se pudo activar la protección en este dispositivo.';
+            return;
+          }
+          var textoOriginal = botonActivar.textContent;
+          botonActivar.setAttribute('disabled', 'disabled');
+          botonActivar.textContent = TEXTO_BOTON_CIFRANDO;
+          Seguridad.activar(p1).then(function (res) {
+            campoPass1.input.value = '';
+            campoPass2.input.value = '';
+            if (!res || !res.ok) {
+              botonActivar.removeAttribute('disabled');
+              botonActivar.textContent = textoOriginal;
+              errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo activar la protección en este dispositivo.';
+              return;
+            }
+            mensajeExitoSeguridad = MSG_ACTIVADA;
+            render();
+          });
+        });
+
+        bloque.appendChild(form);
+        card.appendChild(bloque);
+      }
+
+      // ESTADO CON PROTECCIÓN (sesión desbloqueada, S-03).
+      function montarSeguridadConProteccion(card, Seguridad) {
+        var bloqueEstado = crear(doc, 'div');
+        bloqueEstado.appendChild(crear(doc, 'p', null, TEXTO_ESTADO_PROTEGIDA));
+        var botonBloquear = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_BLOQUEAR);
+        botonBloquear.setAttribute('type', 'button');
+        botonBloquear.setAttribute('id', 'hz-btn-seg-bloquear');
+        botonBloquear.addEventListener('click', function () {
+          // Re-bloqueo (S-02, fix T-058): Seguridad.bloquear() borra la
+          // clave de sesión (síncrono) y Almacen.bloquearYVolverADemo()
+          // fija bloqueadoActual=true + repinta la demo -- equivale a
+          // recargar la página sin recargarla (a diferencia de
+          // Almacen.volverADemo(), que usa el toggle #hz-btn-modo para
+          // previsualizar demo SIN re-bloquear). Fallback tolerante a
+          // volverADemo() si la función nueva no existe (sin flag day).
+          if (Seguridad && typeof Seguridad.bloquear === 'function') { Seguridad.bloquear(); }
+          if (Almacen && typeof Almacen.bloquearYVolverADemo === 'function') { Almacen.bloquearYVolverADemo(); }
+          else if (Almacen && typeof Almacen.volverADemo === 'function') { Almacen.volverADemo(); }
+        });
+        bloqueEstado.appendChild(botonBloquear);
+        card.appendChild(bloqueEstado);
+
+        // Área de error COMPARTIDA por "Cambiar contraseña" y "Quitar
+        // protección" (el contrato solo fija el id #hz-seg-error una vez
+        // por card -- ambos bloques coexisten en este estado).
+        var errorEl = crear(doc, 'p', ['hz-form-error']);
+        errorEl.setAttribute('id', 'hz-seg-error');
+        card.appendChild(errorEl);
+
+        // Cambiar contraseña.
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Cambiar contraseña'));
+        var formCambiar = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
+        var campoActual = crearCampoInput(doc, formCambiar, 'hz-seg-actual', LABEL_PASS_ACTUAL, 'password', '', { autocomplete: 'current-password' });
+        var campoNueva1 = crearCampoInput(doc, formCambiar, 'hz-seg-nueva-1', LABEL_PASS_NUEVA_1, 'password', '', { autocomplete: 'new-password', minlength: 8 });
+        var campoNueva2 = crearCampoInput(doc, formCambiar, 'hz-seg-nueva-2', LABEL_PASS_NUEVA_2, 'password', '', { autocomplete: 'new-password', minlength: 8 });
+        var accionesCambiar = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+        var botonCambiar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_CAMBIAR);
+        botonCambiar.setAttribute('type', 'submit');
+        botonCambiar.setAttribute('id', 'hz-btn-seg-cambiar');
+        accionesCambiar.appendChild(botonCambiar);
+        formCambiar.appendChild(accionesCambiar);
+        formCambiar.addEventListener('submit', function (ev) {
+          if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+          errorEl.textContent = '';
+          var actual = campoActual.input.value;
+          var n1 = campoNueva1.input.value;
+          var n2 = campoNueva2.input.value;
+          if (!actual || !n1 || !n2) { errorEl.textContent = 'Completa los 3 campos.'; return; }
+          if (n1.length < 8) { errorEl.textContent = 'La contraseña nueva debe tener al menos 8 caracteres.'; return; }
+          if (n1 !== n2) { errorEl.textContent = 'Las contraseñas nuevas no coinciden.'; return; }
+          if (!Seguridad || typeof Seguridad.cambiar !== 'function') {
+            errorEl.textContent = 'No se pudo cambiar la contraseña en este dispositivo.';
+            return;
+          }
+          var textoOriginalCambiar = botonCambiar.textContent;
+          botonCambiar.setAttribute('disabled', 'disabled');
+          botonCambiar.textContent = TEXTO_BOTON_CIFRANDO;
+          Seguridad.cambiar(actual, n1).then(function (res) {
+            campoActual.input.value = '';
+            campoNueva1.input.value = '';
+            campoNueva2.input.value = '';
+            if (!res || !res.ok) {
+              botonCambiar.removeAttribute('disabled');
+              botonCambiar.textContent = textoOriginalCambiar;
+              errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo cambiar la contraseña.';
+              return;
+            }
+            mensajeExitoSeguridad = 'Contraseña actualizada.';
+            render();
+          });
+        });
+        card.appendChild(formCambiar);
+
+        // Quitar protección.
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Quitar protección'));
+        var notaQuitar = crear(doc, 'p', ['hz-nota'], NOTA_QUITAR_ADVERTENCIA);
+        notaQuitar.style.color = 'var(--delta-bad)';
+        card.appendChild(notaQuitar);
+        var bloqueQuitar = crear(doc, 'div');
+        var campoQuitarPass = crearCampoInput(doc, bloqueQuitar, 'hz-seg-quitar-pass', LABEL_PASS_ACTUAL, 'password', '', { autocomplete: 'current-password' });
+        var botonQuitar = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_QUITAR);
+        botonQuitar.setAttribute('type', 'button');
+        botonQuitar.setAttribute('id', 'hz-btn-seg-desactivar');
+        botonQuitar.setAttribute('data-confirmar', 'false');
+        var temporizadorQuitar = null;
+        botonQuitar.addEventListener('click', function () {
+          if (botonQuitar.getAttribute('data-confirmar') === 'true') {
+            var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
+            if (temporizadorQuitar !== null) { temporizadorClear(temporizadorQuitar); temporizadorQuitar = null; }
+            errorEl.textContent = '';
+            if (!Seguridad || typeof Seguridad.desactivar !== 'function') {
+              errorEl.textContent = 'No se pudo quitar la protección en este dispositivo.';
+              return;
+            }
+            botonQuitar.setAttribute('disabled', 'disabled');
+            Seguridad.desactivar(campoQuitarPass.input.value).then(function (res) {
+              campoQuitarPass.input.value = '';
+              botonQuitar.removeAttribute('disabled');
+              botonQuitar.setAttribute('data-confirmar', 'false');
+              if (!res || !res.ok) {
+                errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo quitar la protección.';
+                return;
+              }
+              mensajeExitoSeguridad = 'Protección desactivada. Tus datos se guardan sin cifrar en este dispositivo.';
+              render();
+            });
+            return;
+          }
+          botonQuitar.setAttribute('data-confirmar', 'true');
+          var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
+          temporizadorQuitar = temporizadorFn(function () {
+            botonQuitar.setAttribute('data-confirmar', 'false');
+            temporizadorQuitar = null;
+          }, MS_REVERSION_CONFIRMAR);
+        });
+        bloqueQuitar.appendChild(botonQuitar);
+        card.appendChild(bloqueQuitar);
+
+        // Respaldo (S-04): descarga + restauración.
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Respaldo'));
+        card.appendChild(construirBotonDescargarRespaldo());
+        card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_RESPALDO_CUSTODIA));
+        card.appendChild(construirBloqueRestaurarRespaldo(
+          'hz-seg-import-label', 'hz-seg-input-restaurar', 'hz-btn-seg-restaurar-confirmar', null));
+      }
+
+      // Botón compartido (sin protección bullet 1, y sección Respaldo de
+      // con protección -- mutuamente excluyentes, mismo id sin colisión).
+      function construirBotonDescargarRespaldo() {
+        var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_RESPALDO);
+        boton.setAttribute('type', 'button');
+        boton.setAttribute('id', 'hz-btn-seg-respaldo');
+        boton.addEventListener('click', function () {
+          if (!Almacen || typeof Almacen.exportarRespaldo !== 'function') { return; }
+          var res = Almacen.exportarRespaldo();
+          if (!res || !res.ok) { return; }
+          var Docs = G.Herzon && G.Herzon.Docs;
+          if (Docs && typeof Docs.descargarArchivo === 'function') {
+            Docs.descargarArchivo(doc, res.json, res.nombreArchivo, 'application/json');
+          }
+        });
+        return boton;
+      }
+
+      // S-04: bloque de restauración (label + input file oculto +
+      // confirmación con conteos reales). Compartido por la card de
+      // seguridad y la card de desbloqueo (C-11: conteos reales en AMBAS
+      // rutas); `textoExtra` agrega la frase de la ruta desde bloqueado.
+      function construirBloqueRestaurarRespaldo(idLabel, idInput, idBotonConfirmar, textoExtra) {
+        var contenedor = crear(doc, 'div', ['hz-doc-import']);
+        var label = crear(doc, 'label', ['hz-doc-import-label'], LABEL_IMPORTAR_RESPALDO);
+        label.setAttribute('id', idLabel);
+        label.setAttribute('for', idInput);
+        var input = crear(doc, 'input');
+        input.setAttribute('type', 'file');
+        input.setAttribute('id', idInput);
+        input.setAttribute('accept', '.json,application/json');
+        contenedor.appendChild(label);
+        contenedor.appendChild(input);
+
+        var zonaConfirmacion = crear(doc, 'div');
+        contenedor.appendChild(zonaConfirmacion);
+
+        function manejarObjetoLeido(objeto) {
+          limpiar(zonaConfirmacion);
+          var formaValida = objeto && typeof objeto === 'object' && objeto.formato === 'rinde-respaldo-1' &&
+            objeto.datos && typeof objeto.datos === 'object' && objeto.datos.clientes && typeof objeto.datos.clientes === 'object';
+          if (!formaValida) {
+            zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], MSG_RESPALDO_INVALIDO));
+            return;
+          }
+          var n = (Almacen && typeof Almacen.clientes === 'function') ? Almacen.clientes().length : 0;
+          var m = Object.keys(objeto.datos.clientes).length;
+          var textoConfirmacion = 'Restaurar este respaldo reemplaza los ' + n + ' clientes actuales de este dispositivo por los ' +
+            m + ' clientes del archivo (exportado el ' + (objeto.exportado || '—') + '). Esta acción no se puede deshacer.';
+          if (textoExtra) { textoConfirmacion += ' ' + textoExtra; }
+          zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], textoConfirmacion));
+
+          if (n > 0) {
+            var botonRespaldarAntes = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_RESPALDAR_ANTES);
+            botonRespaldarAntes.setAttribute('type', 'button');
+            botonRespaldarAntes.addEventListener('click', function () {
+              if (!Almacen || typeof Almacen.exportarRespaldo !== 'function') { return; }
+              var resExport = Almacen.exportarRespaldo();
+              if (!resExport || !resExport.ok) { return; }
+              var Docs = G.Herzon && G.Herzon.Docs;
+              if (Docs && typeof Docs.descargarArchivo === 'function') {
+                Docs.descargarArchivo(doc, resExport.json, resExport.nombreArchivo, 'application/json');
+              }
+            });
+            zonaConfirmacion.appendChild(botonRespaldarAntes);
+          }
+
+          var botonConfirmar = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_RESTAURAR_CONFIRMAR);
+          botonConfirmar.setAttribute('type', 'button');
+          botonConfirmar.setAttribute('id', idBotonConfirmar);
+          botonConfirmar.setAttribute('data-confirmar', 'false');
+          var temporizadorRestaurar = null;
+          botonConfirmar.addEventListener('click', function () {
+            if (botonConfirmar.getAttribute('data-confirmar') === 'true') {
+              var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
+              if (temporizadorRestaurar !== null) { temporizadorClear(temporizadorRestaurar); temporizadorRestaurar = null; }
+              if (!Almacen || typeof Almacen.restaurarRespaldo !== 'function') { return; }
+              var resultado = Almacen.restaurarRespaldo(objeto);
+              limpiar(zonaConfirmacion);
+              if (!resultado || !resultado.ok) {
+                zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'],
+                  (resultado && resultado.errores && resultado.errores.length) ? resultado.errores.join(' ') : MSG_RESPALDO_INVALIDO));
+                return;
+              }
+              var notaExitoRestaurar = crear(doc, 'p', ['hz-nota'], 'Respaldo restaurado: ' + resultado.clientes + ' clientes.');
+              notaExitoRestaurar.style.color = 'var(--delta-good)';
+              zonaConfirmacion.appendChild(notaExitoRestaurar);
+              // restaurarRespaldo ya disparó la secuencia de eventos
+              // completa (clientes-actualizados -> cliente-cambiado/
+              // modo-cambiado): el listener de este módulo ya remontó la
+              // vista con los datos nuevos; este bloque de confirmación
+              // queda huérfano tras ese remontaje (mismo patrón que
+              // cualquier otro submit exitoso de este archivo).
+              return;
+            }
+            botonConfirmar.setAttribute('data-confirmar', 'true');
+            var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
+            temporizadorRestaurar = temporizadorFn(function () {
+              botonConfirmar.setAttribute('data-confirmar', 'false');
+              temporizadorRestaurar = null;
+            }, MS_REVERSION_CONFIRMAR);
+          });
+          zonaConfirmacion.appendChild(botonConfirmar);
+
+          var botonCancelar = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Cancelar');
+          botonCancelar.setAttribute('type', 'button');
+          botonCancelar.addEventListener('click', function () {
+            limpiar(zonaConfirmacion);
+            input.value = '';
+          });
+          zonaConfirmacion.appendChild(botonCancelar);
+        }
+
+        input.addEventListener('change', function (ev) {
+          var archivo = (input.files && input.files[0]) || (ev && ev.target && ev.target.files && ev.target.files[0]);
+          input.value = '';
+          if (!archivo) { return; }
+          leerArchivoComoTextoLocal(archivo, function (texto, errorLectura) {
+            if (errorLectura || texto == null) {
+              limpiar(zonaConfirmacion);
+              zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], MSG_RESPALDO_INVALIDO));
+              return;
+            }
+            var objetoLeido = null;
+            try { objetoLeido = JSON.parse(texto); } catch (e) { objetoLeido = null; }
+            manejarObjetoLeido(objetoLeido);
+          });
+        });
+
+        return contenedor;
+      }
+
+      // S-02 (pie de card-desbloqueo): "Borrar todos los datos" ->
+      // Almacen.borrarTodo(), confirmación en dos pasos (patrón 6s R9).
+      function montarBotonBorrarTodo() {
+        var contenedor = crear(doc, 'div');
+        var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_BORRAR_TODO);
+        boton.setAttribute('type', 'button');
+        boton.setAttribute('id', 'hz-btn-desbloqueo-borrar-todo');
+        boton.setAttribute('data-confirmar', 'false');
+        var temporizadorBorrar = null;
+        boton.addEventListener('click', function () {
+          if (boton.getAttribute('data-confirmar') === 'true') {
+            var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
+            if (temporizadorBorrar !== null) { temporizadorClear(temporizadorBorrar); temporizadorBorrar = null; }
+            if (Almacen && typeof Almacen.borrarTodo === 'function') { Almacen.borrarTodo(); }
+            return;
+          }
+          boton.setAttribute('data-confirmar', 'true');
+          var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
+          temporizadorBorrar = temporizadorFn(function () {
+            boton.setAttribute('data-confirmar', 'false');
+            temporizadorBorrar = null;
+          }, MS_REVERSION_CONFIRMAR);
+        });
+        contenedor.appendChild(boton);
+        return contenedor;
       }
     }
 
@@ -8263,32 +10739,44 @@ button, input, select { font-family: inherit; }
       var Almacen = obtenerAlmacen();
       if (!esModoReal(Almacen)) { return; }
 
-      var card = crear(doc, 'div', ['hz-card']);
+      var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
       card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Registrar medición'));
       card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_PRIVACIDAD_CAPTURA));
       card.appendChild(crear(doc, 'p', ['hz-nota'], 'Fecha: ' + fechaHoyTexto()));
 
-      var form = crear(doc, 'form', ['hz-form']);
+      var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
 
       var campoPeso = crearCampoInput(doc, form, 'hz-cap-peso', 'Peso (kg)', 'number', '', { min: 20, max: 400, step: 0.1 });
       var campoGrasa = crearCampoInput(doc, form, 'hz-cap-grasa', 'Grasa corporal (%)', 'number', '', { min: 3, max: 70, step: 0.1 });
       var campoMusculo = crearCampoInput(doc, form, 'hz-cap-musculo', 'Masa muscular (kg)', 'number', '', { min: 5, max: 150, step: 0.1 });
       var campoCintura = crearCampoInput(doc, form, 'hz-cap-cintura', 'Circunferencia de cintura (cm)', 'number', '', { min: 40, max: 250, step: 0.1 });
 
-      var detalles = crear(doc, 'details');
+      // F-06.3: `detalles` gana hz-form-ancho; tras el summary se inserta
+      // `sub` (hz-form-sub) y los 4 campos de plicometría apuntan a `sub` en
+      // vez de a `detalles` directamente (summary hereda estilo/foco de
+      // F-01.5, sin cambios de JS).
+      var detalles = crear(doc, 'details', ['hz-form-ancho']);
       detalles.appendChild(crear(doc, 'summary', null, 'Plicometría (opcional)'));
-      var campoTricipital = crearCampoInput(doc, detalles, 'hz-cap-plic-tricipital', 'Pliegue tricipital (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
-      var campoSubescapular = crearCampoInput(doc, detalles, 'hz-cap-plic-subescapular', 'Pliegue subescapular (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
-      var campoSuprailiaco = crearCampoInput(doc, detalles, 'hz-cap-plic-suprailiaco', 'Pliegue suprailiaco (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
-      var campoAbdominal = crearCampoInput(doc, detalles, 'hz-cap-plic-abdominal', 'Pliegue abdominal (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
+      var sub = crear(doc, 'div', ['hz-form-sub']);
+      var campoTricipital = crearCampoInput(doc, sub, 'hz-cap-plic-tricipital', 'Pliegue tricipital (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
+      var campoSubescapular = crearCampoInput(doc, sub, 'hz-cap-plic-subescapular', 'Pliegue subescapular (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
+      var campoSuprailiaco = crearCampoInput(doc, sub, 'hz-cap-plic-suprailiaco', 'Pliegue suprailiaco (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
+      var campoAbdominal = crearCampoInput(doc, sub, 'hz-cap-plic-abdominal', 'Pliegue abdominal (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
+      detalles.appendChild(sub);
       form.appendChild(detalles);
 
-      var notaValidacion = crear(doc, 'p', ['hz-nota']);
+      // F-06.4: notaValidacion pasa de ['hz-nota'] a
+      // ['hz-form-error','hz-form-ancho'] -- rojo, peso 600, oculta sin
+      // reservar alto cuando vacía (F-01.8). Todos sus mensajes son de
+      // error, ninguno neutro (validación byte-idéntica más abajo).
+      var notaValidacion = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
       form.appendChild(notaValidacion);
 
-      var botonGuardar = crear(doc, 'button', null, 'Registrar medición');
+      var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+      var botonGuardar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Registrar medición');
       botonGuardar.setAttribute('type', 'submit');
-      form.appendChild(botonGuardar);
+      acciones.appendChild(botonGuardar);
+      form.appendChild(acciones);
 
       var CAMPOS_REQUERIDOS = [
         { input: campoPeso.input, etiqueta: 'Peso', clave: 'peso_kg' },
@@ -8431,51 +10919,62 @@ button, input, select { font-family: inherit; }
       // --- DV-04: laboratorios en 3 cortes -- valoresEnBarras vertical +
       // unidad, cortesEtiquetas cortas y horizontales. Vacío a nivel de
       // card cuando ningún marcador trae valores (modo real sin captura de
-      // laboratorio: no hay UI de captura para esto en este alcance). ---
-      cardLabs = crear(doc, 'div', ['hz-card']);
-      cardLabs.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Laboratorios en 3 cortes'));
-      // jera-2/data-1/fini-2 (causa raíz, mismo patrón que heroCard/gridPares
-      // arriba): cardLabs se adjunta a rootEl AQUÍ, antes de construir su
-      // contenido, para que gridLabs y cada wrapMarcador queden conectados
-      // al árbol de la vista desde el instante en que se crean -- así
-      // Herzon.Charts.barras (fase 2) siempre recibe un contenedor YA
-      // montado, nunca uno todavía huérfano.
-      rootEl.appendChild(cardLabs);
-      var marcadoresLabs = labs.marcadores || [];
-      var hayDatosLabs = marcadoresLabs.some(function (m) { return (m.valores || []).length > 0; });
-      if (!hayDatosLabs) {
-        crearVacio(doc, cardLabs);
+      // laboratorio: no hay UI de captura para esto en este alcance).
+      // S-05: con labsOcultos===true en modo real, la card se OMITE por
+      // completo (decisión clínica del nutriólogo, no un vacío); en demo o
+      // bloqueado (enReal===false) siempre se monta -- mismo patrón que la
+      // vista Perfil. ---
+      var AlmacenSeg = obtenerAlmacen();
+      var enRealSeg = esModoReal(AlmacenSeg);
+      var labsOcultosSeg = enRealSeg && !!(data.config && data.config.labsOcultos);
+      if (labsOcultosSeg) {
+        cardLabs = null;
       } else {
-        var gridLabs = crear(doc, 'div', ['hz-grid']);
-        cardLabs.appendChild(gridLabs);
-        var cortesEtiquetasCortas = (labs.cortes || []).map(function (c) { return acortarCorte(c.etiqueta); });
+        cardLabs = crear(doc, 'div', ['hz-card']);
+        cardLabs.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Laboratorios en 3 cortes'));
+        // jera-2/data-1/fini-2 (causa raíz, mismo patrón que heroCard/gridPares
+        // arriba): cardLabs se adjunta a rootEl AQUÍ, antes de construir su
+        // contenido, para que gridLabs y cada wrapMarcador queden conectados
+        // al árbol de la vista desde el instante en que se crean -- así
+        // Herzon.Charts.barras (fase 2) siempre recibe un contenedor YA
+        // montado, nunca uno todavía huérfano.
+        rootEl.appendChild(cardLabs);
+        var marcadoresLabs = labs.marcadores || [];
+        var hayDatosLabs = marcadoresLabs.some(function (m) { return (m.valores || []).length > 0; });
+        if (!hayDatosLabs) {
+          crearVacio(doc, cardLabs);
+        } else {
+          var gridLabs = crear(doc, 'div', ['hz-grid']);
+          cardLabs.appendChild(gridLabs);
+          var cortesEtiquetasCortas = (labs.cortes || []).map(function (c) { return acortarCorte(c.etiqueta); });
 
-        // Fase 1 (T-033): crear y adjuntar TODOS los wrapMarcador a
-        // gridLabs antes de renderizar ninguno -- el grid ya queda en su
-        // geometría final antes de que Herzon.Charts.barras mida el ancho.
-        var wrapsLabs = marcadoresLabs.map(function (m) {
-          var wrapMarcador = crear(doc, 'div');
-          gridLabs.appendChild(wrapMarcador);
-          return wrapMarcador;
-        });
+          // Fase 1 (T-033): crear y adjuntar TODOS los wrapMarcador a
+          // gridLabs antes de renderizar ninguno -- el grid ya queda en su
+          // geometría final antes de que Herzon.Charts.barras mida el ancho.
+          var wrapsLabs = marcadoresLabs.map(function (m) {
+            var wrapMarcador = crear(doc, 'div');
+            gridLabs.appendChild(wrapMarcador);
+            return wrapMarcador;
+          });
 
-        // Fase 2 (T-033): con gridLabs ya en su geometría final, renderizar
-        // cada gráfica de laboratorio en un loop aparte.
-        marcadoresLabs.forEach(function (m, indiceMarcadorLab) {
-          if (typeof Charts.barras !== 'function') { return; }
-          var opcionesBarras = {
-            titulo: m.nombre + ' (' + m.unidad + ')',
-            categorias: cortesEtiquetasCortas,
-            series: [{ nombre: m.nombre, datos: m.valores }],
-            valoresEnBarras: true,
-            unidad: m.unidad,
-            tabla: true
-          };
-          if (m.referencia && typeof m.referencia.min === 'number' && typeof m.referencia.max === 'number') {
-            opcionesBarras.referencia = { min: m.referencia.min, max: m.referencia.max, etiqueta: 'Rango normal' };
-          }
-          Charts.barras(wrapsLabs[indiceMarcadorLab], opcionesBarras);
-        });
+          // Fase 2 (T-033): con gridLabs ya en su geometría final, renderizar
+          // cada gráfica de laboratorio en un loop aparte.
+          marcadoresLabs.forEach(function (m, indiceMarcadorLab) {
+            if (typeof Charts.barras !== 'function') { return; }
+            var opcionesBarras = {
+              titulo: m.nombre + ' (' + m.unidad + ')',
+              categorias: cortesEtiquetasCortas,
+              series: [{ nombre: m.nombre, datos: m.valores }],
+              valoresEnBarras: true,
+              unidad: m.unidad,
+              tabla: true
+            };
+            if (m.referencia && typeof m.referencia.min === 'number' && typeof m.referencia.max === 'number') {
+              opcionesBarras.referencia = { min: m.referencia.min, max: m.referencia.max, etiqueta: 'Rango normal' };
+            }
+            Charts.barras(wrapsLabs[indiceMarcadorLab], opcionesBarras);
+          });
+        }
       }
 
       // --- Plicometría en 4 cortes (Adendum R4 punto 1): vacía en modo
@@ -8571,6 +11070,13 @@ button, input, select { font-family: inherit; }
      T-023 (build/documentos.js) genera su contenido vía JS con
      Herzon.planActivo() (fallback al plan por defecto). -->
 <div id="documento-plan" class="hz-doc-documento"></div>
+
+<!-- Adendum R10 (T-049, R-01.4): documento imprimible/descargable de la
+     rutina, hermano de #documento-plan; oculto en pantalla (regla base
+     .hz-doc-documento) y en impresión salvo con
+     body[data-imprimir="rutina"] (sección 10 del <style>, punto R-01.6).
+     T-053 (build/vista_rutina.js) lo llena vía JS. -->
+<div id="documento-rutina" class="hz-doc-documento"></div>
 
 <!-- Adendum R8 punto 2 (T-038): registro del service worker GUARDEADO al
      final del body — SOLO si 'serviceWorker' existe en navigator y el

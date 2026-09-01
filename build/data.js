@@ -599,6 +599,64 @@
   ];
 
   // ---------------------------------------------------------------------
+  // Rutina de entrenamiento (R10, contrato R-04): rutina demo de Daniela,
+  // 4 días, tupla literal por ejercicio (nombre, series, repeticiones,
+  // descanso_s, notas), copiada del documento sin parafrasear. `actualizado`
+  // coincide con el inicio del seguimiento sintético (fechasSemanales[0]).
+  // Es dato de la DEMO: build/almacen.js jamás escribe este slot para un
+  // cliente real a partir de esta constante (R-02, MC-05).
+  // ---------------------------------------------------------------------
+  var rutina = {
+    actualizado: fechasSemanales[0],
+    dias: [
+      {
+        dia: 1,
+        titulo: 'Tren inferior y core',
+        ejercicios: [
+          { nombre: 'Sentadilla goblet con mancuerna', series: 4, repeticiones: '10-12', descanso_s: 90, notas: 'Bajada controlada en 2 segundos; peso moderado.' },
+          { nombre: 'Peso muerto rumano con mancuernas', series: 3, repeticiones: '10-12', descanso_s: 90, notas: 'Espalda neutra; sentir isquiotibiales.' },
+          { nombre: 'Zancada caminando', series: 3, repeticiones: '10 por pierna', descanso_s: 60, notas: '' },
+          { nombre: 'Elevación de talones de pie', series: 3, repeticiones: '15', descanso_s: 45, notas: '' },
+          { nombre: 'Plancha abdominal', series: 3, repeticiones: '30-45 s', descanso_s: 45, notas: 'Cadera alineada, sin arquear la zona lumbar.' }
+        ]
+      },
+      {
+        dia: 2,
+        titulo: 'Tren superior (empuje y jalón)',
+        ejercicios: [
+          { nombre: 'Press de banca con mancuernas', series: 4, repeticiones: '8-10', descanso_s: 90, notas: '' },
+          { nombre: 'Remo con mancuerna a una mano', series: 3, repeticiones: '10-12 por lado', descanso_s: 75, notas: 'Apoyo en banco; sin girar el tronco.' },
+          { nombre: 'Press militar sentado con mancuernas', series: 3, repeticiones: '10', descanso_s: 75, notas: '' },
+          { nombre: 'Jalón al pecho en polea', series: 3, repeticiones: '10-12', descanso_s: 75, notas: '' },
+          { nombre: 'Curl de bíceps alterno', series: 2, repeticiones: '12', descanso_s: 45, notas: '' },
+          { nombre: 'Extensión de tríceps en polea', series: 2, repeticiones: '12', descanso_s: 45, notas: '' }
+        ]
+      },
+      {
+        dia: 3,
+        titulo: 'Cuerpo completo en circuito',
+        ejercicios: [
+          { nombre: 'Empuje de cadera con barra', series: 3, repeticiones: '12', descanso_s: 60, notas: 'Pausa de 1 segundo arriba.' },
+          { nombre: 'Sentadilla con peso corporal a ritmo', series: 3, repeticiones: '15', descanso_s: 30, notas: '' },
+          { nombre: 'Remo invertido en barra baja', series: 3, repeticiones: '8-10', descanso_s: 60, notas: 'Ajustar la altura de la barra según la fuerza.' },
+          { nombre: 'Caminata del granjero con mancuernas', series: 3, repeticiones: '30 metros', descanso_s: 60, notas: 'Hombros atrás, paso corto.' },
+          { nombre: 'Escaladores', series: 3, repeticiones: '20 por lado', descanso_s: 30, notas: '' }
+        ]
+      },
+      {
+        dia: 4,
+        titulo: 'Acondicionamiento y movilidad',
+        ejercicios: [
+          { nombre: 'Caminata inclinada en caminadora', series: 1, repeticiones: '30 min', descanso_s: null, notas: 'Ritmo que permita hablar con frases cortas.' },
+          { nombre: 'Bicicleta estática en intervalos suaves', series: 10, repeticiones: '1 min rápido / 1 min lento', descanso_s: null, notas: 'Opcional según la fatiga de la semana.' },
+          { nombre: 'Movilidad de cadera y tobillo', series: 1, repeticiones: '10 min', descanso_s: null, notas: '' },
+          { nombre: 'Estiramiento general', series: 1, repeticiones: '10 min', descanso_s: null, notas: '' }
+        ]
+      }
+    ]
+  };
+
+  // ---------------------------------------------------------------------
   // Meta y supuestos.
   // ---------------------------------------------------------------------
   var meta = {
@@ -657,6 +715,7 @@
     planes: planes,
     factoresActividad: factoresActividad,
     suplementos: suplementos,
-    supuestos: supuestos
+    supuestos: supuestos,
+    rutina: rutina
   };
 })();

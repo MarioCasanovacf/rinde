@@ -58,9 +58,9 @@ assert(typeof DATA === 'object' && DATA !== null, 'window.HERZON_DATA debe exist
 // -----------------------------------------------------------------------
 // 1. Forma: exactamente las claves de primer nivel de plan.md 3.I.
 // -----------------------------------------------------------------------
-var CLAVES_ESPERADAS = ['meta', 'paciente', 'series', 'labs', 'plicometria', 'planes', 'factoresActividad', 'suplementos', 'supuestos'];
+var CLAVES_ESPERADAS = ['meta', 'paciente', 'series', 'labs', 'plicometria', 'planes', 'factoresActividad', 'suplementos', 'supuestos', 'rutina'];
 var clavesReales = Object.keys(DATA).sort();
-assert(clavesReales.length === CLAVES_ESPERADAS.length, 'HERZON_DATA debe tener exactamente 9 claves de primer nivel, tiene ' + clavesReales.length);
+assert(clavesReales.length === CLAVES_ESPERADAS.length, 'HERZON_DATA debe tener exactamente 10 claves de primer nivel, tiene ' + clavesReales.length);
 for (var ci = 0; ci < CLAVES_ESPERADAS.length; ci++) {
   assert(Object.prototype.hasOwnProperty.call(DATA, CLAVES_ESPERADAS[ci]), 'falta la clave de primer nivel "' + CLAVES_ESPERADAS[ci] + '"');
 }
@@ -489,6 +489,127 @@ for (var tei = 0; tei < DATA.planes.length; tei++) {
 for (var tej = 0; tej < ETIQUETAS_CATALOGO_ESPERADAS.length; tej++) {
   assert(todasLasEtiquetas.indexOf(ETIQUETAS_CATALOGO_ESPERADAS[tej]) !== -1, 'el catálogo de planes debe cubrir la etiqueta "' + ETIQUETAS_CATALOGO_ESPERADAS[tej] + '" (Adendum R5) en al menos una plantilla');
 }
+
+// -----------------------------------------------------------------------
+// 18. R-04 (R10, contrato justesse-r10-diseno.md): rutina demo de Daniela.
+//     18.a Forma: existe, actualizado === series.fechas[0], 4 días
+//          secuenciales 1..4, con la tupla literal exacta del contrato
+//          por ejercicio (nombre, series, repeticiones, descanso_s, notas).
+// -----------------------------------------------------------------------
+var rutina = DATA.rutina;
+assert(typeof rutina === 'object' && rutina !== null, 'HERZON_DATA.rutina debe existir como objeto');
+assert(rutina.actualizado === series.fechas[0], 'rutina.actualizado debe ser EXACTAMENTE series.fechas[0] (' + series.fechas[0] + '), es "' + rutina.actualizado + '"');
+assert(Array.isArray(rutina.dias) && rutina.dias.length === 4, 'rutina.dias debe ser un arreglo de 4 días, tiene ' + (rutina.dias && rutina.dias.length));
+for (var rdi = 0; rdi < rutina.dias.length; rdi++) {
+  assert(rutina.dias[rdi].dia === rdi + 1, 'rutina.dias[' + rdi + '].dia debe ser secuencial (' + (rdi + 1) + '), es ' + rutina.dias[rdi].dia);
+}
+
+var RUTINA_ESPERADA = [
+  {
+    titulo: 'Tren inferior y core',
+    ejercicios: [
+      { nombre: 'Sentadilla goblet con mancuerna', series: 4, repeticiones: '10-12', descanso_s: 90, notas: 'Bajada controlada en 2 segundos; peso moderado.' },
+      { nombre: 'Peso muerto rumano con mancuernas', series: 3, repeticiones: '10-12', descanso_s: 90, notas: 'Espalda neutra; sentir isquiotibiales.' },
+      { nombre: 'Zancada caminando', series: 3, repeticiones: '10 por pierna', descanso_s: 60, notas: '' },
+      { nombre: 'Elevación de talones de pie', series: 3, repeticiones: '15', descanso_s: 45, notas: '' },
+      { nombre: 'Plancha abdominal', series: 3, repeticiones: '30-45 s', descanso_s: 45, notas: 'Cadera alineada, sin arquear la zona lumbar.' }
+    ]
+  },
+  {
+    titulo: 'Tren superior (empuje y jalón)',
+    ejercicios: [
+      { nombre: 'Press de banca con mancuernas', series: 4, repeticiones: '8-10', descanso_s: 90, notas: '' },
+      { nombre: 'Remo con mancuerna a una mano', series: 3, repeticiones: '10-12 por lado', descanso_s: 75, notas: 'Apoyo en banco; sin girar el tronco.' },
+      { nombre: 'Press militar sentado con mancuernas', series: 3, repeticiones: '10', descanso_s: 75, notas: '' },
+      { nombre: 'Jalón al pecho en polea', series: 3, repeticiones: '10-12', descanso_s: 75, notas: '' },
+      { nombre: 'Curl de bíceps alterno', series: 2, repeticiones: '12', descanso_s: 45, notas: '' },
+      { nombre: 'Extensión de tríceps en polea', series: 2, repeticiones: '12', descanso_s: 45, notas: '' }
+    ]
+  },
+  {
+    titulo: 'Cuerpo completo en circuito',
+    ejercicios: [
+      { nombre: 'Empuje de cadera con barra', series: 3, repeticiones: '12', descanso_s: 60, notas: 'Pausa de 1 segundo arriba.' },
+      { nombre: 'Sentadilla con peso corporal a ritmo', series: 3, repeticiones: '15', descanso_s: 30, notas: '' },
+      { nombre: 'Remo invertido en barra baja', series: 3, repeticiones: '8-10', descanso_s: 60, notas: 'Ajustar la altura de la barra según la fuerza.' },
+      { nombre: 'Caminata del granjero con mancuernas', series: 3, repeticiones: '30 metros', descanso_s: 60, notas: 'Hombros atrás, paso corto.' },
+      { nombre: 'Escaladores', series: 3, repeticiones: '20 por lado', descanso_s: 30, notas: '' }
+    ]
+  },
+  {
+    titulo: 'Acondicionamiento y movilidad',
+    ejercicios: [
+      { nombre: 'Caminata inclinada en caminadora', series: 1, repeticiones: '30 min', descanso_s: null, notas: 'Ritmo que permita hablar con frases cortas.' },
+      { nombre: 'Bicicleta estática en intervalos suaves', series: 10, repeticiones: '1 min rápido / 1 min lento', descanso_s: null, notas: 'Opcional según la fatiga de la semana.' },
+      { nombre: 'Movilidad de cadera y tobillo', series: 1, repeticiones: '10 min', descanso_s: null, notas: '' },
+      { nombre: 'Estiramiento general', series: 1, repeticiones: '10 min', descanso_s: null, notas: '' }
+    ]
+  }
+];
+var CAMPOS_EJERCICIO = ['nombre', 'series', 'repeticiones', 'descanso_s', 'notas'];
+for (var rei = 0; rei < RUTINA_ESPERADA.length; rei++) {
+  var diaEsperado = RUTINA_ESPERADA[rei];
+  var diaReal = rutina.dias[rei];
+  assert(diaReal.titulo === diaEsperado.titulo, 'rutina.dias[' + rei + '].titulo debe ser EXACTAMENTE "' + diaEsperado.titulo + '", es "' + diaReal.titulo + '"');
+  assert(Array.isArray(diaReal.ejercicios) && diaReal.ejercicios.length === diaEsperado.ejercicios.length, 'rutina.dias[' + rei + '] (' + diaEsperado.titulo + ') debe tener ' + diaEsperado.ejercicios.length + ' ejercicios, tiene ' + (diaReal.ejercicios && diaReal.ejercicios.length));
+  for (var rej = 0; rej < diaEsperado.ejercicios.length; rej++) {
+    var ejEsperado = diaEsperado.ejercicios[rej];
+    var ejReal = diaReal.ejercicios[rej];
+    for (var rck = 0; rck < CAMPOS_EJERCICIO.length; rck++) {
+      var campoEj = CAMPOS_EJERCICIO[rck];
+      assert(ejReal[campoEj] === ejEsperado[campoEj], 'rutina.dias[' + rei + '].ejercicios[' + rej + '].' + campoEj + ' debe ser EXACTAMENTE ' + JSON.stringify(ejEsperado[campoEj]) + ' (tupla literal del contrato R-04), es ' + JSON.stringify(ejReal[campoEj]));
+    }
+  }
+}
+
+// -----------------------------------------------------------------------
+// 18.b Formas y rangos generales del contrato R-02 (independiente de los
+//      valores exactos, por si la tupla cambia en una ronda futura): dia
+//      secuencial, nombre no vacío, series entero 1..10, repeticiones
+//      string no vacío, descanso_s entero 0..600 o null, notas string.
+// -----------------------------------------------------------------------
+for (var rgi = 0; rgi < rutina.dias.length; rgi++) {
+  var diaRango = rutina.dias[rgi];
+  assert(typeof diaRango.titulo === 'string', 'rutina.dias[' + rgi + '].titulo debe ser string');
+  assert(Array.isArray(diaRango.ejercicios) && diaRango.ejercicios.length >= 1 && diaRango.ejercicios.length <= 12, 'rutina.dias[' + rgi + '].ejercicios debe tener entre 1 y 12 ejercicios (R-02), tiene ' + diaRango.ejercicios.length);
+  for (var rgj = 0; rgj < diaRango.ejercicios.length; rgj++) {
+    var ejRango = diaRango.ejercicios[rgj];
+    assert(typeof ejRango.nombre === 'string' && ejRango.nombre.length > 0 && ejRango.nombre.length <= 80, 'rutina.dias[' + rgi + '].ejercicios[' + rgj + '].nombre debe ser string no vacío de <=80 caracteres (R-02)');
+    assert(Number.isInteger(ejRango.series) && ejRango.series >= 1 && ejRango.series <= 10, 'rutina.dias[' + rgi + '].ejercicios[' + rgj + '].series debe ser entero 1..10 (R-02), es ' + ejRango.series);
+    assert(typeof ejRango.repeticiones === 'string' && ejRango.repeticiones.length > 0 && ejRango.repeticiones.length <= 40, 'rutina.dias[' + rgi + '].ejercicios[' + rgj + '].repeticiones debe ser string no vacío de <=40 caracteres (R-02)');
+    assert(ejRango.descanso_s === null || (Number.isInteger(ejRango.descanso_s) && ejRango.descanso_s >= 0 && ejRango.descanso_s <= 600), 'rutina.dias[' + rgi + '].ejercicios[' + rgj + '].descanso_s debe ser entero 0..600 o null (R-02), es ' + ejRango.descanso_s);
+    assert(typeof ejRango.notas === 'string' && ejRango.notas.length <= 120, 'rutina.dias[' + rgi + '].ejercicios[' + rgj + '].notas debe ser string de <=120 caracteres (R-02)');
+  }
+}
+
+// -----------------------------------------------------------------------
+// 18.c Acentos presentes en la rutina (deben sobrevivir, no parafrasearse
+//      a una forma sin acento) y ausencia de la palabra "nuez" (alergia
+//      de la paciente: una rutina no debe mencionar alimentos, pero se
+//      verifica de todas formas como cinturón).
+// -----------------------------------------------------------------------
+var textoRutinaCompleto = JSON.stringify(rutina);
+var ACENTOS_RUTINA_ESPERADOS = ['Elevación', 'Extensión', 'rápido'];
+for (var rac = 0; rac < ACENTOS_RUTINA_ESPERADOS.length; rac++) {
+  assert(textoRutinaCompleto.indexOf(ACENTOS_RUTINA_ESPERADOS[rac]) !== -1, 'la rutina debe conservar el texto acentuado "' + ACENTOS_RUTINA_ESPERADOS[rac] + '" (R-04), copiado literal del contrato');
+}
+var textoRutinaNorm = normalizar(textoRutinaCompleto);
+for (var rnu = 0; rnu < PALABRAS_PROHIBIDAS.length; rnu++) {
+  assert(textoRutinaNorm.indexOf(PALABRAS_PROHIBIDAS[rnu]) === -1, 'la rutina no debe contener la cadena prohibida "' + PALABRAS_PROHIBIDAS[rnu] + '"');
+}
+var totalStringsRutina = 0;
+recorrerStrings(rutina, function (texto) {
+  totalStringsRutina++;
+  assert(!REGEX_EMOJI.test(texto), 'se encontró un carácter de emoji en un string de rutina: "' + texto + '"');
+});
+assert(totalStringsRutina > 0, 'el recorrido recursivo de strings de rutina debe visitar al menos un string');
+
+// -----------------------------------------------------------------------
+// 18.d El resto de data.js (supuestos y meta.nota de R9) queda intacto:
+//      re-afirmación explícita para que una regresión de R-04 no los toque.
+// -----------------------------------------------------------------------
+assert(DATA.supuestos.length === SUPUESTOS_DEMO_R9_ESPERADOS.length, 'R-04 no debe alterar el número de supuestos de R9 (' + SUPUESTOS_DEMO_R9_ESPERADOS.length + '), tiene ' + DATA.supuestos.length);
+assert(DATA.meta.nota === 'Documento generado en modo demo con datos de ejemplo; no representa a una paciente real ni debe usarse para decisiones clínicas.', 'R-04 no debe alterar meta.nota de R9 (PR-06)');
 
 // -----------------------------------------------------------------------
 // Cierre.

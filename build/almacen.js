@@ -1,8 +1,26 @@
 /* build/almacen.js
- * R8 (T-039) + R9 (T-045): Herzon.Almacen -- modo demo/real, multi-cliente y
- * persistencia local. Dueño único de este archivo. Contrato congelado en
- * .harness/plan.md Adendum R8 punto 1 y Adendum R9 punto 3 (SUPERSEDE
- * parcial de R8: ver `activarReal` más abajo).
+ * R8 (T-039) + R9 (T-045) + R10 (T-052): Herzon.Almacen -- modo demo/real,
+ * multi-cliente y persistencia local. Dueño único de este archivo. Contrato
+ * congelado en .harness/plan.md Adendum R8 punto 1, Adendum R9 punto 3
+ * (SUPERSEDE parcial de R8: ver `activarReal` más abajo) y Adendum R10
+ * (R-02/R-03/S-02/S-04/S-05, ver el documento normativo consolidado de la
+ * ronda 10 dentro de `.harness/`).
+ *
+ * R10 -- ampliación aditiva, NINGUNA firma previa cambia:
+ *   - Slot `rutina` por cliente (R-02/R-03): `guardarRutina`, normalización
+ *     tolerante, expuesto en `HERZON_DATA.rutina`.
+ *   - Slot `config` por cliente (S-05): `{labsOcultos}`, `actualizarConfig`,
+ *     expuesto en `HERZON_DATA.config` (SIEMPRE `{labsOcultos:false}` en
+ *     demo, aunque el catálogo no traiga la clave).
+ *   - Respaldo exportable/importable (S-04): `exportarRespaldo`,
+ *     `restaurarRespaldo` (reemplazo TOTAL, nunca fusión).
+ *   - Boot bloqueado + embudo único de escritura (S-02): con
+ *     `Herzon.Seguridad.activa()===true` el boot arranca en demo funcional
+ *     con `bloqueado()===true`; `desbloquearYMontar(contrasena)` asíncrono
+ *     levanta el bloqueo. `escribirAlmacenCrudo` es el ÚNICO sitio de este
+ *     archivo que escribe la clave `rinde.datos.v1` (assert de selfcheck).
+ *     Tolerancia total: si `Herzon.Seguridad` no existe, comportamiento
+ *     IDÉNTICO al de antes de esta ronda (sin flag day).
  *
  * Responsabilidad EXCLUSIVA de este módulo: datos, persistencia, modo,
  * clientes y el cableado del botón/badge/selector del header
@@ -74,6 +92,14 @@
   var VALOR_NUEVO_SELECTOR = '__nuevo__';
   var TEXTO_NUEVO_CLIENTE = '+ Nuevo cliente…';
 
+  // R10 (S-02/S-04/C-12): textos y valores nuevos, acentos pinneados por el
+  // documento normativo de la ronda 10, sección 2.3 (C-10).
+  var VALOR_BLOQUEADO_SELECTOR = '__bloqueado__';
+  var TEXTO_BLOQUEADO_SELECTOR = 'Mis datos (con contraseña)…';
+  var MSG_DESBLOQUEO_INCORRECTO = 'Contraseña incorrecta. Vuelve a intentarlo.';
+  var FORMATO_RESPALDO = 'rinde-respaldo-1';
+  var MSG_RESPALDO_INVALIDO = 'El archivo no es un respaldo válido de Rinde.';
+
   // -----------------------------------------------------------------------
   // Estado del módulo (closure, no se expone directo). `datosOriginalDemo`
   // se captura UNA sola vez, ANTES de cualquier patch sobre G.HERZON_DATA
@@ -94,6 +120,19 @@
   var estadoClientes = { activoId: null, clientes: {} };
   var refsUI = { badge: null, boton: null, selector: null, doc: null };
   var eventosGlobalesCableados = false;
+
+  // R10 (S-02, C-4): `bloqueadoActual` es la bookkeeping PROPIA de este
+  // módulo sobre si la sesión tiene clave activa. Es la representación
+  // local de "hay clave de sesión" que consulta el embudo único (Herzon.
+  // Seguridad no expone ese booleano por contrato S-01: cripto puro, sin
+  // estado de aplicación). Transiciones: `cargar()` la fija en true si
+  // `Seguridad.activa()` es true al arrancar (sobre cifrado, nada
+  // desbloqueado todavía); `desbloquearYMontar` la baja a false tras un
+  // descifrado exitoso. Mientras es true, `modoActual` es siempre 'demo'
+  // (R8/R9: la demo nunca escribe), así que las rutas de mutación real
+  // jamás alcanzan el embudo en este estado -- pero el embudo igual cierra
+  // la rama por construcción (ver `escribirAlmacenCrudo`).
+  var bloqueadoActual = false;
 
   // -----------------------------------------------------------------------
   // Utilidades locales.
@@ -120,8 +159,46 @@
     return yyyy + '-' + mm + '-' + dd;
   }
 
+  // Adendum R10 punto 7: robusta a colisiones Y a la carrera de creación
+  // simultánea (flake documentado en T-048, asercion número 160 de este
+  // selfcheck: `Math.random()` como único desempate entre dos clientes
+  // creados en el MISMO milisegundo -- mismo prefijo `c-<ts>-` -- no
+  // garantiza que el id ordene igual que el orden real de creación, y
+  // `clientes()`/`primeroClientePorCreado` desempatan por comparación de
+  // string cuando `creado`, granularidad de día, coincide). Fix: el último
+  // segmento CONSERVA LA MISMA FORMA visible (string base36) pero se
+  // deriva de un contador de proceso MONÓTONO en vez de aleatorio, así dos
+  // ids generados en el mismo tick SIEMPRE ordenan en el mismo orden en
+  // que se generaron. Acotado y declarado (no oculto): el relleno a 4
+  // dígitos base36 garantiza el orden correcto hasta 36^4 (~1.68 millones)
+  // clientes por proceso, muy por encima de cualquier uso real de esta app.
+  var contadorSufijoId = 0;
+
+  function siguienteSufijoIdOrdenado() {
+    contadorSufijoId++;
+    var sufijo = contadorSufijoId.toString(36);
+    while (sufijo.length < 4) { sufijo = '0' + sufijo; }
+    return sufijo;
+  }
+
+  // Colisión residual (id ya presente en `estadoClientes.clientes`, p.ej.
+  // tras una recarga con el contador reiniciado en 0 y el mismo `Date.now`
+  // congelado bajo prueba): se cierra regenerando/sufijando un contador
+  // ADICIONAL, sin cambiar la forma del id (Adendum R10 punto 7).
+  // Determinístico incluso con Date.now Y el contador congelados: cada id
+  // generado se registra en `estadoClientes.clientes` ANTES de la
+  // siguiente llamada (mismo tick de `crearCliente`), así que el sufijo de
+  // colisión siempre avanza.
   function generarIdCliente() {
-    return 'c-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+    var base = 'c-' + Date.now().toString(36) + '-' + siguienteSufijoIdOrdenado();
+    if (!Object.prototype.hasOwnProperty.call(estadoClientes.clientes, base)) { return base; }
+    var sufijoColision = 1;
+    var candidato = base + '-' + sufijoColision;
+    while (Object.prototype.hasOwnProperty.call(estadoClientes.clientes, candidato)) {
+      sufijoColision++;
+      candidato = base + '-' + sufijoColision;
+    }
+    return candidato;
   }
 
   // -----------------------------------------------------------------------
@@ -158,7 +235,32 @@
     }
   }
 
-  function escribirAlmacenCrudo(payload) {
+  // EMBUDO ÚNICO DE ESCRITURA (S-02, Adendum R10 punto 4, C-14): este es el
+  // ÚNICO sitio de todo el archivo que hace `localStorage.setItem` sobre la
+  // clave `rinde.datos.v1` (el selfcheck lo asierta contando ocurrencias en
+  // la fuente). Tres ramas, en este orden:
+  //   1. Seguridad activa + CON clave de sesión (bloqueadoActual===false):
+  //      delega a `Seguridad.cifrarYPersistir` (asíncrono, cola propia de
+  //      S-01) y devuelve `true` OPTIMISTA sin esperar la promesa.
+  //   2. Seguridad activa + SIN clave de sesión (bloqueadoActual===true):
+  //      `false`, NO escribe -- jamás texto plano sobre un almacén cifrado,
+  //      jamás una escritura a ciegas.
+  //   3. Seguridad ausente/inactiva: escritura plana de siempre.
+  // `forzarPlano` es un escape interno EXCLUSIVO de la ruta de recuperación
+  // de `restaurarRespaldo` cuando `bloqueadoActual` era true al llamar
+  // (S-04 "ruta de recuperación desde bloqueado"): sin contraseña vigente
+  // no hay forma de re-cifrar, así que el respaldo se escribe en plano,
+  // sustituyendo el sobre, y la protección queda desactivada por el simple
+  // hecho de que el siguiente `Seguridad.activa()` ya no encuentra un
+  // sobre `cifrado-1`. Sigue siendo el mismo (y único) call-site de
+  // `setItem`.
+  function escribirAlmacenCrudo(payload, forzarPlano) {
+    var seg = G.Herzon && G.Herzon.Seguridad;
+    if (!forzarPlano && seg && typeof seg.activa === 'function' && seg.activa()) {
+      if (bloqueadoActual) { return false; }
+      if (typeof seg.cifrarYPersistir === 'function') { seg.cifrarYPersistir(payload); }
+      return true;
+    }
     try {
       if (!localStorageDisponible()) { return false; }
       G.localStorage.setItem(CLAVE_ALMACEN, JSON.stringify(payload));
@@ -181,12 +283,12 @@
   // Escribe el estado COMPLETO de clientes (independiente del cliente
   // montado en G.HERZON_DATA): la usan tanto las operaciones de gestión de
   // la lista (crear/renombrar/eliminar) como `persistir()`.
-  function persistirEstado() {
+  function persistirEstado(forzarPlano) {
     return escribirAlmacenCrudo({
       version: VERSION_ALMACEN,
       activoId: estadoClientes.activoId,
       clientes: estadoClientes.clientes
-    });
+    }, forzarPlano);
   }
 
   // Vuelca G.HERZON_DATA sobre el cliente activo antes de persistir (así
@@ -239,6 +341,16 @@
   function despacharClienteNuevoSolicitado() {
     if (typeof G.dispatchEvent !== 'function' || typeof CustomEvent === 'undefined') { return false; }
     G.dispatchEvent(new CustomEvent('herzon:cliente-nuevo-solicitado', { detail: {} }));
+    return true;
+  }
+
+  // R10 (S-02): evento NUEVO que el botón/selector del header despachan
+  // mientras bloqueado()===true, EN VEZ de activarReal(). La vista Perfil
+  // (T-054, #hz-card-desbloqueo) lo escucha para navegar y enfocar el
+  // campo de contraseña.
+  function despacharDesbloqueoSolicitado() {
+    if (typeof G.dispatchEvent !== 'function' || typeof CustomEvent === 'undefined') { return false; }
+    G.dispatchEvent(new CustomEvent('herzon:desbloqueo-solicitado', { detail: {} }));
     return true;
   }
 
@@ -367,7 +479,14 @@
       factoresActividad: copiaProfunda(catalogo.factoresActividad),
       suplementos: copiaProfunda(patch.suplementos),
       supuestos: copiaProfunda(catalogo.supuestos),
-      planAplicado: patch.plan ? copiaProfunda(patch.plan) : null
+      planAplicado: patch.plan ? copiaProfunda(patch.plan) : null,
+      // R-02/R-03 (rutina): dato de paciente, nunca catálogo -- null si el
+      // cliente no tiene rutina prescrita (payloads v2 previos a esta
+      // ronda no traen la clave y también resuelven aquí en null).
+      rutina: patch.rutina ? copiaProfunda(patch.rutina) : null,
+      // S-05 (config): clave ADITIVA como planAplicado; payloads viejos sin
+      // la clave se leen como {labsOcultos:false} (tolerancia declarada).
+      config: (patch.config && typeof patch.config === 'object') ? copiaProfunda(patch.config) : { labsOcultos: false }
     };
   }
 
@@ -383,6 +502,10 @@
 
   function montarComoDemo() {
     G.HERZON_DATA = montarDemo(datosOriginalDemo);
+    // S-05: en demo, config.labsOcultos es SIEMPRE false, sin importar lo
+    // que traiga el catálogo (la demo no tiene un cliente real con su
+    // propio slot de configuración).
+    G.HERZON_DATA.config = { labsOcultos: false };
     modoActual = 'demo';
   }
 
@@ -402,6 +525,25 @@
       return ca < cb ? -1 : 1;
     });
     return ids.length ? ids[0] : null;
+  }
+
+  // R10 (S-02/S-04): monta el cliente activo si existe alguno en
+  // `estadoClientes.clientes`, o cae a demo si la lista quedó vacía.
+  // Compartido por `cargar()` (rama sin bloqueo), `desbloquearYMontar` y
+  // `restaurarRespaldo`: las tres rutas resuelven "qué mostrar" con
+  // exactamente la misma regla (MC-06: primero por fecha de creación si el
+  // activoId persistido está colgante).
+  function montarSegunClientesDisponibles() {
+    var idsClientes = Object.keys(estadoClientes.clientes);
+    if (!idsClientes.length) {
+      montarComoDemo();
+      return;
+    }
+    if (!estadoClientes.activoId || !estadoClientes.clientes[estadoClientes.activoId]) {
+      estadoClientes.activoId = primeroClientePorCreado(estadoClientes.clientes);
+      persistirEstado();
+    }
+    montarClienteActivo();
   }
 
   // Migración v1 -> v2 + resolución de corrupción, dentro de `cargar()`.
@@ -429,6 +571,10 @@
         plicometria: (crudo.plicometria && typeof crudo.plicometria === 'object') ? crudo.plicometria : { unidad: 'mm', cortes: [], sitios: [], sumaPliegues_mm: [] },
         suplementos: Array.isArray(crudo.suplementos) ? crudo.suplementos : [],
         plan: null,
+        // R-02: la migración v1->v2 escribe rutina:null explícito (nunca
+        // existió en v1); S-05: config por defecto explícito.
+        rutina: null,
+        config: { labsOcultos: false },
         creado: fechaHoy()
       };
       escribirAlmacenCrudo({ version: VERSION_ALMACEN, activoId: idMigrado, clientes: clientesMigrados });
@@ -535,21 +681,25 @@
     if (!G.HERZON_DATA && datosOriginalDemo === null) { return modoActual; }
     garantizarOriginal();
 
+    // S-02 (Adendum R10 punto 5): con un sobre cifrado presente, los datos
+    // reales son ILEGIBLES sin desbloquear -- arranca en demo funcional con
+    // bloqueado()===true, sin siquiera intentar leer/parsear el crudo.
+    // Tolerancia total: si Herzon.Seguridad no existe (ronda anterior a
+    // R10, o módulo aún no inyectado), este bloque no corre nunca (sin
+    // flag day).
+    var seg = G.Herzon && G.Herzon.Seguridad;
+    if (seg && typeof seg.activa === 'function' && seg.activa()) {
+      bloqueadoActual = true;
+      estadoClientes = { activoId: null, clientes: {} };
+      montarComoDemo();
+      emitirClientesActualizados();
+      return modoActual;
+    }
+    bloqueadoActual = false;
+
     var crudo = leerAlmacenCrudo();
     estadoClientes = resolverEstadoDesdeCrudo(crudo);
-
-    var idsClientes = Object.keys(estadoClientes.clientes);
-    if (!idsClientes.length) {
-      montarComoDemo();
-    } else {
-      if (!estadoClientes.activoId || !estadoClientes.clientes[estadoClientes.activoId]) {
-        // activoId ausente o colgante con clientes presentes: monta el
-        // primero por fecha de creación y corrige lo persistido.
-        estadoClientes.activoId = primeroClientePorCreado(estadoClientes.clientes);
-        persistirEstado();
-      }
-      montarClienteActivo();
-    }
+    montarSegunClientesDisponibles();
 
     emitirClientesActualizados();
     return modoActual;
@@ -598,6 +748,9 @@
       plicometria: estructuras.plicometria,
       suplementos: estructuras.suplementos,
       plan: null,
+      // R-02/S-05: explícitos desde la creación (Adendum R10).
+      rutina: null,
+      config: { labsOcultos: false },
       creado: fechaHoy()
     };
     var anteriorId = estadoClientes.activoId;
@@ -700,6 +853,205 @@
     return persistir();
   }
 
+  // ===========================================================================
+  // R10 -- R-02/R-03: slot rutina.
+  // ===========================================================================
+
+  function enteroFinitoEnRango(v, minimo, maximo) {
+    if (typeof v !== 'number' || !isFinite(v)) { return null; }
+    var entero = Math.round(v);
+    return (entero < minimo || entero > maximo) ? null : entero;
+  }
+
+  function stringODefecto(v, porDefecto) {
+    return (typeof v === 'string') ? v : porDefecto;
+  }
+
+  function fechaValidaOAhora(v) {
+    return (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : fechaHoy();
+  }
+
+  // Normalización tolerante de UN ejercicio (R-02): nombre requerido (se
+  // descarta el ejercicio entero si queda vacío tras castear a String y
+  // recortar espacios); series/descanso_s enteros finitos en rango o null;
+  // repeticiones/notas casteados a String. Los límites de longitud
+  // (nombre<=80, repeticiones<=40, etc.) son responsabilidad del EDITOR
+  // (R-06): el almacén normaliza tipos y forma, no trunca contenido.
+  function normalizarEjercicioRutina(x) {
+    if (!x || typeof x !== 'object') { return null; }
+    var nombre = String(x.nombre != null ? x.nombre : '').trim();
+    if (!nombre) { return null; }
+    return {
+      nombre: nombre,
+      series: enteroFinitoEnRango(x.series, 1, 10),
+      repeticiones: stringODefecto(x.repeticiones, ''),
+      descanso_s: enteroFinitoEnRango(x.descanso_s, 0, 600),
+      notas: stringODefecto(x.notas, '')
+    };
+  }
+
+  // Normalización tolerante del slot completo (R-02/R-03.1): null/no-objeto
+  // => null; si objeto, `dias` = entradas con >=1 ejercicio VÁLIDO tras
+  // normalizar (un día cuyos ejercicios quedan todos descartados también se
+  // descarta), renumeradas secuencial 1..n; `actualizado` = fecha válida o
+  // `fechaHoy()`.
+  function normalizarRutina(rutina) {
+    if (!rutina || typeof rutina !== 'object' || !Array.isArray(rutina.dias)) { return null; }
+    var diasNormalizados = [];
+    rutina.dias.forEach(function (d) {
+      if (!d || typeof d !== 'object' || !Array.isArray(d.ejercicios) || !d.ejercicios.length) { return; }
+      var ejercicios = [];
+      d.ejercicios.forEach(function (x) {
+        var e = normalizarEjercicioRutina(x);
+        if (e) { ejercicios.push(e); }
+      });
+      if (!ejercicios.length) { return; }
+      diasNormalizados.push({ dia: diasNormalizados.length + 1, titulo: stringODefecto(d.titulo, ''), ejercicios: ejercicios });
+    });
+    return { dias: diasNormalizados, actualizado: fechaValidaOAhora(rutina.actualizado) };
+  }
+
+  // guardarRutina(rutina) -> boolean (R-03.1): false si no hay cliente real
+  // activo (misma guarda que guardarPlan/persistir). Escribe
+  // clientes[activoId].rutina y HERZON_DATA.rutina en el mismo tick;
+  // persiste vía persistir() (que enruta por el embudo único S-02 -- el
+  // cifrado cubre la rutina sin trabajo adicional, C-14).
+  function guardarRutina(rutina) {
+    if (modoActual !== 'real' || !G.HERZON_DATA || !estadoClientes.activoId) { return false; }
+    var activo = estadoClientes.clientes[estadoClientes.activoId];
+    if (!activo) { return false; }
+    var slot = normalizarRutina(rutina);
+    activo.rutina = slot;
+    G.HERZON_DATA.rutina = slot ? copiaProfunda(slot) : null;
+    return persistir();
+  }
+
+  // ===========================================================================
+  // R10 -- S-05: config {labsOcultos} por cliente.
+  // ===========================================================================
+
+  // actualizarConfig(parcial) -> boolean: solo en real con activo; fusiona
+  // clave por clave sobre clientes[activoId].config (hoy la única clave es
+  // labsOcultos; el merge queda genérico para futuras claves aditivas sin
+  // migración), sincroniza HERZON_DATA.config, persiste vía el embudo único
+  // y emite herzon:modo-cambiado (semántica R9 de remontaje: Perfil y
+  // Seguimiento repintan completos -- que aparezcan/desaparezcan secciones
+  // ES un remontaje).
+  function actualizarConfig(parcial) {
+    if (modoActual !== 'real' || !G.HERZON_DATA || !estadoClientes.activoId) { return false; }
+    var activo = estadoClientes.clientes[estadoClientes.activoId];
+    if (!activo) { return false; }
+    var configActual = (activo.config && typeof activo.config === 'object') ? activo.config : { labsOcultos: false };
+    var configFusionado = { labsOcultos: configActual.labsOcultos === true };
+    if (parcial && typeof parcial === 'object' && Object.prototype.hasOwnProperty.call(parcial, 'labsOcultos')) {
+      configFusionado.labsOcultos = parcial.labsOcultos === true;
+    }
+    activo.config = configFusionado;
+    G.HERZON_DATA.config = copiaProfunda(configFusionado);
+    var ok = persistirEstado();
+    emitirModoCambiado('real', estadoClientes.activoId);
+    return ok;
+  }
+
+  // ===========================================================================
+  // R10 -- S-04: respaldo exportable/importable (reemplazo TOTAL, C-11).
+  // ===========================================================================
+
+  // exportarRespaldo(): serializa estadoClientes EN MEMORIA (con cifrado
+  // activo exporta lo YA desbloqueado, nunca lee el sobre crudo).
+  function exportarRespaldo() {
+    if (!estadoClientes || typeof estadoClientes !== 'object' || !estadoClientes.clientes) {
+      return { ok: false };
+    }
+    var datos = { version: VERSION_ALMACEN, activoId: estadoClientes.activoId, clientes: estadoClientes.clientes };
+    return {
+      ok: true,
+      nombreArchivo: 'rinde-respaldo-' + fechaHoy() + '.json',
+      json: JSON.stringify({ formato: FORMATO_RESPALDO, exportado: fechaHoy(), datos: datos })
+    };
+  }
+
+  // restaurarRespaldo(objeto) -> {ok,errores,clientes}: valida la forma
+  // exacta del sobre de respaldo, REEMPLAZA estadoClientes por completo
+  // (jamás fusiona por id, C-11), persiste vía el embudo único (con sesión
+  // cifrada activa re-cifra con la contraseña vigente; sin cifrado,
+  // plano -- automático, sin trabajo adicional aquí) y emite la MISMA
+  // secuencia de eventos que desbloquearYMontar. Ruta especial "desde
+  // bloqueado" (S-04): si `bloqueadoActual` era true al llamar, no hay
+  // contraseña vigente para re-cifrar -- el respaldo se escribe EN PLANO
+  // (forzarPlano) y la protección queda desactivada.
+  function restaurarRespaldo(objeto) {
+    var formaValida = objeto && typeof objeto === 'object' &&
+      objeto.formato === FORMATO_RESPALDO &&
+      objeto.datos && typeof objeto.datos === 'object' &&
+      objeto.datos.version === VERSION_ALMACEN;
+    if (!formaValida) {
+      return { ok: false, errores: [MSG_RESPALDO_INVALIDO], clientes: 0 };
+    }
+
+    garantizarOriginal();
+    estadoClientes = resolverEstadoDesdeCrudo(objeto.datos);
+
+    var veniaDeBloqueado = bloqueadoActual;
+    if (veniaDeBloqueado) { bloqueadoActual = false; }
+    persistirEstado(veniaDeBloqueado);
+
+    montarSegunClientesDisponibles();
+
+    emitirClientesActualizados();
+    if (modoActual === 'real') {
+      emitirClienteCambiado(estadoClientes.activoId, null);
+      emitirModoCambiado('real', estadoClientes.activoId);
+    } else {
+      emitirModoCambiado('demo', null);
+    }
+    sincronizarUIModo();
+
+    return { ok: true, errores: [], clientes: Object.keys(estadoClientes.clientes).length };
+  }
+
+  // ===========================================================================
+  // R10 -- S-02: boot bloqueado y desbloqueo asíncrono.
+  // ===========================================================================
+
+  function bloqueado() {
+    return bloqueadoActual;
+  }
+
+  // desbloquearYMontar(contrasena) -> Promise<{ok,error}>: delega en
+  // Seguridad.desbloquear; null (contraseña incorrecta o sobre manipulado,
+  // indistinguibles por diseño S-01) => {ok:false,error:MSG} SIN tocar el
+  // estado. Éxito: resuelve el payload v2 EN MEMORIA con la misma
+  // tolerancia del boot, baja bloqueadoActual, monta y emite EN ESTE ORDEN:
+  // clientes-actualizados -> cliente-cambiado -> modo-cambiado (semántica
+  // R9: todas las vistas repintan sin código nuevo).
+  function desbloquearYMontar(contrasena) {
+    var seg = G.Herzon && G.Herzon.Seguridad;
+    if (!seg || typeof seg.desbloquear !== 'function') {
+      return Promise.resolve({ ok: false, error: MSG_DESBLOQUEO_INCORRECTO });
+    }
+    return seg.desbloquear(contrasena).then(function (payload) {
+      if (!payload) {
+        return { ok: false, error: MSG_DESBLOQUEO_INCORRECTO };
+      }
+      garantizarOriginal();
+      estadoClientes = resolverEstadoDesdeCrudo(payload);
+      bloqueadoActual = false;
+      montarSegunClientesDisponibles();
+
+      emitirClientesActualizados();
+      if (modoActual === 'real') {
+        emitirClienteCambiado(estadoClientes.activoId, null);
+        emitirModoCambiado('real', estadoClientes.activoId);
+      } else {
+        emitirModoCambiado('demo', null);
+      }
+      sincronizarUIModo();
+
+      return { ok: true, error: null };
+    });
+  }
+
   // activarReal(perfil): SUPERSEDE parcial del Adendum R8 (Adendum R9
   // punto 3). Con perfil equivale a crearCliente(perfil). Sin perfil y con
   // clientes ya registrados, recupera el activo conocido (seleccionarCliente,
@@ -744,6 +1096,26 @@
     // rama demo (option "Demo: ..." seleccionada) tanto en el click directo
     // del botón #hz-btn-modo como en el fallback de eliminarCliente cuando
     // no queda ningún cliente restante.
+    emitirClientesActualizados();
+    return modoActual;
+  }
+
+  // bloquearYVolverADemo() (T-058, fix de S-02): re-bloqueo EXPLÍCITO desde
+  // "Bloquear ahora" -- a diferencia de volverADemo() (alterna DEMO/REAL sin
+  // tocar bloqueadoActual; lo usa también el toggle #hz-btn-modo para
+  // previsualizar demo mientras la sesión sigue desbloqueada, caso que NO
+  // debe re-bloquear), esta función SIEMPRE deja bloqueadoActual=true y
+  // limpia estadoClientes en memoria -- el mismo bookkeeping que la rama
+  // bloqueada de cargar() (línea ~690). El caller (vista_metricas.js) ya
+  // llamó Seguridad.bloquear() antes de invocar esto (borra la clave de
+  // sesión); aquí solo se refleja ese re-bloqueo en el estado del almacén y
+  // se repinta la UI, igual que volverADemo().
+  function bloquearYVolverADemo() {
+    bloqueadoActual = true;
+    estadoClientes = { activoId: null, clientes: {} };
+    montarComoDemo();
+    emitirModoCambiado('demo', null);
+    sincronizarUIModo();
     emitirClientesActualizados();
     return modoActual;
   }
@@ -949,9 +1321,18 @@
   // MC-03: opciones del selector, textContent siempre. Demo:
   // "Demo: <nombre del sintético>" seleccionada + clientes + "+ Nuevo
   // cliente…". Real: clientes (activo con selected) + "+ Nuevo cliente…",
-  // SIN opción demo.
+  // SIN opción demo. R10 (S-02): bloqueado === true es un CUARTO estado,
+  // exclusivo entre sí con demo/real -- exactamente 2 opciones (Demo
+  // seleccionada + "Mis datos (con contraseña)…"), SIN "+ Nuevo cliente…"
+  // (crear un cliente escribiría sobre el sobre cifrado).
   function construirOpcionesSelector() {
     var opciones = [];
+    if (bloqueadoActual) {
+      var nombreDemoBloqueado = (datosOriginalDemo && datosOriginalDemo.paciente && datosOriginalDemo.paciente.nombre) || '';
+      opciones.push({ valor: VALOR_DEMO_SELECTOR, texto: 'Demo: ' + nombreDemoBloqueado, seleccionada: true });
+      opciones.push({ valor: VALOR_BLOQUEADO_SELECTOR, texto: TEXTO_BLOQUEADO_SELECTOR, seleccionada: false });
+      return opciones;
+    }
     var enReal = (modoActual === 'real');
     if (!enReal) {
       var nombreDemo = (datosOriginalDemo && datosOriginalDemo.paciente && datosOriginalDemo.paciente.nombre) || '';
@@ -1006,6 +1387,13 @@
     sincronizarUIModo();
 
     boton.addEventListener('click', function () {
+      // R10 (S-02): bloqueado() manda sobre cualquier otro estado -- el
+      // botón despacha el desbloqueo EN VEZ de activarReal (no hay real
+      // anónimo que recuperar: los datos siguen ilegibles).
+      if (bloqueadoActual) {
+        despacharDesbloqueoSolicitado();
+        return;
+      }
       if (modo() === 'real') {
         volverADemo();
       } else {
@@ -1021,6 +1409,14 @@
       refsUI.selector.addEventListener('change', function (ev) {
         var valor = (ev && ev.target) ? ev.target.value : refsUI.selector.value;
         if (!valor) { return; }
+        if (valor === VALOR_BLOQUEADO_SELECTOR) {
+          // R10 (S-02): elegir "Mis datos (con contraseña)…" restaura la
+          // selección Demo (el estado real no cambió: sigue bloqueado) y
+          // despacha el mismo evento que el botón.
+          reconstruirSelectorCliente();
+          despacharDesbloqueoSolicitado();
+          return;
+        }
         if (valor === VALOR_NUEVO_SELECTOR) {
           // Restaura la selección anterior (el estado real no cambió) y
           // delega el alta a la vista Perfil.
@@ -1052,6 +1448,9 @@
     cargar: cargar,
     activarReal: activarReal,
     volverADemo: volverADemo,
+    // R10 (T-058): re-bloqueo explícito, distinto de volverADemo() (ver
+    // comentario junto a la definición).
+    bloquearYVolverADemo: bloquearYVolverADemo,
     actualizarPerfil: actualizarPerfil,
     agregarMedicion: agregarMedicion,
     mergeMediciones: mergeMediciones,
@@ -1063,7 +1462,14 @@
     renombrarCliente: renombrarCliente,
     eliminarCliente: eliminarCliente,
     clienteActivo: clienteActivo,
-    guardarPlan: guardarPlan
+    guardarPlan: guardarPlan,
+    // R10 (Adendum R10, T-052): API aditiva -- ninguna firma previa cambia.
+    guardarRutina: guardarRutina,
+    actualizarConfig: actualizarConfig,
+    exportarRespaldo: exportarRespaldo,
+    restaurarRespaldo: restaurarRespaldo,
+    bloqueado: bloqueado,
+    desbloquearYMontar: desbloquearYMontar
   };
 
   // cargar() síncrono en cuanto este módulo se define (Adendum R8 punto 6):

@@ -53,6 +53,51 @@
   var TEXTO_BOTON_ELIMINAR_NORMAL = 'Eliminar este cliente';
   var MS_REVERSION_CONFIRMAR = 6000;
 
+  // -----------------------------------------------------------------------
+  // R10 (S-02/S-03/S-04, F-04/S-05): textos EXACTOS pinneados por
+  // .harness/justesse-r10-diseno.md sección 2.3 (C-10) -- forma canónica,
+  // con acentos, que fijan los selfchecks. El resto de esta lista completa
+  // los textos que la sección 2.3 deja a criterio del implementador (sin
+  // debilitar ni contradecir el contrato).
+  // -----------------------------------------------------------------------
+  var TITULO_DESBLOQUEO = 'Tus datos están protegidos';
+  var CUERPO_DESBLOQUEO = 'La información de tus clientes está cifrada en este dispositivo. Escribe tu contraseña para desbloquearla.';
+  var TEXTO_BOTON_DESBLOQUEAR = 'Desbloquear';
+  var TEXTO_BOTON_DESBLOQUEANDO = 'Descifrando…';
+  var MSG_DESBLOQUEO_INCORRECTO = 'Contraseña incorrecta. Vuelve a intentarlo.';
+  var TEXTO_PIE_RECUPERACION = 'Si olvidaste tu contraseña, no es posible recuperarla. Puedes restaurar un respaldo o borrar todos los datos para empezar de cero.';
+  var TEXTO_BOTON_BORRAR_TODO = 'Borrar todos los datos';
+
+  var TITULO_SEGURIDAD = 'Seguridad y respaldo';
+  var NOTA_AMBITO_SEGURIDAD = 'La contraseña protege todos los clientes guardados en este dispositivo. Los datos se cifran aquí mismo: nadie puede recuperarlos sin la contraseña, ni siquiera tú.';
+  var NOTA_RESPALDO_PREVIO = 'Antes de activar, descarga un respaldo. Si olvidas la contraseña, será tu única forma de recuperar los datos.';
+  var TEXTO_BOTON_RESPALDO = 'Descargar respaldo (.json)';
+  var LABEL_PASS_1 = 'Contraseña (mínimo 8 caracteres)';
+  var LABEL_PASS_2 = 'Repite la contraseña';
+  var LABEL_CONFIRMO = 'Entiendo que si olvido la contraseña mis datos no se pueden recuperar';
+  var TEXTO_BOTON_ACTIVAR = 'Activar protección';
+  var TEXTO_BOTON_CIFRANDO = 'Cifrando…';
+  var MSG_ACTIVADA = 'Protección activada. Tus datos quedaron cifrados en este dispositivo.';
+  var TEXTO_ESTADO_PROTEGIDA = 'Protección activada';
+  var TEXTO_BOTON_BLOQUEAR = 'Bloquear ahora';
+  var LABEL_PASS_ACTUAL = 'Contraseña actual';
+  var LABEL_PASS_NUEVA_1 = 'Contraseña nueva (mínimo 8 caracteres)';
+  var LABEL_PASS_NUEVA_2 = 'Repite la contraseña nueva';
+  var TEXTO_BOTON_CAMBIAR = 'Cambiar contraseña';
+  var TEXTO_BOTON_QUITAR = 'Quitar contraseña';
+  var NOTA_QUITAR_ADVERTENCIA = 'Al quitar la contraseña, los datos quedan guardados SIN cifrar en este dispositivo.';
+
+  var NOTA_RESPALDO_CUSTODIA = 'El respaldo se descarga SIN cifrar. Incluye a todos los clientes: guárdalo en un lugar seguro.';
+  var LABEL_IMPORTAR_RESPALDO = 'Restaurar respaldo (.json)';
+  var TEXTO_BOTON_RESPALDAR_ANTES = 'Descargar respaldo de lo actual antes de continuar';
+  var TEXTO_BOTON_RESTAURAR_CONFIRMAR = 'Reemplazar todo y restaurar';
+  var MSG_RESPALDO_INVALIDO = 'El archivo no es un respaldo válido de Rinde.';
+  var TEXTO_EXTRA_RESTAURAR_BLOQUEADO = 'Esto reemplaza los datos cifrados de este dispositivo y desactiva la contraseña actual. Podrás activar una nueva después.';
+
+  var LABEL_LABS_OCULTOS = 'Este cliente no se realiza laboratorios';
+  var NOTA_LABS_OCULTOS = 'Ocultar no borra los resultados ya capturados.';
+  var MENSAJE_EXITO_PERFIL = 'Cambios guardados.';
+
   var OPCIONES_SEXO = [
     { valor: '', etiqueta: 'Selecciona' },
     { valor: 'femenino', etiqueta: 'Femenino' },
@@ -245,6 +290,39 @@
     campo.appendChild(select);
     contenedorEl.appendChild(campo);
     return { campo: campo, select: select };
+  }
+
+  // S-05/S-03: checkbox de una fila (mismo patrón que crearCampoInput/
+  // crearCampoSelect de arriba, pero con type=checkbox e input.checked en
+  // vez de input.value).
+  function crearCampoCheckbox(doc, contenedorEl, idCampo, etiquetaTexto, checkedInicial) {
+    var campo = crear(doc, 'div', ['hz-form-campo']);
+    var input = crear(doc, 'input');
+    input.setAttribute('id', idCampo);
+    input.setAttribute('type', 'checkbox');
+    input.checked = !!checkedInicial;
+    var etiqueta = crear(doc, 'label', null, etiquetaTexto);
+    etiqueta.setAttribute('for', idCampo);
+    campo.appendChild(input);
+    campo.appendChild(etiqueta);
+    contenedorEl.appendChild(campo);
+    return { campo: campo, input: input };
+  }
+
+  // S-04: lectura de archivo local para restaurar un respaldo. Mismo patrón
+  // que `leerArchivoComoTexto` de build/documentos.js (COPIADO, no
+  // importado -- C-7, documentos.js no se toca en R10): aislado en su
+  // propia función para que el selfcheck pueda ejercitar el resto del
+  // flujo con un stub mínimo de FileReader, sin depender de un navegador.
+  function leerArchivoComoTextoLocal(archivo, callback) {
+    if (typeof FileReader === 'undefined') {
+      callback(null, 'este navegador no soporta FileReader');
+      return;
+    }
+    var lector = new FileReader();
+    lector.onerror = function () { callback(null, 'error de lectura del archivo'); };
+    lector.onload = function () { callback(String(lector.result || ''), null); };
+    lector.readAsText(archivo);
   }
 
   function limpiarBordesValidacion(campos) {
@@ -448,9 +526,16 @@
   // -----------------------------------------------------------------------
   // Vista Perfil: UN número héroe (IMC actual) DENTRO del grid de 3 tarjetas
   // (LY-02), tarjeta clínica, tarjeta antropométrica, semáforos de
-  // laboratorios en grid anidado (LY-02), edición de perfil y eliminación de
-  // cliente en modo real (R8 punto 5, MC-06), y el formulario de alta de
-  // cliente (MC-04, ids congelados en Adendum R9 punto 6).
+  // laboratorios en grid anidado (LY-02, omitida por S-05 si el cliente
+  // tiene labsOcultos), edición de perfil (F-04, con la casilla S-05 y el
+  // pie de eliminación F-05) y eliminación de cliente en modo real (R8
+  // punto 5, MC-06), el formulario de alta de cliente en card centrada
+  // (F-03, MC-04, ids congelados en Adendum R9 punto 6), la card de
+  // desbloqueo (S-02, primera card mientras Almacen.bloqueado()===true) y
+  // la card de seguridad y respaldo (S-03/S-04, solo real desbloqueado).
+  // Orden real de la vista (C-3): [bloqueado: desbloqueo primera] -> cards
+  // actuales -> Editar perfil (casilla labs + pie de eliminación) ->
+  // seguridad -> (alta, normalmente oculta).
   // -----------------------------------------------------------------------
   function mountPerfil(rootEl) {
     var doc = rootEl.ownerDocument;
@@ -459,6 +544,17 @@
     // montaje perezoso ocurriera (fix BUG 1); se consume una sola vez.
     var mostrarAlta = altaPendienteAlMontar;
     altaPendienteAlMontar = false;
+    // F-04.5: mensaje de éxito de "Guardar cambios" -- patrón consumo-único
+    // (como altaPendienteAlMontar arriba): el submit exitoso lo fija ANTES
+    // de provocar el siguiente montaje (propio, o vía herzon:modo-cambiado
+    // si S-05 cambió la configuración); ese siguiente montaje lo consume
+    // una sola vez.
+    var mensajeExitoPerfil = '';
+    // S-03: mismo patrón consumo-único, compartido por las tres acciones de
+    // la card de seguridad (activar/cambiar/quitar) -- solo un panel
+    // (sin protección o con protección) se monta por render, así que
+    // comparten un único mensaje sin colisión posible.
+    var mensajeExitoSeguridad = '';
 
     function render() {
       limpiar(rootEl);
@@ -467,6 +563,13 @@
       var paciente = data.paciente || {};
       var labs = data.labs || {};
       var enReal = esModoReal(Almacen);
+      var bloqueado = !!(Almacen && typeof Almacen.bloqueado === 'function' && Almacen.bloqueado());
+
+      // --- S-02: mientras bloqueado()===true, la vista monta SIEMPRE, como
+      // PRIMERA card, el formulario de desbloqueo (C-3). ---
+      if (bloqueado) {
+        montarCardDesbloqueo();
+      }
 
       // --- LY-02 pieza (a): héroe IMC como PRIMER hijo del grid de 3. ---
       var heroCard = crear(doc, 'div', ['hz-card']);
@@ -517,64 +620,81 @@
 
       rootEl.appendChild(grid);
 
-      // --- LY-02 pieza (b): 7 semáforos en grid anidado dentro de cardLabs. ---
-      var tarjetaLabs = crear(doc, 'div', ['hz-card']);
-      tarjetaLabs.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Laboratorios - estado actual'));
-      var marcadores = labs.marcadores || [];
-      var hayLabs = marcadores.some(function (m) { return (m.valores || []).length > 0; });
-      if (enReal && !hayLabs) {
-        crearVacio(doc, tarjetaLabs);
-      } else {
-        var cortes = labs.cortes || [];
-        var ultimoCorte = cortes.length ? cortes[cortes.length - 1].etiqueta : '';
-        if (ultimoCorte) { tarjetaLabs.appendChild(crear(doc, 'p', null, 'Corte más reciente: ' + ultimoCorte)); }
-        var gridSemaforos = crear(doc, 'div', ['hz-grid']);
-        marcadores.forEach(function (m) {
-          var valores = m.valores || [];
-          var valorFinal = valores.length ? valores[valores.length - 1] : null;
-          var estado = (valorFinal != null) ? calcularEstadoMarcador(valorFinal, m.referencia, m.mejorSi) : 'good';
-          var wrapMarcador = crear(doc, 'div');
-          var punto = crear(doc, 'span', ['hz-status-dot']);
-          punto.setAttribute('data-status', estado);
-          var nombre = crear(doc, 'span', null, m.nombre + ': ');
-          nombre.style.color = 'var(--text-secondary)';
-          nombre.style.fontWeight = '400';
-          var textoValor = (valorFinal != null)
-            ? (formatoNumero(valorFinal, 1) + ' ' + m.unidad + ' - ' + ETIQUETAS_ESTADO[estado])
-            : '—';
-          var valor = crear(doc, 'span', ['hz-status-label'], textoValor);
-          valor.style.fontVariantNumeric = 'tabular-nums';
-          wrapMarcador.appendChild(punto);
-          wrapMarcador.appendChild(nombre);
-          wrapMarcador.appendChild(valor);
-          gridSemaforos.appendChild(wrapMarcador);
-        });
-        tarjetaLabs.appendChild(gridSemaforos);
+      // --- LY-02 pieza (b): 7 semáforos en grid anidado dentro de cardLabs.
+      // S-05: con labsOcultos===true en modo real, la card se OMITE por
+      // completo (decisión clínica del nutriólogo, no un vacío); en demo o
+      // bloqueado (enReal===false) siempre se monta. ---
+      var labsOcultosPerfil = enReal && !!(data.config && data.config.labsOcultos);
+      if (!labsOcultosPerfil) {
+        var tarjetaLabs = crear(doc, 'div', ['hz-card']);
+        tarjetaLabs.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Laboratorios - estado actual'));
+        var marcadores = labs.marcadores || [];
+        var hayLabs = marcadores.some(function (m) { return (m.valores || []).length > 0; });
+        if (enReal && !hayLabs) {
+          crearVacio(doc, tarjetaLabs);
+        } else {
+          var cortes = labs.cortes || [];
+          var ultimoCorte = cortes.length ? cortes[cortes.length - 1].etiqueta : '';
+          if (ultimoCorte) { tarjetaLabs.appendChild(crear(doc, 'p', null, 'Corte más reciente: ' + ultimoCorte)); }
+          var gridSemaforos = crear(doc, 'div', ['hz-grid']);
+          marcadores.forEach(function (m) {
+            var valores = m.valores || [];
+            var valorFinal = valores.length ? valores[valores.length - 1] : null;
+            var estado = (valorFinal != null) ? calcularEstadoMarcador(valorFinal, m.referencia, m.mejorSi) : 'good';
+            var wrapMarcador = crear(doc, 'div');
+            var punto = crear(doc, 'span', ['hz-status-dot']);
+            punto.setAttribute('data-status', estado);
+            var nombre = crear(doc, 'span', null, m.nombre + ': ');
+            nombre.style.color = 'var(--text-secondary)';
+            nombre.style.fontWeight = '400';
+            var textoValor = (valorFinal != null)
+              ? (formatoNumero(valorFinal, 1) + ' ' + m.unidad + ' - ' + ETIQUETAS_ESTADO[estado])
+              : '—';
+            var valor = crear(doc, 'span', ['hz-status-label'], textoValor);
+            valor.style.fontVariantNumeric = 'tabular-nums';
+            wrapMarcador.appendChild(punto);
+            wrapMarcador.appendChild(nombre);
+            wrapMarcador.appendChild(valor);
+            gridSemaforos.appendChild(wrapMarcador);
+          });
+          tarjetaLabs.appendChild(gridSemaforos);
+        }
+        rootEl.appendChild(tarjetaLabs);
       }
-      rootEl.appendChild(tarjetaLabs);
 
-      // --- R8 punto 5 + MC-06: edición de perfil y eliminación de cliente,
-      // SOLO en modo real. ---
+      // --- R8 punto 5 + F-04/F-05/S-05: edición de perfil (con la casilla
+      // de labs ocultos y el pie de eliminación) SOLO en modo real. ---
       if (enReal) {
-        montarFormularioEdicionPerfil();
-        montarBotonEliminarCliente();
+        var cardEditarPerfil = montarFormularioEdicionPerfil();
+        montarBotonEliminarCliente(cardEditarPerfil);
       }
 
-      // --- MC-04: formulario de alta de cliente (ids congelados en Adendum
-      // R9 punto 6). Siempre presente en el DOM; oculto salvo que
-      // `mostrarAlta` esté activo (herzon:cliente-nuevo-solicitado). ---
+      // --- S-03: card de seguridad y respaldo, SOLO real desbloqueado. ---
+      if (enReal && !bloqueado) {
+        montarCardSeguridad();
+      }
+
+      // --- MC-04/F-03: formulario de alta de cliente (ids congelados en
+      // Adendum R9 punto 6), ahora en card centrada (F-03). Siempre
+      // presente en el DOM; oculto salvo que `mostrarAlta` esté activo
+      // (herzon:cliente-nuevo-solicitado). ---
       montarFormularioAlta();
 
       // -----------------------------------------------------------------
-      // R8 punto 5: edición de perfil (nombre/sexo/edad/talla/peso
-      // inicial/actividad/objetivo) -> Herzon.Almacen.actualizarPerfil.
+      // R8 punto 5 + F-04 + S-05: edición de perfil (nombre/sexo/edad/
+      // talla/peso inicial/actividad/objetivo, casilla de labs ocultos) ->
+      // Herzon.Almacen.actualizarPerfil (+ actualizarConfig si la casilla
+      // cambió). Sistema de formularios F-01/F-02: card hz-form-card, form
+      // hz-form-columnas. DEVUELVE la card (F-04.6: la necesitan F-05 y la
+      // llamada de arriba).
       // -----------------------------------------------------------------
       function montarFormularioEdicionPerfil() {
-        var card = crear(doc, 'div', ['hz-card']);
+        var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
         card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Editar perfil'));
-        var form = crear(doc, 'form', ['hz-form']);
+        var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
 
         var campoNombre = crearCampoInput(doc, form, 'hz-editar-nombre', 'Nombre', 'text', paciente.nombre || '');
+        campoNombre.campo.classList.add('hz-form-ancho');
         var campoSexo = crearCampoSelect(doc, form, 'hz-editar-sexo', 'Sexo', OPCIONES_SEXO);
         campoSexo.select.value = paciente.sexo || '';
         var campoEdad = crearCampoInput(doc, form, 'hz-editar-edad', 'Edad (años)', 'number',
@@ -588,12 +708,28 @@
         campoActividad.select.value = paciente.actividad || '';
         var campoObjetivo = crearCampoInput(doc, form, 'hz-editar-objetivo', 'Objetivo', 'text', paciente.objetivo || '');
 
-        var notaEstado = crear(doc, 'p', ['hz-nota']);
-        form.appendChild(notaEstado);
+        // S-05: casilla de laboratorios ocultos, precargada del config
+        // vigente (ausente => false, tolerancia declarada del contrato).
+        var labsOcultosInicial = !!(data.config && data.config.labsOcultos);
+        var campoLabsOcultos = crearCampoCheckbox(doc, form, 'hz-perfil-labs-ocultos', LABEL_LABS_OCULTOS, labsOcultosInicial);
+        campoLabsOcultos.campo.classList.add('hz-form-ancho');
+        form.appendChild(crear(doc, 'p', ['hz-nota', 'hz-form-ancho'], NOTA_LABS_OCULTOS));
 
-        var botonGuardar = crear(doc, 'button', null, 'Guardar cambios');
+        var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+        var botonGuardar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Guardar cambios');
         botonGuardar.setAttribute('type', 'submit');
-        form.appendChild(botonGuardar);
+        acciones.appendChild(botonGuardar);
+        form.appendChild(acciones);
+
+        // F-04.5: notaEstado va DESPUÉS de las acciones (orden final de la
+        // card, F-04.7); consume mensajeExitoPerfil una sola vez.
+        var notaEstado = crear(doc, 'p', ['hz-nota', 'hz-form-ancho']);
+        if (mensajeExitoPerfil) {
+          notaEstado.textContent = mensajeExitoPerfil;
+          notaEstado.style.color = 'var(--delta-good)';
+          mensajeExitoPerfil = '';
+        }
+        form.appendChild(notaEstado);
 
         form.addEventListener('submit', function (ev) {
           if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
@@ -615,24 +751,40 @@
             notaEstado.style.color = 'var(--delta-bad)';
             return;
           }
-          // actualizarPerfil NO emite herzon:modo-cambiado (no es un
-          // remontaje de cliente): esta vista se refresca a sí misma,
-          // llamando de nuevo a la MISMA render() que la montó.
+          mensajeExitoPerfil = MENSAJE_EXITO_PERFIL;
+          var labsOcultosNuevo = campoLabsOcultos.input.checked === true;
+          if (labsOcultosNuevo !== labsOcultosInicial && Almacen && typeof Almacen.actualizarConfig === 'function') {
+            Almacen.actualizarConfig({ labsOcultos: labsOcultosNuevo });
+            // S-05: actualizarConfig ya disparó herzon:modo-cambiado de
+            // forma SÍNCRONA (mismo patrón que crearCliente/BUG 2 más
+            // abajo): el listener de este módulo ya remontó la vista
+            // completa, consumiendo mensajeExitoPerfil. Un segundo
+            // render() aquí perdería el mensaje ya consumido.
+            return;
+          }
+          // actualizarPerfil (sin cambio de configuración) NO emite
+          // herzon:modo-cambiado (no es un remontaje de cliente): esta
+          // vista se refresca a sí misma, llamando de nuevo a la MISMA
+          // render() que la montó.
           render();
         });
 
         card.appendChild(form);
         rootEl.appendChild(card);
+        return card;
       }
 
       // -----------------------------------------------------------------
-      // MC-06: eliminación individual con confirmación en dos pasos (texto
-      // en el botón, reversión automática a los 6s).
+      // MC-06 + F-05: eliminación individual con confirmación en dos pasos
+      // (texto en el botón, reversión automática a los 6s), ahora discreta
+      // en el pie de la card de Editar perfil (jamás banda de ancho
+      // completo).
       // -----------------------------------------------------------------
-      function montarBotonEliminarCliente() {
+      function montarBotonEliminarCliente(cardEditarPerfil) {
         var clienteActual = (Almacen && typeof Almacen.clienteActivo === 'function') ? Almacen.clienteActivo() : null;
         if (!clienteActual) { return; }
-        var boton = crear(doc, 'button', ['hz-doc-btn'], TEXTO_BOTON_ELIMINAR_NORMAL);
+        var pie = crear(doc, 'div', ['hz-form-pie']);
+        var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_ELIMINAR_NORMAL);
         boton.setAttribute('type', 'button');
         boton.setAttribute('id', 'hz-btn-eliminar-cliente');
         boton.setAttribute('data-confirmar', 'false');
@@ -655,43 +807,43 @@
             temporizador = null;
           }, MS_REVERSION_CONFIRMAR);
         });
-        rootEl.appendChild(boton);
+        pie.appendChild(boton);
+        cardEditarPerfil.appendChild(pie);
       }
 
       // -----------------------------------------------------------------
-      // MC-04: formulario de alta de cliente. Ids congelados (Adendum R9
-      // punto 6). Oculto por default; `herzon:cliente-nuevo-solicitado` lo
-      // muestra (ver el listener de abajo, fuera de render()).
+      // MC-04 + F-03: formulario de alta de cliente, ahora en card
+      // centrada. Ids congelados (Adendum R9 punto 6). Oculto por default;
+      // `herzon:cliente-nuevo-solicitado` lo muestra (ver el listener de
+      // abajo, fuera de render()).
       // -----------------------------------------------------------------
       function montarFormularioAlta() {
-        var form = crear(doc, 'form', ['hz-form']);
+        var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
+        card.setAttribute('id', 'hz-card-alta-cliente');
+        var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
         form.setAttribute('id', 'hz-form-alta-cliente');
         if (!mostrarAlta) {
+          // F-03.2: card y form se togglean JUNTOS -- ambos con `hidden`
+          // (assert de selfcheck_vistas_b.js:395 sigue verde sobre el
+          // form), y el inline style.display='none' en la CARD como
+          // cinturón verificado (F-01.11 ya cubre `.hz-form-card[hidden]`
+          // por CSS, pero el inline queda como refuerzo explícito, mismo
+          // patrón defensivo ya usado en R9 para .hz-form).
+          card.setAttribute('hidden', '');
+          card.style.display = 'none';
           form.setAttribute('hidden', '');
-          // build/shell.html (fuera de este POSEE) declara `.hz-form {
-          // display: flex; ... }` como regla de AUTOR, que en la cascada de
-          // CSS gana sobre `[hidden] { display: none; }` del navegador
-          // (origen user-agent) sin importar especificidad -- el mismo
-          // patrón que shell.html ya resuelve para .hz-vista con la regla
-          // aditiva `.hz-vista[hidden] { display: none; }`, pero que NO
-          // existe para .hz-form. Verificado visualmente en Chrome headless
-          // (scratchpad/r9/full-t040.png intento 1: el formulario de alta
-          // se veía SIEMPRE, con o sin `hidden`). En vez de depender de un
-          // cambio en shell.html, se fija el display inline (mayor
-          // precedencia que cualquier regla de hoja de estilos) -- oculta
-          // de forma robusta sin importar el CSS externo.
-          form.style.display = 'none';
         }
 
-        form.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_ALTA));
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_ALTA));
 
         var clientesCount = (Almacen && typeof Almacen.clientes === 'function') ? Almacen.clientes().length : 0;
         if (clientesCount === 0) {
-          form.appendChild(crear(doc, 'p', ['hz-nota'], SUBTITULO_ALTA_PRIMER_USO));
+          card.appendChild(crear(doc, 'p', ['hz-nota'], SUBTITULO_ALTA_PRIMER_USO));
         }
-        form.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_PRIVACIDAD_ALTA));
+        card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_PRIVACIDAD_ALTA));
 
         var campoNombre = crearCampoInput(doc, form, 'hz-alta-nombre', 'Nombre', 'text', '');
+        campoNombre.campo.classList.add('hz-form-ancho');
         var campoSexo = crearCampoSelect(doc, form, 'hz-alta-sexo', 'Sexo', OPCIONES_SEXO);
         var campoEdad = crearCampoInput(doc, form, 'hz-alta-edad', 'Edad (años)', 'number', '', { min: 1, max: 120, step: 1 });
         var campoTalla = crearCampoInput(doc, form, 'hz-alta-talla', 'Talla (cm)', 'number', '', { min: 50, max: 250, step: 1 });
@@ -700,13 +852,13 @@
           opcionesActividad(data.factoresActividad));
         var campoObjetivo = crearCampoInput(doc, form, 'hz-alta-objetivo', 'Objetivo', 'text', '');
 
-        var errorEl = crear(doc, 'p');
+        var errorEl = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
         errorEl.setAttribute('id', 'hz-alta-error');
         errorEl.style.color = 'var(--delta-bad)';
         form.appendChild(errorEl);
 
-        var acciones = crear(doc, 'div');
-        var botonCrear = crear(doc, 'button', null, 'Crear cliente');
+        var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+        var botonCrear = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Crear cliente');
         botonCrear.setAttribute('type', 'submit');
         botonCrear.setAttribute('id', 'hz-btn-crear-cliente');
         acciones.appendChild(botonCrear);
@@ -714,7 +866,7 @@
         // MC-04: "Cancelar" visible solo si ya existe al menos un cliente o
         // se está en demo.
         if (clientesCount >= 1 || !enReal) {
-          var botonCancelar = crear(doc, 'button', null, 'Cancelar');
+          var botonCancelar = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Cancelar');
           botonCancelar.setAttribute('type', 'button');
           botonCancelar.setAttribute('id', 'hz-btn-cancelar-alta');
           botonCancelar.addEventListener('click', function (ev) {
@@ -729,7 +881,9 @@
         form.addEventListener('submit', function (ev) {
           if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
           errorEl.textContent = '';
-          campoNombre.input.style.borderColor = '';
+          // C-6: código nuevo/refactorizado usa SOLO aria-invalid + la
+          // regla CSS F-01.6, sin inline borderColor.
+          campoNombre.input.removeAttribute('aria-invalid');
           if (!Almacen || typeof Almacen.crearCliente !== 'function') {
             errorEl.textContent = 'No se puede crear un cliente en este momento.';
             return;
@@ -748,7 +902,7 @@
           });
           var res = Almacen.crearCliente(perfilObj);
           if (!res || !res.ok) {
-            campoNombre.input.style.borderColor = 'var(--delta-bad)';
+            campoNombre.input.setAttribute('aria-invalid', 'true');
             errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo crear el cliente.';
             return;
           }
@@ -766,7 +920,465 @@
           render();
         });
 
-        rootEl.appendChild(form);
+        card.appendChild(form);
+        rootEl.appendChild(card);
+      }
+
+      // -----------------------------------------------------------------
+      // S-02: card de desbloqueo -- textos exactos C-10. vista_metricas.js
+      // posee el DOM (C-4); Almacen posee estado/eventos.
+      // -----------------------------------------------------------------
+      function montarCardDesbloqueo() {
+        var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
+        card.setAttribute('id', 'hz-card-desbloqueo');
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_DESBLOQUEO));
+        card.appendChild(crear(doc, 'p', null, CUERPO_DESBLOQUEO));
+
+        var form = crear(doc, 'form', ['hz-form']);
+        var campoPass = crearCampoInput(doc, form, 'hz-desbloqueo-pass', 'Contraseña', 'password', '',
+          { autocomplete: 'current-password' });
+
+        var errorEl = crear(doc, 'p', ['hz-form-error']);
+        errorEl.setAttribute('id', 'hz-desbloqueo-error');
+        form.appendChild(errorEl);
+
+        var acciones = crear(doc, 'div', ['hz-form-acciones']);
+        var botonDesbloquear = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_DESBLOQUEAR);
+        botonDesbloquear.setAttribute('type', 'submit');
+        botonDesbloquear.setAttribute('id', 'hz-btn-desbloquear');
+        acciones.appendChild(botonDesbloquear);
+        form.appendChild(acciones);
+
+        form.addEventListener('submit', function (ev) {
+          if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+          errorEl.textContent = '';
+          if (!Almacen || typeof Almacen.desbloquearYMontar !== 'function') {
+            errorEl.textContent = MSG_DESBLOQUEO_INCORRECTO;
+            return;
+          }
+          // S-02: estado ocupado obligatorio -- sin doble submit, sin
+          // ocultar progreso.
+          botonDesbloquear.setAttribute('disabled', 'disabled');
+          botonDesbloquear.textContent = TEXTO_BOTON_DESBLOQUEANDO;
+          campoPass.input.setAttribute('disabled', 'disabled');
+          Almacen.desbloquearYMontar(campoPass.input.value).then(function (res) {
+            if (!res || !res.ok) {
+              botonDesbloquear.removeAttribute('disabled');
+              botonDesbloquear.textContent = TEXTO_BOTON_DESBLOQUEAR;
+              campoPass.input.removeAttribute('disabled');
+              campoPass.input.value = '';
+              errorEl.textContent = (res && res.error) || MSG_DESBLOQUEO_INCORRECTO;
+              return;
+            }
+            // Éxito: desbloquearYMontar ya disparó
+            // clientes-actualizados -> cliente-cambiado -> modo-cambiado de
+            // forma SÍNCRONA (S-02) -- el listener de este mismo módulo
+            // (registrado más abajo, fuera de render()) ya remontó la
+            // vista completa, con bloqueado()===false y el cliente activo
+            // montado. No hace falta ningún trabajo adicional aquí.
+          });
+        });
+
+        card.appendChild(form);
+
+        // Pie fijo de recuperación (S-04): disponible incluso bloqueado --
+        // las DOS salidas del contrato: restaurar un respaldo o borrar
+        // todos los datos.
+        var pie = crear(doc, 'div', ['hz-form-pie']);
+        pie.appendChild(crear(doc, 'p', ['hz-nota'], TEXTO_PIE_RECUPERACION));
+        pie.appendChild(construirBloqueRestaurarRespaldo(
+          'hz-desbloqueo-import-label', 'hz-desbloqueo-input-restaurar',
+          'hz-btn-desbloqueo-restaurar-confirmar', TEXTO_EXTRA_RESTAURAR_BLOQUEADO));
+        pie.appendChild(montarBotonBorrarTodo());
+        card.appendChild(pie);
+
+        rootEl.appendChild(card);
+      }
+
+      // -----------------------------------------------------------------
+      // S-03: card 'Seguridad y respaldo', SOLO real desbloqueado. Estado
+      // sin protección (activar) o con protección (bloquear/cambiar/
+      // quitar/respaldo) -- nunca coexisten (F-02: un solo primario por
+      // formulario).
+      // -----------------------------------------------------------------
+      function montarCardSeguridad() {
+        var Seguridad = G.Herzon && G.Herzon.Seguridad;
+        var protegido = !!(Seguridad && typeof Seguridad.activa === 'function' && Seguridad.activa());
+
+        var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
+        card.setAttribute('id', 'hz-card-seguridad');
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_SEGURIDAD));
+        card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_AMBITO_SEGURIDAD));
+
+        if (mensajeExitoSeguridad) {
+          var notaExitoSeguridad = crear(doc, 'p', ['hz-nota'], mensajeExitoSeguridad);
+          notaExitoSeguridad.setAttribute('id', 'hz-seg-exito');
+          notaExitoSeguridad.style.color = 'var(--delta-good)';
+          card.appendChild(notaExitoSeguridad);
+          mensajeExitoSeguridad = '';
+        }
+
+        if (protegido) {
+          montarSeguridadConProteccion(card, Seguridad);
+        } else {
+          montarSeguridadSinProteccion(card, Seguridad);
+        }
+
+        rootEl.appendChild(card);
+      }
+
+      // ESTADO SIN PROTECCIÓN, bloque #hz-seg-activar (S-03).
+      function montarSeguridadSinProteccion(card, Seguridad) {
+        var bloque = crear(doc, 'div');
+        bloque.setAttribute('id', 'hz-seg-activar');
+
+        bloque.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_RESPALDO_PREVIO));
+        bloque.appendChild(construirBotonDescargarRespaldo());
+
+        var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
+        var campoPass1 = crearCampoInput(doc, form, 'hz-seg-pass-1', LABEL_PASS_1, 'password', '',
+          { autocomplete: 'new-password', minlength: 8 });
+        var campoPass2 = crearCampoInput(doc, form, 'hz-seg-pass-2', LABEL_PASS_2, 'password', '',
+          { autocomplete: 'new-password', minlength: 8 });
+
+        var filaConfirmo = crearCampoCheckbox(doc, form, 'hz-seg-confirmo', LABEL_CONFIRMO, false);
+        filaConfirmo.campo.classList.add('hz-form-ancho');
+
+        var errorEl = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
+        errorEl.setAttribute('id', 'hz-seg-error');
+        form.appendChild(errorEl);
+
+        var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+        var botonActivar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_ACTIVAR);
+        botonActivar.setAttribute('type', 'submit');
+        botonActivar.setAttribute('id', 'hz-btn-seg-activar');
+        // S-03.4: deshabilitado hasta marcar la casilla de confirmación.
+        botonActivar.setAttribute('disabled', 'disabled');
+        acciones.appendChild(botonActivar);
+        form.appendChild(acciones);
+
+        filaConfirmo.input.addEventListener('change', function () {
+          if (filaConfirmo.input.checked) { botonActivar.removeAttribute('disabled'); }
+          else { botonActivar.setAttribute('disabled', 'disabled'); }
+        });
+
+        form.addEventListener('submit', function (ev) {
+          if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+          errorEl.textContent = '';
+          if (!filaConfirmo.input.checked) { return; }
+          var p1 = campoPass1.input.value;
+          var p2 = campoPass2.input.value;
+          if (!p1 || !p2) { errorEl.textContent = 'Escribe la contraseña en ambos campos.'; return; }
+          if (p1.length < 8) { errorEl.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
+          if (p1 !== p2) { errorEl.textContent = 'Las contraseñas no coinciden.'; return; }
+          if (!Seguridad || typeof Seguridad.activar !== 'function') {
+            errorEl.textContent = 'No se pudo activar la protección en este dispositivo.';
+            return;
+          }
+          var textoOriginal = botonActivar.textContent;
+          botonActivar.setAttribute('disabled', 'disabled');
+          botonActivar.textContent = TEXTO_BOTON_CIFRANDO;
+          Seguridad.activar(p1).then(function (res) {
+            campoPass1.input.value = '';
+            campoPass2.input.value = '';
+            if (!res || !res.ok) {
+              botonActivar.removeAttribute('disabled');
+              botonActivar.textContent = textoOriginal;
+              errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo activar la protección en este dispositivo.';
+              return;
+            }
+            mensajeExitoSeguridad = MSG_ACTIVADA;
+            render();
+          });
+        });
+
+        bloque.appendChild(form);
+        card.appendChild(bloque);
+      }
+
+      // ESTADO CON PROTECCIÓN (sesión desbloqueada, S-03).
+      function montarSeguridadConProteccion(card, Seguridad) {
+        var bloqueEstado = crear(doc, 'div');
+        bloqueEstado.appendChild(crear(doc, 'p', null, TEXTO_ESTADO_PROTEGIDA));
+        var botonBloquear = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_BLOQUEAR);
+        botonBloquear.setAttribute('type', 'button');
+        botonBloquear.setAttribute('id', 'hz-btn-seg-bloquear');
+        botonBloquear.addEventListener('click', function () {
+          // Re-bloqueo (S-02, fix T-058): Seguridad.bloquear() borra la
+          // clave de sesión (síncrono) y Almacen.bloquearYVolverADemo()
+          // fija bloqueadoActual=true + repinta la demo -- equivale a
+          // recargar la página sin recargarla (a diferencia de
+          // Almacen.volverADemo(), que usa el toggle #hz-btn-modo para
+          // previsualizar demo SIN re-bloquear). Fallback tolerante a
+          // volverADemo() si la función nueva no existe (sin flag day).
+          if (Seguridad && typeof Seguridad.bloquear === 'function') { Seguridad.bloquear(); }
+          if (Almacen && typeof Almacen.bloquearYVolverADemo === 'function') { Almacen.bloquearYVolverADemo(); }
+          else if (Almacen && typeof Almacen.volverADemo === 'function') { Almacen.volverADemo(); }
+        });
+        bloqueEstado.appendChild(botonBloquear);
+        card.appendChild(bloqueEstado);
+
+        // Área de error COMPARTIDA por "Cambiar contraseña" y "Quitar
+        // protección" (el contrato solo fija el id #hz-seg-error una vez
+        // por card -- ambos bloques coexisten en este estado).
+        var errorEl = crear(doc, 'p', ['hz-form-error']);
+        errorEl.setAttribute('id', 'hz-seg-error');
+        card.appendChild(errorEl);
+
+        // Cambiar contraseña.
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Cambiar contraseña'));
+        var formCambiar = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
+        var campoActual = crearCampoInput(doc, formCambiar, 'hz-seg-actual', LABEL_PASS_ACTUAL, 'password', '', { autocomplete: 'current-password' });
+        var campoNueva1 = crearCampoInput(doc, formCambiar, 'hz-seg-nueva-1', LABEL_PASS_NUEVA_1, 'password', '', { autocomplete: 'new-password', minlength: 8 });
+        var campoNueva2 = crearCampoInput(doc, formCambiar, 'hz-seg-nueva-2', LABEL_PASS_NUEVA_2, 'password', '', { autocomplete: 'new-password', minlength: 8 });
+        var accionesCambiar = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+        var botonCambiar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_CAMBIAR);
+        botonCambiar.setAttribute('type', 'submit');
+        botonCambiar.setAttribute('id', 'hz-btn-seg-cambiar');
+        accionesCambiar.appendChild(botonCambiar);
+        formCambiar.appendChild(accionesCambiar);
+        formCambiar.addEventListener('submit', function (ev) {
+          if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+          errorEl.textContent = '';
+          var actual = campoActual.input.value;
+          var n1 = campoNueva1.input.value;
+          var n2 = campoNueva2.input.value;
+          if (!actual || !n1 || !n2) { errorEl.textContent = 'Completa los 3 campos.'; return; }
+          if (n1.length < 8) { errorEl.textContent = 'La contraseña nueva debe tener al menos 8 caracteres.'; return; }
+          if (n1 !== n2) { errorEl.textContent = 'Las contraseñas nuevas no coinciden.'; return; }
+          if (!Seguridad || typeof Seguridad.cambiar !== 'function') {
+            errorEl.textContent = 'No se pudo cambiar la contraseña en este dispositivo.';
+            return;
+          }
+          var textoOriginalCambiar = botonCambiar.textContent;
+          botonCambiar.setAttribute('disabled', 'disabled');
+          botonCambiar.textContent = TEXTO_BOTON_CIFRANDO;
+          Seguridad.cambiar(actual, n1).then(function (res) {
+            campoActual.input.value = '';
+            campoNueva1.input.value = '';
+            campoNueva2.input.value = '';
+            if (!res || !res.ok) {
+              botonCambiar.removeAttribute('disabled');
+              botonCambiar.textContent = textoOriginalCambiar;
+              errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo cambiar la contraseña.';
+              return;
+            }
+            mensajeExitoSeguridad = 'Contraseña actualizada.';
+            render();
+          });
+        });
+        card.appendChild(formCambiar);
+
+        // Quitar protección.
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Quitar protección'));
+        var notaQuitar = crear(doc, 'p', ['hz-nota'], NOTA_QUITAR_ADVERTENCIA);
+        notaQuitar.style.color = 'var(--delta-bad)';
+        card.appendChild(notaQuitar);
+        var bloqueQuitar = crear(doc, 'div');
+        var campoQuitarPass = crearCampoInput(doc, bloqueQuitar, 'hz-seg-quitar-pass', LABEL_PASS_ACTUAL, 'password', '', { autocomplete: 'current-password' });
+        var botonQuitar = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_QUITAR);
+        botonQuitar.setAttribute('type', 'button');
+        botonQuitar.setAttribute('id', 'hz-btn-seg-desactivar');
+        botonQuitar.setAttribute('data-confirmar', 'false');
+        var temporizadorQuitar = null;
+        botonQuitar.addEventListener('click', function () {
+          if (botonQuitar.getAttribute('data-confirmar') === 'true') {
+            var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
+            if (temporizadorQuitar !== null) { temporizadorClear(temporizadorQuitar); temporizadorQuitar = null; }
+            errorEl.textContent = '';
+            if (!Seguridad || typeof Seguridad.desactivar !== 'function') {
+              errorEl.textContent = 'No se pudo quitar la protección en este dispositivo.';
+              return;
+            }
+            botonQuitar.setAttribute('disabled', 'disabled');
+            Seguridad.desactivar(campoQuitarPass.input.value).then(function (res) {
+              campoQuitarPass.input.value = '';
+              botonQuitar.removeAttribute('disabled');
+              botonQuitar.setAttribute('data-confirmar', 'false');
+              if (!res || !res.ok) {
+                errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo quitar la protección.';
+                return;
+              }
+              mensajeExitoSeguridad = 'Protección desactivada. Tus datos se guardan sin cifrar en este dispositivo.';
+              render();
+            });
+            return;
+          }
+          botonQuitar.setAttribute('data-confirmar', 'true');
+          var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
+          temporizadorQuitar = temporizadorFn(function () {
+            botonQuitar.setAttribute('data-confirmar', 'false');
+            temporizadorQuitar = null;
+          }, MS_REVERSION_CONFIRMAR);
+        });
+        bloqueQuitar.appendChild(botonQuitar);
+        card.appendChild(bloqueQuitar);
+
+        // Respaldo (S-04): descarga + restauración.
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Respaldo'));
+        card.appendChild(construirBotonDescargarRespaldo());
+        card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_RESPALDO_CUSTODIA));
+        card.appendChild(construirBloqueRestaurarRespaldo(
+          'hz-seg-import-label', 'hz-seg-input-restaurar', 'hz-btn-seg-restaurar-confirmar', null));
+      }
+
+      // Botón compartido (sin protección bullet 1, y sección Respaldo de
+      // con protección -- mutuamente excluyentes, mismo id sin colisión).
+      function construirBotonDescargarRespaldo() {
+        var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_RESPALDO);
+        boton.setAttribute('type', 'button');
+        boton.setAttribute('id', 'hz-btn-seg-respaldo');
+        boton.addEventListener('click', function () {
+          if (!Almacen || typeof Almacen.exportarRespaldo !== 'function') { return; }
+          var res = Almacen.exportarRespaldo();
+          if (!res || !res.ok) { return; }
+          var Docs = G.Herzon && G.Herzon.Docs;
+          if (Docs && typeof Docs.descargarArchivo === 'function') {
+            Docs.descargarArchivo(doc, res.json, res.nombreArchivo, 'application/json');
+          }
+        });
+        return boton;
+      }
+
+      // S-04: bloque de restauración (label + input file oculto +
+      // confirmación con conteos reales). Compartido por la card de
+      // seguridad y la card de desbloqueo (C-11: conteos reales en AMBAS
+      // rutas); `textoExtra` agrega la frase de la ruta desde bloqueado.
+      function construirBloqueRestaurarRespaldo(idLabel, idInput, idBotonConfirmar, textoExtra) {
+        var contenedor = crear(doc, 'div', ['hz-doc-import']);
+        var label = crear(doc, 'label', ['hz-doc-import-label'], LABEL_IMPORTAR_RESPALDO);
+        label.setAttribute('id', idLabel);
+        label.setAttribute('for', idInput);
+        var input = crear(doc, 'input');
+        input.setAttribute('type', 'file');
+        input.setAttribute('id', idInput);
+        input.setAttribute('accept', '.json,application/json');
+        contenedor.appendChild(label);
+        contenedor.appendChild(input);
+
+        var zonaConfirmacion = crear(doc, 'div');
+        contenedor.appendChild(zonaConfirmacion);
+
+        function manejarObjetoLeido(objeto) {
+          limpiar(zonaConfirmacion);
+          var formaValida = objeto && typeof objeto === 'object' && objeto.formato === 'rinde-respaldo-1' &&
+            objeto.datos && typeof objeto.datos === 'object' && objeto.datos.clientes && typeof objeto.datos.clientes === 'object';
+          if (!formaValida) {
+            zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], MSG_RESPALDO_INVALIDO));
+            return;
+          }
+          var n = (Almacen && typeof Almacen.clientes === 'function') ? Almacen.clientes().length : 0;
+          var m = Object.keys(objeto.datos.clientes).length;
+          var textoConfirmacion = 'Restaurar este respaldo reemplaza los ' + n + ' clientes actuales de este dispositivo por los ' +
+            m + ' clientes del archivo (exportado el ' + (objeto.exportado || '—') + '). Esta acción no se puede deshacer.';
+          if (textoExtra) { textoConfirmacion += ' ' + textoExtra; }
+          zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], textoConfirmacion));
+
+          if (n > 0) {
+            var botonRespaldarAntes = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_RESPALDAR_ANTES);
+            botonRespaldarAntes.setAttribute('type', 'button');
+            botonRespaldarAntes.addEventListener('click', function () {
+              if (!Almacen || typeof Almacen.exportarRespaldo !== 'function') { return; }
+              var resExport = Almacen.exportarRespaldo();
+              if (!resExport || !resExport.ok) { return; }
+              var Docs = G.Herzon && G.Herzon.Docs;
+              if (Docs && typeof Docs.descargarArchivo === 'function') {
+                Docs.descargarArchivo(doc, resExport.json, resExport.nombreArchivo, 'application/json');
+              }
+            });
+            zonaConfirmacion.appendChild(botonRespaldarAntes);
+          }
+
+          var botonConfirmar = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_RESTAURAR_CONFIRMAR);
+          botonConfirmar.setAttribute('type', 'button');
+          botonConfirmar.setAttribute('id', idBotonConfirmar);
+          botonConfirmar.setAttribute('data-confirmar', 'false');
+          var temporizadorRestaurar = null;
+          botonConfirmar.addEventListener('click', function () {
+            if (botonConfirmar.getAttribute('data-confirmar') === 'true') {
+              var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
+              if (temporizadorRestaurar !== null) { temporizadorClear(temporizadorRestaurar); temporizadorRestaurar = null; }
+              if (!Almacen || typeof Almacen.restaurarRespaldo !== 'function') { return; }
+              var resultado = Almacen.restaurarRespaldo(objeto);
+              limpiar(zonaConfirmacion);
+              if (!resultado || !resultado.ok) {
+                zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'],
+                  (resultado && resultado.errores && resultado.errores.length) ? resultado.errores.join(' ') : MSG_RESPALDO_INVALIDO));
+                return;
+              }
+              var notaExitoRestaurar = crear(doc, 'p', ['hz-nota'], 'Respaldo restaurado: ' + resultado.clientes + ' clientes.');
+              notaExitoRestaurar.style.color = 'var(--delta-good)';
+              zonaConfirmacion.appendChild(notaExitoRestaurar);
+              // restaurarRespaldo ya disparó la secuencia de eventos
+              // completa (clientes-actualizados -> cliente-cambiado/
+              // modo-cambiado): el listener de este módulo ya remontó la
+              // vista con los datos nuevos; este bloque de confirmación
+              // queda huérfano tras ese remontaje (mismo patrón que
+              // cualquier otro submit exitoso de este archivo).
+              return;
+            }
+            botonConfirmar.setAttribute('data-confirmar', 'true');
+            var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
+            temporizadorRestaurar = temporizadorFn(function () {
+              botonConfirmar.setAttribute('data-confirmar', 'false');
+              temporizadorRestaurar = null;
+            }, MS_REVERSION_CONFIRMAR);
+          });
+          zonaConfirmacion.appendChild(botonConfirmar);
+
+          var botonCancelar = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Cancelar');
+          botonCancelar.setAttribute('type', 'button');
+          botonCancelar.addEventListener('click', function () {
+            limpiar(zonaConfirmacion);
+            input.value = '';
+          });
+          zonaConfirmacion.appendChild(botonCancelar);
+        }
+
+        input.addEventListener('change', function (ev) {
+          var archivo = (input.files && input.files[0]) || (ev && ev.target && ev.target.files && ev.target.files[0]);
+          input.value = '';
+          if (!archivo) { return; }
+          leerArchivoComoTextoLocal(archivo, function (texto, errorLectura) {
+            if (errorLectura || texto == null) {
+              limpiar(zonaConfirmacion);
+              zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], MSG_RESPALDO_INVALIDO));
+              return;
+            }
+            var objetoLeido = null;
+            try { objetoLeido = JSON.parse(texto); } catch (e) { objetoLeido = null; }
+            manejarObjetoLeido(objetoLeido);
+          });
+        });
+
+        return contenedor;
+      }
+
+      // S-02 (pie de card-desbloqueo): "Borrar todos los datos" ->
+      // Almacen.borrarTodo(), confirmación en dos pasos (patrón 6s R9).
+      function montarBotonBorrarTodo() {
+        var contenedor = crear(doc, 'div');
+        var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_BORRAR_TODO);
+        boton.setAttribute('type', 'button');
+        boton.setAttribute('id', 'hz-btn-desbloqueo-borrar-todo');
+        boton.setAttribute('data-confirmar', 'false');
+        var temporizadorBorrar = null;
+        boton.addEventListener('click', function () {
+          if (boton.getAttribute('data-confirmar') === 'true') {
+            var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
+            if (temporizadorBorrar !== null) { temporizadorClear(temporizadorBorrar); temporizadorBorrar = null; }
+            if (Almacen && typeof Almacen.borrarTodo === 'function') { Almacen.borrarTodo(); }
+            return;
+          }
+          boton.setAttribute('data-confirmar', 'true');
+          var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
+          temporizadorBorrar = temporizadorFn(function () {
+            boton.setAttribute('data-confirmar', 'false');
+            temporizadorBorrar = null;
+          }, MS_REVERSION_CONFIRMAR);
+        });
+        contenedor.appendChild(boton);
+        return contenedor;
       }
     }
 
@@ -945,32 +1557,44 @@
       var Almacen = obtenerAlmacen();
       if (!esModoReal(Almacen)) { return; }
 
-      var card = crear(doc, 'div', ['hz-card']);
+      var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
       card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Registrar medición'));
       card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_PRIVACIDAD_CAPTURA));
       card.appendChild(crear(doc, 'p', ['hz-nota'], 'Fecha: ' + fechaHoyTexto()));
 
-      var form = crear(doc, 'form', ['hz-form']);
+      var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
 
       var campoPeso = crearCampoInput(doc, form, 'hz-cap-peso', 'Peso (kg)', 'number', '', { min: 20, max: 400, step: 0.1 });
       var campoGrasa = crearCampoInput(doc, form, 'hz-cap-grasa', 'Grasa corporal (%)', 'number', '', { min: 3, max: 70, step: 0.1 });
       var campoMusculo = crearCampoInput(doc, form, 'hz-cap-musculo', 'Masa muscular (kg)', 'number', '', { min: 5, max: 150, step: 0.1 });
       var campoCintura = crearCampoInput(doc, form, 'hz-cap-cintura', 'Circunferencia de cintura (cm)', 'number', '', { min: 40, max: 250, step: 0.1 });
 
-      var detalles = crear(doc, 'details');
+      // F-06.3: `detalles` gana hz-form-ancho; tras el summary se inserta
+      // `sub` (hz-form-sub) y los 4 campos de plicometría apuntan a `sub` en
+      // vez de a `detalles` directamente (summary hereda estilo/foco de
+      // F-01.5, sin cambios de JS).
+      var detalles = crear(doc, 'details', ['hz-form-ancho']);
       detalles.appendChild(crear(doc, 'summary', null, 'Plicometría (opcional)'));
-      var campoTricipital = crearCampoInput(doc, detalles, 'hz-cap-plic-tricipital', 'Pliegue tricipital (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
-      var campoSubescapular = crearCampoInput(doc, detalles, 'hz-cap-plic-subescapular', 'Pliegue subescapular (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
-      var campoSuprailiaco = crearCampoInput(doc, detalles, 'hz-cap-plic-suprailiaco', 'Pliegue suprailiaco (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
-      var campoAbdominal = crearCampoInput(doc, detalles, 'hz-cap-plic-abdominal', 'Pliegue abdominal (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
+      var sub = crear(doc, 'div', ['hz-form-sub']);
+      var campoTricipital = crearCampoInput(doc, sub, 'hz-cap-plic-tricipital', 'Pliegue tricipital (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
+      var campoSubescapular = crearCampoInput(doc, sub, 'hz-cap-plic-subescapular', 'Pliegue subescapular (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
+      var campoSuprailiaco = crearCampoInput(doc, sub, 'hz-cap-plic-suprailiaco', 'Pliegue suprailiaco (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
+      var campoAbdominal = crearCampoInput(doc, sub, 'hz-cap-plic-abdominal', 'Pliegue abdominal (mm)', 'number', '', { min: 2, max: 80, step: 0.1 });
+      detalles.appendChild(sub);
       form.appendChild(detalles);
 
-      var notaValidacion = crear(doc, 'p', ['hz-nota']);
+      // F-06.4: notaValidacion pasa de ['hz-nota'] a
+      // ['hz-form-error','hz-form-ancho'] -- rojo, peso 600, oculta sin
+      // reservar alto cuando vacía (F-01.8). Todos sus mensajes son de
+      // error, ninguno neutro (validación byte-idéntica más abajo).
+      var notaValidacion = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
       form.appendChild(notaValidacion);
 
-      var botonGuardar = crear(doc, 'button', null, 'Registrar medición');
+      var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+      var botonGuardar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Registrar medición');
       botonGuardar.setAttribute('type', 'submit');
-      form.appendChild(botonGuardar);
+      acciones.appendChild(botonGuardar);
+      form.appendChild(acciones);
 
       var CAMPOS_REQUERIDOS = [
         { input: campoPeso.input, etiqueta: 'Peso', clave: 'peso_kg' },
@@ -1113,51 +1737,62 @@
       // --- DV-04: laboratorios en 3 cortes -- valoresEnBarras vertical +
       // unidad, cortesEtiquetas cortas y horizontales. Vacío a nivel de
       // card cuando ningún marcador trae valores (modo real sin captura de
-      // laboratorio: no hay UI de captura para esto en este alcance). ---
-      cardLabs = crear(doc, 'div', ['hz-card']);
-      cardLabs.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Laboratorios en 3 cortes'));
-      // jera-2/data-1/fini-2 (causa raíz, mismo patrón que heroCard/gridPares
-      // arriba): cardLabs se adjunta a rootEl AQUÍ, antes de construir su
-      // contenido, para que gridLabs y cada wrapMarcador queden conectados
-      // al árbol de la vista desde el instante en que se crean -- así
-      // Herzon.Charts.barras (fase 2) siempre recibe un contenedor YA
-      // montado, nunca uno todavía huérfano.
-      rootEl.appendChild(cardLabs);
-      var marcadoresLabs = labs.marcadores || [];
-      var hayDatosLabs = marcadoresLabs.some(function (m) { return (m.valores || []).length > 0; });
-      if (!hayDatosLabs) {
-        crearVacio(doc, cardLabs);
+      // laboratorio: no hay UI de captura para esto en este alcance).
+      // S-05: con labsOcultos===true en modo real, la card se OMITE por
+      // completo (decisión clínica del nutriólogo, no un vacío); en demo o
+      // bloqueado (enReal===false) siempre se monta -- mismo patrón que la
+      // vista Perfil. ---
+      var AlmacenSeg = obtenerAlmacen();
+      var enRealSeg = esModoReal(AlmacenSeg);
+      var labsOcultosSeg = enRealSeg && !!(data.config && data.config.labsOcultos);
+      if (labsOcultosSeg) {
+        cardLabs = null;
       } else {
-        var gridLabs = crear(doc, 'div', ['hz-grid']);
-        cardLabs.appendChild(gridLabs);
-        var cortesEtiquetasCortas = (labs.cortes || []).map(function (c) { return acortarCorte(c.etiqueta); });
+        cardLabs = crear(doc, 'div', ['hz-card']);
+        cardLabs.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Laboratorios en 3 cortes'));
+        // jera-2/data-1/fini-2 (causa raíz, mismo patrón que heroCard/gridPares
+        // arriba): cardLabs se adjunta a rootEl AQUÍ, antes de construir su
+        // contenido, para que gridLabs y cada wrapMarcador queden conectados
+        // al árbol de la vista desde el instante en que se crean -- así
+        // Herzon.Charts.barras (fase 2) siempre recibe un contenedor YA
+        // montado, nunca uno todavía huérfano.
+        rootEl.appendChild(cardLabs);
+        var marcadoresLabs = labs.marcadores || [];
+        var hayDatosLabs = marcadoresLabs.some(function (m) { return (m.valores || []).length > 0; });
+        if (!hayDatosLabs) {
+          crearVacio(doc, cardLabs);
+        } else {
+          var gridLabs = crear(doc, 'div', ['hz-grid']);
+          cardLabs.appendChild(gridLabs);
+          var cortesEtiquetasCortas = (labs.cortes || []).map(function (c) { return acortarCorte(c.etiqueta); });
 
-        // Fase 1 (T-033): crear y adjuntar TODOS los wrapMarcador a
-        // gridLabs antes de renderizar ninguno -- el grid ya queda en su
-        // geometría final antes de que Herzon.Charts.barras mida el ancho.
-        var wrapsLabs = marcadoresLabs.map(function (m) {
-          var wrapMarcador = crear(doc, 'div');
-          gridLabs.appendChild(wrapMarcador);
-          return wrapMarcador;
-        });
+          // Fase 1 (T-033): crear y adjuntar TODOS los wrapMarcador a
+          // gridLabs antes de renderizar ninguno -- el grid ya queda en su
+          // geometría final antes de que Herzon.Charts.barras mida el ancho.
+          var wrapsLabs = marcadoresLabs.map(function (m) {
+            var wrapMarcador = crear(doc, 'div');
+            gridLabs.appendChild(wrapMarcador);
+            return wrapMarcador;
+          });
 
-        // Fase 2 (T-033): con gridLabs ya en su geometría final, renderizar
-        // cada gráfica de laboratorio en un loop aparte.
-        marcadoresLabs.forEach(function (m, indiceMarcadorLab) {
-          if (typeof Charts.barras !== 'function') { return; }
-          var opcionesBarras = {
-            titulo: m.nombre + ' (' + m.unidad + ')',
-            categorias: cortesEtiquetasCortas,
-            series: [{ nombre: m.nombre, datos: m.valores }],
-            valoresEnBarras: true,
-            unidad: m.unidad,
-            tabla: true
-          };
-          if (m.referencia && typeof m.referencia.min === 'number' && typeof m.referencia.max === 'number') {
-            opcionesBarras.referencia = { min: m.referencia.min, max: m.referencia.max, etiqueta: 'Rango normal' };
-          }
-          Charts.barras(wrapsLabs[indiceMarcadorLab], opcionesBarras);
-        });
+          // Fase 2 (T-033): con gridLabs ya en su geometría final, renderizar
+          // cada gráfica de laboratorio en un loop aparte.
+          marcadoresLabs.forEach(function (m, indiceMarcadorLab) {
+            if (typeof Charts.barras !== 'function') { return; }
+            var opcionesBarras = {
+              titulo: m.nombre + ' (' + m.unidad + ')',
+              categorias: cortesEtiquetasCortas,
+              series: [{ nombre: m.nombre, datos: m.valores }],
+              valoresEnBarras: true,
+              unidad: m.unidad,
+              tabla: true
+            };
+            if (m.referencia && typeof m.referencia.min === 'number' && typeof m.referencia.max === 'number') {
+              opcionesBarras.referencia = { min: m.referencia.min, max: m.referencia.max, etiqueta: 'Rango normal' };
+            }
+            Charts.barras(wrapsLabs[indiceMarcadorLab], opcionesBarras);
+          });
+        }
       }
 
       // --- Plicometría en 4 cortes (Adendum R4 punto 1): vacía en modo
