@@ -551,7 +551,7 @@ afirmar(textosDe(cardModoRealBase).join(' ').indexOf('En modo real registras cli
   'D-05: nota introductoria exacta de #hz-card-modo-real');
 var liModoReal = recolectarNodos(cardModoRealBase).filter(function (n) { return (n.tagName || '').toLowerCase() === 'li'; });
 afirmar(liModoReal.length === 3, 'D-05: #hz-card-modo-real debe traer EXACTAMENTE 3 <li>');
-afirmar(liModoReal[0].textContent === 'Contraseña: cifra los datos de tus clientes en este dispositivo.', 'D-05: texto exacto del li 1 (contraseña)');
+afirmar(liModoReal[0].textContent === 'Contraseña obligatoria: cifra los datos de tus clientes en este dispositivo.', 'H-07 (R12): texto exacto del li 1 (contraseña obligatoria)');
 afirmar(liModoReal[1].textContent === 'Laboratorios ocultos: quita la sección de labs a los clientes que no se los hacen.', 'D-05: texto exacto del li 2 (labs ocultos)');
 afirmar(liModoReal[2].textContent === 'Rutina editable: prescribe días y ejercicios e imprímela.', 'D-05: texto exacto del li 3 (rutina)');
 var botonModoReal = buscarPorId(cardModoRealBase, 'hz-btn-modo-real-perfil');
@@ -570,10 +570,12 @@ afirmar(clasesDe(botonModoReal).indexOf('hz-btn') !== -1 && clasesDe(botonModoRe
 // (bus NO aislado, capturado desde la carga del script) trae, para
 // 'herzon:cliente-nuevo-solicitado': [0]=listener de nivel de módulo,
 // [1]=listener interno registrado por ESTE montaje de mountPerfil; para
-// 'herzon:modo-cambiado': [0]=el de mountResumen (sección 3), [1]=el de
-// este mountPerfil.
+// 'herzon:modo-cambiado': [0]=sincronizarYEvaluar (H-08, nivel de
+// módulo, registrado en la CARGA del script, antes de que la sección 3
+// monte nada), [1]=el de mountResumen (sección 3), [2]=el de este
+// mountPerfil.
 var listenerAltaModulo = listenersPorTipo['herzon:cliente-nuevo-solicitado'][0];
-var listenerModoCambiadoPerfil = listenersPorTipo['herzon:modo-cambiado'][1];
+var listenerModoCambiadoPerfil = listenersPorTipo['herzon:modo-cambiado'][2];
 afirmar(typeof listenerAltaModulo === 'function', 'D-02: el listener de nivel de módulo de herzon:cliente-nuevo-solicitado debe existir');
 afirmar(typeof listenerModoCambiadoPerfil === 'function', 'Adendum R9 punto 3: el listener de herzon:modo-cambiado de este montaje de Perfil debe existir');
 
@@ -1035,9 +1037,142 @@ conBusDeEventosAislado(function (listeners) {
 })();
 
 // ---------------------------------------------------------------------
-// 15. MC-06: eliminación de cliente con confirmación en dos pasos y
-// reversión automática a los 6 segundos (setTimeout interceptado, sin
-// esperar tiempo real).
+// 15. H-05: #hz-dialogo-perfil -- #hz-btn-editar-perfil (dentro de
+// #hz-perfil-acciones, H-07 punto 3) abre el diálogo, precargado FRESCO en
+// cada apertura con el cliente activo vigente; #hz-btn-guardar-perfil /
+// #hz-btn-cancelar-perfil; éxito cierra y muestra p.hz-nota#hz-perfil-exito
+// UNA sola vez; un fallo de Almacen.actualizarPerfil NUNCA cierra en
+// silencio.
+// ---------------------------------------------------------------------
+conBusDeEventosAislado(function () {
+  var almacenMock = crearAlmacenMock({
+    modo: 'real', clienteActivo: { id: 'c-activo', nombre: 'Beatriz Luna' },
+    // Simula la mutación real de Almacen.actualizarPerfil (H-05 exige
+    // precarga FRESCA en cada apertura: sin esta mutación, el test no
+    // podría distinguir "releído de HERZON_DATA" de "cacheado").
+    actualizarPerfil: function (p) { globalThis.HERZON_DATA.paciente.nombre = p.nombre; return true; }
+  });
+  globalThis.Herzon.Almacen = almacenMock;
+  var datosEdicion = datosClienteVacio();
+  datosEdicion.paciente.nombre = 'Carla Ruiz';
+  datosEdicion.paciente.sexo = 'femenino';
+  datosEdicion.paciente.edad = 30;
+  datosEdicion.paciente.talla_cm = 165;
+  datosEdicion.paciente.pesoInicial_kg = 60;
+  datosEdicion.paciente.actividad = 'ligero';
+  datosEdicion.paciente.objetivo = 'Bajar grasa corporal';
+  globalThis.HERZON_DATA = datosEdicion;
+
+  var rootPerfilH05 = contenedorNuevo();
+  Herzon.Views.perfil(rootPerfilH05);
+
+  afirmar(!buscarPorId(rootPerfilH05, 'hz-dialogo-perfil'), 'H-05: el diálogo de edición NO debe existir en el DOM antes de abrirse (construido bajo demanda)');
+  var accionesPerfilH05 = buscarPorId(rootPerfilH05, 'hz-perfil-acciones');
+  afirmar(!!accionesPerfilH05, 'H-07 punto 3: debe existir #hz-perfil-acciones en modo real desbloqueado');
+  afirmar(rootPerfilH05.children.indexOf(accionesPerfilH05) !== -1, 'H-07 punto 3: #hz-perfil-acciones debe ser hijo DIRECTO de rootEl');
+  var botonEditarH05 = buscarPorId(accionesPerfilH05, 'hz-btn-editar-perfil');
+  afirmar(!!botonEditarH05 && botonEditarH05.textContent === 'Editar perfil', 'H-07 punto 3: #hz-btn-editar-perfil dentro de #hz-perfil-acciones, texto "Editar perfil"');
+  afirmar(clasesDe(botonEditarH05).indexOf('hz-btn') !== -1 && clasesDe(botonEditarH05).indexOf('hz-btn-secundario') !== -1,
+    'H-07 punto 3: #hz-btn-editar-perfil debe llevar hz-btn hz-btn-secundario');
+
+  botonEditarH05.despachar('click', {});
+  var dialogoPerfilH05 = buscarPorId(rootPerfilH05, 'hz-dialogo-perfil');
+  afirmar(!!dialogoPerfilH05, 'H-05: #hz-btn-editar-perfil debe abrir #hz-dialogo-perfil');
+  afirmar((dialogoPerfilH05.tagName || '').toLowerCase() === 'dialog' && clasesDe(dialogoPerfilH05).indexOf('hz-dialogo') !== -1,
+    'H-02: #hz-dialogo-perfil debe ser un <dialog class="hz-dialogo">');
+  afirmar(dialogoPerfilH05.hasAttribute('open'), 'H-02: abrir() debe dejar el diálogo abierto (fallback TestDOM: atributo open)');
+  var tituloPerfilH05 = recolectarNodos(dialogoPerfilH05).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
+  afirmar(!!tituloPerfilH05 && tituloPerfilH05.textContent === 'Editar perfil', 'H-05: título EXACTO del diálogo "Editar perfil"');
+
+  var campoNombreH05 = buscarPorId(dialogoPerfilH05, 'hz-editar-nombre');
+  afirmar(!!campoNombreH05, 'H-05: debe existir #hz-editar-nombre dentro del diálogo');
+  afirmar(campoNombreH05.value === 'Carla Ruiz', 'H-05: el diálogo debe precargar el nombre del cliente activo');
+  var campoTallaH05 = buscarPorId(dialogoPerfilH05, 'hz-editar-talla');
+  afirmar(campoTallaH05.value === '165', 'H-05: el diálogo debe precargar la talla del cliente activo');
+  afirmar(rootPerfilH05.children.indexOf(campoNombreH05) === -1, 'H-07: ningún campo del formulario de edición debe ser descendiente directo de rootEl (vive en el diálogo)');
+
+  var formEditarH05 = campoNombreH05;
+  while (formEditarH05 && (formEditarH05.tagName || '').toLowerCase() !== 'form') { formEditarH05 = formEditarH05.parentNode; }
+  afirmar(!!formEditarH05 && formEditarH05.parentNode === dialogoPerfilH05.children[0], 'H-05: el formulario de edición debe vivir dentro de la card del diálogo');
+
+  var botonGuardarH05 = buscarPorId(dialogoPerfilH05, 'hz-btn-guardar-perfil');
+  var botonCancelarH05 = buscarPorId(dialogoPerfilH05, 'hz-btn-cancelar-perfil');
+  afirmar(!!botonGuardarH05 && botonGuardarH05.textContent === 'Guardar cambios' && clasesDe(botonGuardarH05).indexOf('hz-btn-primario') !== -1,
+    'H-05: botón "Guardar cambios" primario con id #hz-btn-guardar-perfil');
+  afirmar(!!botonCancelarH05 && botonCancelarH05.textContent === 'Cancelar' && clasesDe(botonCancelarH05).indexOf('hz-btn-secundario') !== -1,
+    'H-05: botón "Cancelar" secundario con id #hz-btn-cancelar-perfil');
+
+  // Cancelar cierra sin guardar.
+  botonCancelarH05.despachar('click', {});
+  afirmar(!dialogoPerfilH05.hasAttribute('open'), 'H-05: #hz-btn-cancelar-perfil debe cerrar el diálogo sin llamar actualizarPerfil');
+  afirmar(almacenMock._llamadas.actualizarPerfil.length === 0, 'H-05: Cancelar no debe invocar Almacen.actualizarPerfil');
+
+  // Reabre y guarda un cambio de nombre.
+  botonEditarH05.despachar('click', {});
+  var dialogoPerfilH05b = buscarPorId(rootPerfilH05, 'hz-dialogo-perfil');
+  afirmar(dialogoPerfilH05b === dialogoPerfilH05, 'H-02: el diálogo es un singleton -- reabrir NO reconstruye el nodo <dialog>');
+  var campoNombreH05b = buscarPorId(dialogoPerfilH05, 'hz-editar-nombre');
+  campoNombreH05b.value = 'Carla Ruiz Gómez';
+  var formEditarH05b = campoNombreH05b;
+  while (formEditarH05b && (formEditarH05b.tagName || '').toLowerCase() !== 'form') { formEditarH05b = formEditarH05b.parentNode; }
+  formEditarH05b.despachar('submit', {});
+
+  afirmar(almacenMock._llamadas.actualizarPerfil.length === 1, 'H-05: guardar debe llamar Almacen.actualizarPerfil exactamente una vez');
+  afirmar(almacenMock._llamadas.actualizarPerfil[0].nombre === 'Carla Ruiz Gómez', 'H-05: actualizarPerfil debe recibir el nombre editado');
+  afirmar(almacenMock._llamadas.actualizarPerfil[0].talla_cm === 165, 'H-05: actualizarPerfil debe recibir talla_cm como número');
+  afirmar(!dialogoPerfilH05.hasAttribute('open'), 'H-05: un guardado exitoso debe cerrar el diálogo');
+
+  var notaExitoH05 = buscarPorId(rootPerfilH05, 'hz-perfil-exito');
+  afirmar(!!notaExitoH05 && notaExitoH05.textContent === 'Cambios guardados.', 'H-05: Perfil debe mostrar p.hz-nota#hz-perfil-exito tras guardar');
+  afirmar(clasesDe(notaExitoH05).indexOf('hz-nota') !== -1, 'H-05: el mensaje de éxito debe llevar la clase hz-nota');
+  var accionesPerfilH05tras = buscarPorId(rootPerfilH05, 'hz-perfil-acciones');
+  afirmar(notaExitoH05.parentNode === accionesPerfilH05tras,
+    'T-064/H-07: p.hz-nota#hz-perfil-exito debe ser HIJO de #hz-perfil-acciones (a la derecha del botón), no hermano');
+  afirmar(rootPerfilH05.children.indexOf(notaExitoH05) === -1,
+    'T-064/H-07: p.hz-nota#hz-perfil-exito ya NO debe ser hijo DIRECTO de rootEl');
+  var botonEditarH05tras = buscarPorId(accionesPerfilH05tras, 'hz-btn-editar-perfil');
+  afirmar(accionesPerfilH05tras.children.indexOf(botonEditarH05tras) < accionesPerfilH05tras.children.indexOf(notaExitoH05),
+    'T-064/H-07: dentro de #hz-perfil-acciones, #hz-btn-editar-perfil va ANTES que #hz-perfil-exito (mensaje a la derecha del botón)');
+
+  // Reabrir de nuevo: valores FRESCOS (el nombre recién guardado) -- el
+  // contenido del diálogo se reconstruye en cada apertura (H-05).
+  botonEditarH05.despachar('click', {});
+  var campoNombreH05c = buscarPorId(rootPerfilH05, 'hz-editar-nombre');
+  afirmar(campoNombreH05c.value === 'Carla Ruiz Gómez', 'H-05: al reabrir, el campo de nombre debe traer el valor FRESCO tras guardar');
+  // Reabrir el diálogo por sí solo no llama a render(): #hz-perfil-exito
+  // sigue siendo el mismo nodo de antes (consumo-único, no se repinta).
+  afirmar(buscarPorId(rootPerfilH05, 'hz-perfil-exito') === notaExitoH05, 'H-05: reabrir el diálogo no debe volver a repintar Perfil');
+  buscarPorId(dialogoPerfilH05, 'hz-btn-cancelar-perfil').despachar('click', {});
+
+  globalThis.Herzon.Almacen = undefined;
+  globalThis.HERZON_DATA = DATA;
+});
+
+// ---------------------------------------------------------------------
+// 15bis. H-05: un fallo de Almacen.actualizarPerfil NUNCA cierra en
+// silencio -- el diálogo permanece abierto y muestra #hz-editar-error.
+// ---------------------------------------------------------------------
+conBusDeEventosAislado(function () {
+  var almacenMock = crearAlmacenMock({ modo: 'real', actualizarPerfil: function () { return false; } });
+  globalThis.Herzon.Almacen = almacenMock;
+  var rootPerfilFallo = contenedorNuevo();
+  Herzon.Views.perfil(rootPerfilFallo);
+  buscarPorId(rootPerfilFallo, 'hz-btn-editar-perfil').despachar('click', {});
+  var dialogoFallo = buscarPorId(rootPerfilFallo, 'hz-dialogo-perfil');
+  var campoFallo = buscarPorId(dialogoFallo, 'hz-editar-nombre');
+  var formFallo = campoFallo;
+  while (formFallo && (formFallo.tagName || '').toLowerCase() !== 'form') { formFallo = formFallo.parentNode; }
+  formFallo.despachar('submit', {});
+  afirmar(dialogoFallo.hasAttribute('open'), 'H-05: si Almacen.actualizarPerfil falla, el diálogo NO debe cerrarse');
+  var errorFallo = buscarPorId(dialogoFallo, 'hz-editar-error');
+  afirmar(!!errorFallo && errorFallo.textContent === 'No se pudo guardar el perfil.', 'H-05: un fallo de guardado debe mostrar un error, nunca en silencio');
+  globalThis.Herzon.Almacen = undefined;
+});
+
+// ---------------------------------------------------------------------
+// 16. H-05: pie .hz-dialogo-pie con #hz-btn-eliminar-cliente dentro de
+// #hz-dialogo-perfil -- confirmación en dos pasos y reversión a 6s
+// (MC-06), ahora dentro del diálogo de edición.
 // ---------------------------------------------------------------------
 conBusDeEventosAislado(function () {
   var timeoutsCapturados = [];
@@ -1055,27 +1190,18 @@ conBusDeEventosAislado(function () {
   var rootPerfilMC06 = contenedorNuevo();
   Herzon.Views.perfil(rootPerfilMC06);
 
-  var botonEliminar = buscarPorId(rootPerfilMC06, 'hz-btn-eliminar-cliente');
-  afirmar(!!botonEliminar, 'MC-06: en modo real con cliente activo, debe existir #hz-btn-eliminar-cliente');
-  // F-05.2: el botón cambia SOLO de clases: de hz-doc-btn a hz-btn/hz-btn-peligro.
-  afirmar(clasesDe(botonEliminar).indexOf('hz-doc-btn') === -1, 'F-05.2: el botón eliminar ya NO debe llevar la clase hz-doc-btn');
+  var botonEditarMC06 = buscarPorId(rootPerfilMC06, 'hz-btn-editar-perfil');
+  botonEditarMC06.despachar('click', {});
+  var dialogoMC06 = buscarPorId(rootPerfilMC06, 'hz-dialogo-perfil');
+  var botonEliminar = buscarPorId(dialogoMC06, 'hz-btn-eliminar-cliente');
+  afirmar(!!botonEliminar, 'H-05: dentro de #hz-dialogo-perfil, con cliente activo, debe existir #hz-btn-eliminar-cliente');
   afirmar(clasesDe(botonEliminar).indexOf('hz-btn') !== -1 && clasesDe(botonEliminar).indexOf('hz-btn-peligro') !== -1,
-    'F-05.2: el botón eliminar debe llevar hz-btn hz-btn-peligro');
+    'H-05: #hz-btn-eliminar-cliente debe llevar hz-btn hz-btn-peligro');
   afirmar(botonEliminar.textContent === 'Eliminar este cliente', 'MC-06: el texto inicial debe ser exactamente "Eliminar este cliente"');
   afirmar(botonEliminar.getAttribute('data-confirmar') === 'false', 'MC-06: data-confirmar debe iniciar en "false"');
-  // F-05.1/F-05.3: descendiente de .hz-form-pie DENTRO de la card de Editar
-  // perfil, NO hijo directo de rootPerfil (jamás banda de ancho completo).
-  afirmar(rootPerfilMC06.children.indexOf(botonEliminar) === -1,
-    'F-05.1: #hz-btn-eliminar-cliente NO debe ser hijo directo del root de Perfil (jamás banda destructiva de ancho completo)');
-  var piePadreEliminar = botonEliminar.parentNode;
-  afirmar(!!piePadreEliminar && clasesDe(piePadreEliminar).indexOf('hz-form-pie') !== -1,
-    'F-05.1: #hz-btn-eliminar-cliente debe ser descendiente directo de .hz-form-pie');
-  var cardEditarPerfilMC06 = piePadreEliminar.parentNode;
-  afirmar(!!cardEditarPerfilMC06 && clasesDe(cardEditarPerfilMC06).indexOf('hz-form-card') !== -1,
-    'F-05.1: .hz-form-pie del botón eliminar debe vivir dentro de la card de Editar perfil (hz-form-card)');
-  var tituloCardEditarMC06 = recolectarNodos(cardEditarPerfilMC06).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
-  afirmar(!!tituloCardEditarMC06 && tituloCardEditarMC06.textContent === 'Editar perfil',
-    'F-05.1: el pie de eliminación debe estar en la card titulada "Editar perfil"');
+  var pieEliminar = botonEliminar.parentNode;
+  afirmar(!!pieEliminar && clasesDe(pieEliminar).indexOf('hz-dialogo-pie') !== -1, 'H-05: #hz-btn-eliminar-cliente debe vivir dentro de .hz-dialogo-pie');
+  afirmar(rootPerfilMC06.children.indexOf(botonEliminar) === -1, 'H-07: #hz-btn-eliminar-cliente NUNCA debe ser hijo directo de rootEl');
 
   botonEliminar.despachar('click', {});
   afirmar(almacenMock._llamadas.eliminarCliente.length === 0, 'MC-06: el PRIMER click NO debe invocar Almacen.eliminarCliente todavía');
@@ -1085,14 +1211,10 @@ conBusDeEventosAislado(function () {
   afirmar(timeoutsCapturados.length === 1, 'MC-06: el primer click debe programar UN temporizador de reversión');
   afirmar(timeoutsCapturados[0].ms === 6000, 'MC-06: la reversión debe programarse a 6000ms (6 segundos)');
 
-  // Simula el paso de los 6 segundos SIN un segundo click: debe revertir.
   timeoutsCapturados[0].fn();
   afirmar(botonEliminar.getAttribute('data-confirmar') === 'false', 'MC-06: tras 6s sin confirmar, data-confirmar debe volver a "false"');
   afirmar(botonEliminar.textContent === 'Eliminar este cliente', 'MC-06: tras 6s sin confirmar, el texto debe volver al original');
 
-  // Segundo escenario: primer click, luego SEGUNDO click (confirmar) antes
-  // de que venza el temporizador -- debe invocar eliminarCliente y cancelar
-  // el temporizador pendiente.
   timeoutsCapturados = [];
   botonEliminar.despachar('click', {});
   afirmar(timeoutsCapturados.length === 1, 'MC-06: el click de re-armado también debe programar su propio temporizador');
@@ -1100,52 +1222,11 @@ conBusDeEventosAislado(function () {
   afirmar(almacenMock._llamadas.eliminarCliente.length === 1, 'MC-06: el SEGUNDO click (confirmado) debe invocar Almacen.eliminarCliente exactamente una vez');
   afirmar(almacenMock._llamadas.eliminarCliente[0] === 'c-activo', 'MC-06: eliminarCliente debe recibir el id del cliente activo');
   afirmar(timeoutsCapturados[0].cancelado === true, 'MC-06: el segundo click (confirmado) debe cancelar el temporizador de reversión pendiente');
+  afirmar(!dialogoMC06.hasAttribute('open'), 'H-05: eliminar (confirmado) debe cerrar el diálogo');
 
   globalThis.setTimeout = setTimeoutOriginal;
   globalThis.clearTimeout = clearTimeoutOriginal;
   globalThis.Herzon.Almacen = undefined;
-});
-
-// ---------------------------------------------------------------------
-// 16. R8 punto 5: edición de perfil -- formulario prellenado con el perfil
-// actual, submit llama Herzon.Almacen.actualizarPerfil con el objeto
-// correcto y refresca la vista (SIN depender de herzon:modo-cambiado,
-// actualizarPerfil no remonta cliente).
-// ---------------------------------------------------------------------
-conBusDeEventosAislado(function () {
-  var almacenMock = crearAlmacenMock({ modo: 'real', actualizarPerfil: function () { return true; } });
-  globalThis.Herzon.Almacen = almacenMock;
-  var datosEdicion = datosClienteVacio();
-  datosEdicion.paciente.nombre = 'Carla Ruiz';
-  datosEdicion.paciente.sexo = 'femenino';
-  datosEdicion.paciente.edad = 30;
-  datosEdicion.paciente.talla_cm = 165;
-  datosEdicion.paciente.pesoInicial_kg = 60;
-  datosEdicion.paciente.actividad = 'ligero';
-  datosEdicion.paciente.objetivo = 'Bajar grasa corporal';
-  globalThis.HERZON_DATA = datosEdicion;
-
-  var rootPerfilEditar = contenedorNuevo();
-  Herzon.Views.perfil(rootPerfilEditar);
-
-  var campoNombreEditar = buscarPorId(rootPerfilEditar, 'hz-editar-nombre');
-  afirmar(!!campoNombreEditar, 'R8 punto 5: debe existir el campo de edición de nombre');
-  afirmar(campoNombreEditar.value === 'Carla Ruiz', 'R8 punto 5: el formulario de edición debe venir PRELLENADO con el perfil actual');
-  var campoTallaEditar = buscarPorId(rootPerfilEditar, 'hz-editar-talla');
-  afirmar(campoTallaEditar.value === '165', 'R8 punto 5: la talla prellenada debe coincidir con el perfil actual');
-
-  var formEditar = campoNombreEditar;
-  while (formEditar && (formEditar.tagName || '').toLowerCase() !== 'form') { formEditar = formEditar.parentNode; }
-  afirmar(!!formEditar, 'R8 punto 5: el campo de edición debe estar dentro de un <form>');
-
-  campoNombreEditar.value = 'Carla Ruiz Gómez';
-  formEditar.despachar('submit', {});
-  afirmar(almacenMock._llamadas.actualizarPerfil.length === 1, 'R8 punto 5: el submit debe llamar Almacen.actualizarPerfil exactamente una vez');
-  afirmar(almacenMock._llamadas.actualizarPerfil[0].nombre === 'Carla Ruiz Gómez', 'R8 punto 5: actualizarPerfil debe recibir el nombre editado');
-  afirmar(almacenMock._llamadas.actualizarPerfil[0].talla_cm === 165, 'R8 punto 5: actualizarPerfil debe recibir talla_cm como número');
-
-  globalThis.Herzon.Almacen = undefined;
-  globalThis.HERZON_DATA = DATA;
 });
 
 // ---------------------------------------------------------------------
@@ -1341,10 +1422,10 @@ conBusDeEventosAislado(function (listeners) {
 });
 
 // ---------------------------------------------------------------------
-// 20. S-05: casilla #hz-perfil-labs-ocultos en Editar perfil -- precargada
-// del config vigente; "Guardar cambios" llama actualizarConfig SOLO si el
-// valor de la casilla cambió (nunca si quedó igual, evita un remontaje
-// redundante).
+// 20. H-05/S-05: casilla #hz-perfil-labs-ocultos dentro de #hz-dialogo-
+// perfil -- precargada del config vigente; "Guardar cambios" llama
+// actualizarConfig SOLO si el valor de la casilla cambió (nunca si quedó
+// igual, evita un remontaje redundante).
 // ---------------------------------------------------------------------
 conBusDeEventosAislado(function () {
   var almacenMock = crearAlmacenMock({ modo: 'real', actualizarPerfil: function () { return true; } });
@@ -1355,8 +1436,10 @@ conBusDeEventosAislado(function () {
 
   var rootS05a = contenedorNuevo();
   Herzon.Views.perfil(rootS05a);
-  var checkboxLabsA = buscarPorId(rootS05a, 'hz-perfil-labs-ocultos');
-  afirmar(!!checkboxLabsA, 'S-05: debe existir #hz-perfil-labs-ocultos en Editar perfil');
+  buscarPorId(rootS05a, 'hz-btn-editar-perfil').despachar('click', {});
+  var dialogoS05a = buscarPorId(rootS05a, 'hz-dialogo-perfil');
+  var checkboxLabsA = buscarPorId(dialogoS05a, 'hz-perfil-labs-ocultos');
+  afirmar(!!checkboxLabsA, 'S-05: debe existir #hz-perfil-labs-ocultos dentro de #hz-dialogo-perfil');
   afirmar(checkboxLabsA.getAttribute('type') === 'checkbox', 'S-05: #hz-perfil-labs-ocultos debe ser type=checkbox');
   afirmar(checkboxLabsA.checked === false, 'S-05: con config.labsOcultos=false, la casilla debe iniciar SIN marcar');
   afirmar(clasesDe(checkboxLabsA.parentNode).indexOf('hz-form-ancho') !== -1, 'S-05: la fila de la casilla debe caer en hz-form-ancho');
@@ -1367,6 +1450,7 @@ conBusDeEventosAislado(function () {
   formEditarS05a.despachar('submit', {});
   afirmar(almacenMock._llamadas.actualizarPerfil.length === 1, 'S-05: "Guardar cambios" siempre debe llamar actualizarPerfil');
   afirmar(almacenMock._llamadas.actualizarConfig.length === 0, 'S-05: si la casilla NO cambió, actualizarConfig NO debe llamarse');
+  afirmar(!dialogoS05a.hasAttribute('open'), 'S-05: guardar sin cambio de config también debe cerrar el diálogo');
 
   globalThis.Herzon.Almacen = undefined;
   globalThis.HERZON_DATA = DATA;
@@ -1381,7 +1465,9 @@ conBusDeEventosAislado(function () {
 
   var rootS05b = contenedorNuevo();
   Herzon.Views.perfil(rootS05b);
-  var checkboxLabsB = buscarPorId(rootS05b, 'hz-perfil-labs-ocultos');
+  buscarPorId(rootS05b, 'hz-btn-editar-perfil').despachar('click', {});
+  var dialogoS05b = buscarPorId(rootS05b, 'hz-dialogo-perfil');
+  var checkboxLabsB = buscarPorId(dialogoS05b, 'hz-perfil-labs-ocultos');
   afirmar(checkboxLabsB.checked === true, 'S-05: con config.labsOcultos=true, la casilla debe iniciar MARCADA');
 
   checkboxLabsB.checked = false;
@@ -1390,6 +1476,9 @@ conBusDeEventosAislado(function () {
   formEditarS05b.despachar('submit', {});
   afirmar(almacenMock._llamadas.actualizarConfig.length === 1, 'S-05: si la casilla SÍ cambió, actualizarConfig debe llamarse exactamente una vez');
   afirmar(almacenMock._llamadas.actualizarConfig[0].labsOcultos === false, 'S-05: actualizarConfig debe recibir el valor NUEVO de la casilla');
+  // S-05: actualizarConfig dispara herzon:modo-cambiado SÍNCRONO -- el
+  // registro.cerrar() del submit ya corrió ANTES de esa emisión.
+  afirmar(!dialogoS05b.hasAttribute('open'), 'S-05: un cambio de config también debe cerrar el diálogo');
 
   globalThis.Herzon.Almacen = undefined;
   globalThis.HERZON_DATA = DATA;
@@ -1461,22 +1550,26 @@ conBusDeEventosAislado(function () {
 });
 
 // ---------------------------------------------------------------------
-// 23. S-02: card #hz-card-desbloqueo -- SOLO mientras
-// Almacen.bloqueado()===true, como PRIMERA card (C-3); textos EXACTOS
-// (C-10); estado ocupado "Descifrando…"; error nunca silencioso;
-// contraseña limpiada tras un intento fallido; ruta de recuperación
-// (S-04) presente; el éxito desmonta la card vía el remontaje real.
+// 23. H-03: #hz-dialogo-desbloqueo (reemplaza a la antigua #hz-card-
+// desbloqueo inline, S-02). Se abre: (a) al cargar con bloqueado()===true
+// (P-4, ver sección de arranque más abajo), (b) herzon:desbloqueo-
+// solicitado, (c) #hz-btn-abrir-desbloqueo (H-07, #hz-card-bloqueado).
+// Textos EXACTOS (C-10); estado ocupado "Descifrando…"; error nunca
+// silencioso; contraseña limpiada tras un intento fallido; ruta de
+// recuperación (S-04) presente; "Seguir en demo" cierra sin desbloquear;
+// éxito cierra.
 // ---------------------------------------------------------------------
 conBusDeEventosAislado(function () {
   var almacenDesbloqueado = crearAlmacenMock({ modo: 'real', bloqueado: false });
   globalThis.Herzon.Almacen = almacenDesbloqueado;
   var rootSinBloqueo = contenedorNuevo();
   Herzon.Views.perfil(rootSinBloqueo);
-  afirmar(!buscarPorId(rootSinBloqueo, 'hz-card-desbloqueo'), 'S-02: con bloqueado()===false, #hz-card-desbloqueo NO debe montarse');
+  afirmar(!buscarPorId(rootSinBloqueo, 'hz-card-bloqueado'), 'H-07: con bloqueado()===false, #hz-card-bloqueado NO debe montarse');
+  afirmar(!buscarPorId(rootSinBloqueo, 'hz-dialogo-desbloqueo'), 'H-03: con bloqueado()===false, el diálogo de desbloqueo ni siquiera se construye (bajo demanda)');
   globalThis.Herzon.Almacen = undefined;
 });
 
-conBusDeEventosAislado(function (listeners) {
+conBusDeEventosAislado(function () {
   var bloqueadoActual = true;
   var promesaDesbloqueo = null;
   var almacenMock = crearAlmacenMock({
@@ -1492,40 +1585,63 @@ conBusDeEventosAislado(function (listeners) {
   var rootBloqueado = contenedorNuevo();
   Herzon.Views.perfil(rootBloqueado);
 
-  afirmar(rootBloqueado.children[0] === buscarPorId(rootBloqueado, 'hz-card-desbloqueo'),
-    'S-02/C-3: #hz-card-desbloqueo debe ser la PRIMERA card mientras bloqueado()===true');
-  var cardDesbloqueo = buscarPorId(rootBloqueado, 'hz-card-desbloqueo');
-  afirmar(clasesDe(cardDesbloqueo).indexOf('hz-card') !== -1 && clasesDe(cardDesbloqueo).indexOf('hz-form-card') !== -1,
-    'S-02: #hz-card-desbloqueo debe llevar hz-card hz-form-card');
+  afirmar(rootBloqueado.children[0] === buscarPorId(rootBloqueado, 'hz-card-bloqueado'),
+    'H-07 punto 1: #hz-card-bloqueado debe ser la PRIMERA card mientras bloqueado()===true');
+  var cardBloqueado = buscarPorId(rootBloqueado, 'hz-card-bloqueado');
+  afirmar(clasesDe(cardBloqueado).indexOf('hz-card') !== -1 && clasesDe(cardBloqueado).indexOf('hz-form-card') !== -1,
+    'H-07: #hz-card-bloqueado debe llevar hz-card hz-form-card');
+  var tituloCardBloqueado = recolectarNodos(cardBloqueado).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
+  afirmar(!!tituloCardBloqueado && tituloCardBloqueado.textContent === 'Tus datos están protegidos', 'C-10: título EXACTO de #hz-card-bloqueado');
+  afirmar(textosDe(cardBloqueado).join(' ').indexOf('Desbloquea con tu contraseña para ver a tus clientes.') !== -1,
+    'H-07: cuerpo EXACTO de #hz-card-bloqueado');
+  afirmar(!recolectarNodos(cardBloqueado).some(function (n) { return (n.tagName || '').toLowerCase() === 'form'; }),
+    'H-07: #hz-card-bloqueado NO debe contener ningún <form> (el formulario vive en el diálogo)');
+  var botonAbrirDesbloqueo = buscarPorId(cardBloqueado, 'hz-btn-abrir-desbloqueo');
+  afirmar(!!botonAbrirDesbloqueo && botonAbrirDesbloqueo.textContent === 'Desbloquear', 'H-07: botón "Desbloquear" con id #hz-btn-abrir-desbloqueo');
+  afirmar(clasesDe(botonAbrirDesbloqueo).indexOf('hz-btn-primario') !== -1, 'H-07: #hz-btn-abrir-desbloqueo debe ser primario');
 
-  var tituloDesbloqueo = recolectarNodos(cardDesbloqueo).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
-  afirmar(!!tituloDesbloqueo && tituloDesbloqueo.textContent === 'Tus datos están protegidos', 'C-10: título EXACTO de la card de desbloqueo');
-  var textosDesbloqueo = textosDe(cardDesbloqueo).join(' ');
+  afirmar(!buscarPorId(rootBloqueado, 'hz-dialogo-desbloqueo'), 'H-03: el diálogo no existe hasta que algo lo abre');
+  botonAbrirDesbloqueo.despachar('click', {});
+  var dialogoDesbloqueo = buscarPorId(rootBloqueado, 'hz-dialogo-desbloqueo');
+  afirmar(!!dialogoDesbloqueo, 'H-03 (c): #hz-btn-abrir-desbloqueo debe abrir #hz-dialogo-desbloqueo');
+  afirmar((dialogoDesbloqueo.tagName || '').toLowerCase() === 'dialog' && clasesDe(dialogoDesbloqueo).indexOf('hz-dialogo') !== -1,
+    'H-02: #hz-dialogo-desbloqueo debe ser un <dialog class="hz-dialogo">');
+  afirmar(dialogoDesbloqueo.hasAttribute('open'), 'H-03: #hz-btn-abrir-desbloqueo debe dejarlo abierto');
+
+  var tituloDesbloqueo = recolectarNodos(dialogoDesbloqueo).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
+  afirmar(!!tituloDesbloqueo && tituloDesbloqueo.textContent === 'Tus datos están protegidos', 'C-10: título EXACTO del diálogo de desbloqueo');
+  var textosDesbloqueo = textosDe(dialogoDesbloqueo).join(' ');
   afirmar(textosDesbloqueo.indexOf('La información de tus clientes está cifrada en este dispositivo. Escribe tu contraseña para desbloquearla.') !== -1,
-    'C-10: cuerpo EXACTO de la card de desbloqueo');
+    'C-10: cuerpo EXACTO del diálogo de desbloqueo');
   afirmar(textosDesbloqueo.indexOf('Si olvidaste tu contraseña, no es posible recuperarla. Puedes restaurar un respaldo o borrar todos los datos para empezar de cero.') !== -1,
     'C-10: pie de recuperación EXACTO');
 
-  var campoPass = buscarPorId(cardDesbloqueo, 'hz-desbloqueo-pass');
-  afirmar(!!campoPass && campoPass.getAttribute('type') === 'password', 'S-02: #hz-desbloqueo-pass debe ser type=password');
-  afirmar(campoPass.getAttribute('autocomplete') === 'current-password', 'S-02: #hz-desbloqueo-pass debe llevar autocomplete=current-password');
+  var campoPass = buscarPorId(dialogoDesbloqueo, 'hz-desbloqueo-pass');
+  afirmar(!!campoPass && campoPass.getAttribute('type') === 'password', 'H-03: #hz-desbloqueo-pass debe ser type=password');
+  afirmar(campoPass.getAttribute('autocomplete') === 'current-password', 'H-03: #hz-desbloqueo-pass debe llevar autocomplete=current-password');
 
-  var botonDesbloquear = buscarPorId(cardDesbloqueo, 'hz-btn-desbloquear');
+  var botonDesbloquear = buscarPorId(dialogoDesbloqueo, 'hz-btn-desbloquear');
   afirmar(!!botonDesbloquear && botonDesbloquear.textContent === 'Desbloquear', 'C-10: texto EXACTO del botón "Desbloquear"');
   afirmar(clasesDe(botonDesbloquear).indexOf('hz-btn') !== -1 && clasesDe(botonDesbloquear).indexOf('hz-btn-primario') !== -1,
     'F-02: #hz-btn-desbloquear debe llevar hz-btn hz-btn-primario');
 
-  var errorDesbloqueo = buscarPorId(cardDesbloqueo, 'hz-desbloqueo-error');
-  afirmar(!!errorDesbloqueo && clasesDe(errorDesbloqueo).indexOf('hz-form-error') !== -1, 'S-02: #hz-desbloqueo-error debe llevar hz-form-error');
+  var botonSeguirDemo = buscarPorId(dialogoDesbloqueo, 'hz-btn-desbloqueo-seguir-demo');
+  afirmar(!!botonSeguirDemo && botonSeguirDemo.textContent === 'Seguir en demo', 'H-03: botón "Seguir en demo" con id #hz-btn-desbloqueo-seguir-demo');
+  afirmar(clasesDe(botonSeguirDemo).indexOf('hz-btn-secundario') !== -1, 'H-03: "Seguir en demo" debe ser secundario');
 
-  var botonBorrarTodo = buscarPorId(cardDesbloqueo, 'hz-btn-desbloqueo-borrar-todo');
-  afirmar(!!botonBorrarTodo && botonBorrarTodo.textContent === 'Borrar todos los datos', 'S-02: debe existir el botón "Borrar todos los datos" en el pie');
+  var errorDesbloqueo = buscarPorId(dialogoDesbloqueo, 'hz-desbloqueo-error');
+  afirmar(!!errorDesbloqueo && clasesDe(errorDesbloqueo).indexOf('hz-form-error') !== -1, 'H-03: #hz-desbloqueo-error debe llevar hz-form-error');
+
+  var botonBorrarTodo = buscarPorId(dialogoDesbloqueo, 'hz-btn-desbloqueo-borrar-todo');
+  afirmar(!!botonBorrarTodo && botonBorrarTodo.textContent === 'Borrar todos los datos', 'H-03: debe existir el botón "Borrar todos los datos" en el pie');
+  var pieDesbloqueo = recolectarNodos(dialogoDesbloqueo).filter(function (n) { return clasesDe(n).indexOf('hz-dialogo-pie') !== -1; })[0];
+  afirmar(!!pieDesbloqueo, 'H-03: debe existir un .hz-dialogo-pie dentro del diálogo de desbloqueo');
 
   // S-04 (ruta de recuperación desde bloqueado): restaurar un respaldo con
   // la frase EXTRA que advierte que desactiva la contraseña actual.
-  var labelRestaurarBloqueado = buscarPorId(cardDesbloqueo, 'hz-desbloqueo-import-label');
-  var inputRestaurarBloqueado = buscarPorId(cardDesbloqueo, 'hz-desbloqueo-input-restaurar');
-  afirmar(!!labelRestaurarBloqueado && !!inputRestaurarBloqueado, 'S-04: la card de desbloqueo debe ofrecer restaurar un respaldo');
+  var labelRestaurarBloqueado = buscarPorId(dialogoDesbloqueo, 'hz-desbloqueo-import-label');
+  var inputRestaurarBloqueado = buscarPorId(dialogoDesbloqueo, 'hz-desbloqueo-input-restaurar');
+  afirmar(!!labelRestaurarBloqueado && !!inputRestaurarBloqueado, 'S-04: el diálogo de desbloqueo debe ofrecer restaurar un respaldo');
   function FileReaderStubBloqueado() { this.onload = null; this.onerror = null; this.result = null; }
   FileReaderStubBloqueado.prototype.readAsText = function (archivo) {
     this.result = archivo && archivo._contenidoTexto;
@@ -1535,209 +1651,352 @@ conBusDeEventosAislado(function (listeners) {
   var respaldoParaBloqueado = { _contenidoTexto: JSON.stringify({ formato: 'rinde-respaldo-1', exportado: '2026-08-01', datos: { version: 2, activoId: null, clientes: { 'c-1': {} } } }) };
   inputRestaurarBloqueado.files = [respaldoParaBloqueado];
   inputRestaurarBloqueado.despachar('change');
-  afirmar(textosDe(cardDesbloqueo).join(' ').indexOf('Esto reemplaza los datos cifrados de este dispositivo y desactiva la contraseña actual. Podrás activar una nueva después.') !== -1,
+  afirmar(textosDe(dialogoDesbloqueo).join(' ').indexOf('Esto reemplaza los datos cifrados de este dispositivo y desactiva la contraseña actual. Podrás activar una nueva después.') !== -1,
     'C-10/S-04: la ruta desde bloqueado debe agregar la advertencia EXACTA de que desactiva la contraseña actual');
   delete globalThis.FileReader;
 
-  // Envía la contraseña: estado ocupado ANTES de que la promesa resuelva.
+  // "Seguir en demo" cierra sin desbloquear.
+  botonSeguirDemo.despachar('click', {});
+  afirmar(!dialogoDesbloqueo.hasAttribute('open'), 'H-03: "Seguir en demo" debe cerrar el diálogo');
+  afirmar(almacenMock._llamadas.desbloquearYMontar.length === 0, 'H-03: "Seguir en demo" NO debe llamar Almacen.desbloquearYMontar');
+
+  // Reabre para probar el flujo de envío.
+  botonAbrirDesbloqueo.despachar('click', {});
+  afirmar(dialogoDesbloqueo.hasAttribute('open'), 'H-03: reabrir tras "Seguir en demo" debe volver a abrirlo (mismo singleton)');
+
   campoPass.value = 'clave-mala';
   var formDesbloqueo = campoPass;
   while (formDesbloqueo && (formDesbloqueo.tagName || '').toLowerCase() !== 'form') { formDesbloqueo = formDesbloqueo.parentNode; }
   formDesbloqueo.despachar('submit', {});
   afirmar(almacenMock._llamadas.desbloquearYMontar.length === 1 && almacenMock._llamadas.desbloquearYMontar[0] === 'clave-mala',
-    'S-02: el submit debe llamar Almacen.desbloquearYMontar con la contraseña capturada');
-  afirmar(botonDesbloquear.getAttribute('disabled') === 'disabled', 'S-02: durante el descifrado, el botón debe deshabilitarse (estado ocupado)');
+    'H-03: el submit debe llamar Almacen.desbloquearYMontar con la contraseña capturada');
+  afirmar(botonDesbloquear.getAttribute('disabled') === 'disabled', 'H-03: durante el descifrado, el botón debe deshabilitarse (estado ocupado)');
   afirmar(botonDesbloquear.textContent === 'Descifrando…', 'C-10: el botón ocupado debe decir EXACTAMENTE "Descifrando…"');
-  afirmar(campoPass.getAttribute('disabled') === 'disabled', 'S-02: el campo de contraseña también debe deshabilitarse mientras descifra');
+  afirmar(campoPass.getAttribute('disabled') === 'disabled', 'H-03: el campo de contraseña también debe deshabilitarse mientras descifra');
 
-  // Resuelve con fallo (contraseña incorrecta): error nunca silencioso +
-  // contraseña limpiada + botón vuelve a su estado normal.
   promesaDesbloqueo.resolver({ ok: false, error: 'Contraseña incorrecta. Vuelve a intentarlo.' });
   afirmar(errorDesbloqueo.textContent === 'Contraseña incorrecta. Vuelve a intentarlo.',
     'C-10: mensaje de error EXACTO tras una contraseña incorrecta (nunca silencioso)');
-  afirmar(botonDesbloquear.getAttribute('disabled') === null, 'S-02: tras el fallo, el botón debe volver a habilitarse');
-  afirmar(botonDesbloquear.textContent === 'Desbloquear', 'S-02: tras el fallo, el texto del botón vuelve a "Desbloquear"');
-  afirmar(campoPass.value === '', 'S-02: tras un intento fallido, el campo de contraseña debe limpiarse');
+  afirmar(botonDesbloquear.getAttribute('disabled') === null, 'H-03: tras el fallo, el botón debe volver a habilitarse');
+  afirmar(botonDesbloquear.textContent === 'Desbloquear', 'H-03: tras el fallo, el texto del botón vuelve a "Desbloquear"');
+  afirmar(campoPass.value === '', 'H-03: tras un intento fallido, el campo de contraseña debe limpiarse');
 
-  // Segundo intento, ahora exitoso: simula la secuencia de eventos que
-  // Almacen dispara en la implementación real (clientes-actualizados ->
-  // cliente-cambiado -> modo-cambiado) bajando bloqueadoActual y
-  // remontando -- la card de desbloqueo debe desaparecer.
   campoPass.value = 'clave-buena';
   formDesbloqueo.despachar('submit', {});
   bloqueadoActual = false;
   promesaDesbloqueo.resolver({ ok: true });
-  afirmar((listeners['herzon:modo-cambiado'] || []).length === 1, 'S-02: Vista Perfil debe registrar UN listener de herzon:modo-cambiado');
-  listeners['herzon:modo-cambiado'][0]({ type: 'herzon:modo-cambiado', detail: { modo: 'real', clienteId: 'c-x' } });
-  afirmar(!buscarPorId(rootBloqueado, 'hz-card-desbloqueo'), 'S-02: tras un desbloqueo exitoso y el remontaje, #hz-card-desbloqueo debe desaparecer');
+  afirmar(!dialogoDesbloqueo.hasAttribute('open'), 'H-03: un desbloqueo exitoso debe cerrar el diálogo');
 
   globalThis.Herzon.Almacen = undefined;
 });
 
+// H-03 (b): herzon:desbloqueo-solicitado abre el diálogo (registrado a
+// nivel de módulo, UNA sola vez).
+conBusDeEventosAislado(function () {
+  var almacenMock = crearAlmacenMock({ modo: 'real', bloqueado: true });
+  globalThis.Herzon.Almacen = almacenMock;
+  var rootDesbloqueoB = contenedorNuevo();
+  Herzon.Views.perfil(rootDesbloqueoB);
+  afirmar(!buscarPorId(rootDesbloqueoB, 'hz-dialogo-desbloqueo'), 'H-03 (b): antes del evento, el diálogo no está anclado a esta vista');
+  listenersPorTipo['herzon:desbloqueo-solicitado'][0]();
+  afirmar(!!buscarPorId(rootDesbloqueoB, 'hz-dialogo-desbloqueo'), 'H-03 (b): herzon:desbloqueo-solicitado debe abrir el diálogo');
+  afirmar(buscarPorId(rootDesbloqueoB, 'hz-dialogo-desbloqueo').hasAttribute('open'), 'H-03 (b): el diálogo debe quedar abierto');
+  globalThis.Herzon.Almacen = undefined;
+});
+
 // ---------------------------------------------------------------------
-// 24. S-03: card #hz-card-seguridad -- SOLO en modo real Y desbloqueado
-// (ausente en demo, ausente mientras bloqueado); estado SIN protección
-// completo (C-10): checkbox de confirmación habilita el primario,
-// validación nunca silenciosa, estado ocupado "Cifrando…", contraseñas
-// limpiadas tras el resultado (éxito incluido), mensaje de éxito
-// consumo-único.
+// 24. H-04: #hz-dialogo-proteger, BLOQUEANTE -- condición de apertura
+// (real, >=1 cliente, sin protección activa) evaluada en herzon:modo-
+// cambiado/herzon:clientes-actualizados; idempotente; Escape no cierra
+// (cancel.preventDefault observable vía stub); sin botón Cancelar/Cerrar;
+// éxito: Seguridad.activar -> cierra -> Perfil repinta.
 // ---------------------------------------------------------------------
 conBusDeEventosAislado(function () {
-  var almacenDemo = crearAlmacenMock({ modo: 'demo' });
-  globalThis.Herzon.Almacen = almacenDemo;
-  var rootDemoSeg = contenedorNuevo();
-  Herzon.Views.perfil(rootDemoSeg);
-  afirmar(!buscarPorId(rootDemoSeg, 'hz-card-seguridad'), 'S-03: en modo demo, #hz-card-seguridad NO debe montarse');
-
-  var almacenBloqueado = crearAlmacenMock({ modo: 'real', bloqueado: true });
-  globalThis.Herzon.Almacen = almacenBloqueado;
-  var rootBloqueadoSeg = contenedorNuevo();
-  Herzon.Views.perfil(rootBloqueadoSeg);
-  afirmar(!buscarPorId(rootBloqueadoSeg, 'hz-card-seguridad'), 'S-03: mientras bloqueado()===true, #hz-card-seguridad NO debe montarse (en su lugar va #hz-card-desbloqueo)');
-
+  var casos = [
+    { almacen: { modo: 'demo' }, seguridad: undefined, etiqueta: 'demo' },
+    { almacen: { modo: 'real', clientes: [] }, seguridad: undefined, etiqueta: 'real sin clientes' },
+    { almacen: { modo: 'real', clientes: [{ id: 'c-1' }] }, seguridad: { activa: true }, etiqueta: 'ya protegido' }
+  ];
+  casos.forEach(function (caso) {
+    var almacenMock = crearAlmacenMock(caso.almacen);
+    globalThis.Herzon.Almacen = almacenMock;
+    globalThis.Herzon.Seguridad = caso.seguridad ? crearSeguridadMock(caso.seguridad) : undefined;
+    var rootCaso = contenedorNuevo();
+    Herzon.Views.perfil(rootCaso);
+    listenersPorTipo['herzon:clientes-actualizados'][0]();
+    afirmar(!buscarPorId(rootCaso, 'hz-dialogo-proteger') || !buscarPorId(rootCaso, 'hz-dialogo-proteger').hasAttribute('open'),
+      'H-04: con ' + caso.etiqueta + ', el diálogo de proteger NO debe abrirse');
+  });
   globalThis.Herzon.Almacen = undefined;
+  globalThis.Herzon.Seguridad = undefined;
 });
 
 conBusDeEventosAislado(function () {
   var promesaActivar = null;
   var seguridadMock = crearSeguridadMock({
     activa: false,
-    activar: function (contrasena) {
-      promesaActivar = promesaControlada();
-      return promesaActivar;
-    }
+    activar: function (contrasena) { promesaActivar = promesaControlada(); return promesaActivar; }
   });
   globalThis.Herzon.Seguridad = seguridadMock;
-  var almacenMock = crearAlmacenMock({ modo: 'real', bloqueado: false });
+  var almacenMock = crearAlmacenMock({ modo: 'real', bloqueado: false, clientes: [{ id: 'c-1' }] });
   globalThis.Herzon.Almacen = almacenMock;
 
-  var rootSeg = contenedorNuevo();
-  Herzon.Views.perfil(rootSeg);
-  var cardSeg = buscarPorId(rootSeg, 'hz-card-seguridad');
-  afirmar(!!cardSeg, 'S-03: en modo real desbloqueado, #hz-card-seguridad debe montarse');
-  afirmar(clasesDe(cardSeg).indexOf('hz-card') !== -1 && clasesDe(cardSeg).indexOf('hz-form-card') !== -1, 'S-03: #hz-card-seguridad debe llevar hz-card hz-form-card');
-  var tituloSeg = recolectarNodos(cardSeg).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
-  afirmar(!!tituloSeg && tituloSeg.textContent === 'Seguridad y respaldo', 'C-10: título EXACTO "Seguridad y respaldo"');
-  afirmar(textosDe(cardSeg).join(' ').indexOf('La contraseña protege todos los clientes guardados en este dispositivo. Los datos se cifran aquí mismo: nadie puede recuperarlos sin la contraseña, ni siquiera tú.') !== -1,
-    'C-10: nota de ámbito EXACTA');
+  var rootProteger = contenedorNuevo();
+  Herzon.Views.perfil(rootProteger);
 
-  var botonRespaldoSinProteccion = buscarPorId(cardSeg, 'hz-btn-seg-respaldo');
-  afirmar(!!botonRespaldoSinProteccion, 'S-03.1: debe ofrecerse "Descargar respaldo (.json)" ANTES de activar la protección');
+  listenersPorTipo['herzon:clientes-actualizados'][0]();
+  var dialogoProteger = buscarPorId(rootProteger, 'hz-dialogo-proteger');
+  afirmar(!!dialogoProteger, 'H-04: con real + >=1 cliente + sin protección, el diálogo debe abrirse automáticamente');
+  afirmar((dialogoProteger.tagName || '').toLowerCase() === 'dialog' && clasesDe(dialogoProteger).indexOf('hz-dialogo') !== -1,
+    'H-02: #hz-dialogo-proteger debe ser un <dialog class="hz-dialogo">');
+  afirmar(dialogoProteger.hasAttribute('open'), 'H-04: debe quedar abierto');
 
-  var campoPass1 = buscarPorId(cardSeg, 'hz-seg-pass-1');
-  var campoPass2 = buscarPorId(cardSeg, 'hz-seg-pass-2');
+  // Idempotente: un segundo disparo del mismo evento no reconstruye el
+  // contenido (número de hijos de la card sin cambios) ni lanza.
+  var cardProteger = dialogoProteger.children[0];
+  var hijosAntes = cardProteger.children.length;
+  listenersPorTipo['herzon:clientes-actualizados'][0]();
+  afirmar(cardProteger.children.length === hijosAntes, 'H-04: idempotente -- un segundo disparo del evento no debe reconstruir el contenido');
+  afirmar(dialogoProteger.hasAttribute('open'), 'H-04: sigue abierto tras el segundo disparo');
+
+  // H-02 bloqueante: 'cancel' (Escape) hace preventDefault -- observable
+  // vía un evento de prueba con preventDefault espiado.
+  var cancelPrevenido = false;
+  var eventoCancelStub = { preventDefault: function () { cancelPrevenido = true; } };
+  var listenersCancel = dialogoProteger._listeners && dialogoProteger._listeners.cancel;
+  afirmar(!!listenersCancel && listenersCancel.length === 1, 'H-02: el diálogo bloqueante debe registrar EXACTAMENTE un listener de \'cancel\'');
+  listenersCancel[0](eventoCancelStub);
+  afirmar(cancelPrevenido === true, 'H-02/H-04: bloqueante -- el listener de \'cancel\' debe llamar preventDefault()');
+
+  afirmar(!buscarPorId(dialogoProteger, 'hz-btn-cancelar-proteger'), 'H-04: no debe existir ningún botón Cancelar');
+  var botonesProteger = recolectarNodos(dialogoProteger).filter(function (n) { return (n.tagName || '').toLowerCase() === 'button'; });
+  afirmar(!botonesProteger.some(function (b) { return b.textContent === 'Cancelar' || b.textContent === 'Cerrar'; }),
+    'H-04: ningún botón debe decir "Cancelar" ni "Cerrar" (bloqueante, sin salida sin proteger)');
+
+  var tituloProteger = recolectarNodos(dialogoProteger).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
+  afirmar(!!tituloProteger && tituloProteger.textContent === 'Protege tus datos', 'H-04: título EXACTO "Protege tus datos"');
+  afirmar(textosDe(dialogoProteger).join(' ').indexOf('Rinde cifra los datos de tus clientes en este dispositivo con una contraseña. Es obligatoria y no se puede recuperar: si la olvidas, solo un respaldo te devuelve los datos.') !== -1,
+    'H-04: párrafo EXACTO de #hz-dialogo-proteger');
+
+  var botonRespaldoProteger = buscarPorId(dialogoProteger, 'hz-btn-seg-respaldo');
+  afirmar(!!botonRespaldoProteger, 'H-04: debe ofrecerse "Descargar respaldo (.json)" ANTES del formulario');
+  var indiceRespaldo = cardProteger.children.indexOf(botonRespaldoProteger);
+  var formProtegerNodo = recolectarNodos(dialogoProteger).filter(function (n) { return (n.tagName || '').toLowerCase() === 'form'; })[0];
+  var indiceForm = cardProteger.children.indexOf(formProtegerNodo);
+  afirmar(indiceRespaldo !== -1 && indiceForm !== -1 && indiceRespaldo < indiceForm, 'H-04: el botón de respaldo debe venir ANTES del formulario');
+
+  var campoPass1 = buscarPorId(dialogoProteger, 'hz-seg-pass-1');
+  var campoPass2 = buscarPorId(dialogoProteger, 'hz-seg-pass-2');
   afirmar(campoPass1.getAttribute('minlength') === '8' && campoPass1.getAttribute('autocomplete') === 'new-password',
-    'S-03.2: #hz-seg-pass-1 debe llevar minlength=8 y autocomplete=new-password');
-  var checkboxConfirmo = buscarPorId(cardSeg, 'hz-seg-confirmo');
+    'H-04: #hz-seg-pass-1 debe llevar minlength=8 y autocomplete=new-password');
+  var checkboxConfirmo = buscarPorId(dialogoProteger, 'hz-seg-confirmo');
   afirmar(clasesDe(checkboxConfirmo.parentNode).indexOf('hz-form-check') !== -1 && clasesDe(checkboxConfirmo.parentNode).indexOf('hz-form-ancho') !== -1,
-    'R11-fix (D-07): la fila de la casilla de consentimiento debe llevar hz-form-check y hz-form-ancho (casilla en línea con su etiqueta, fila completa)');
-  var botonActivar = buscarPorId(cardSeg, 'hz-btn-seg-activar');
+    'H-04: la fila de la casilla de consentimiento debe llevar hz-form-check y hz-form-ancho');
+  var botonActivar = buscarPorId(dialogoProteger, 'hz-btn-seg-activar');
   afirmar(clasesDe(botonActivar).indexOf('hz-btn') !== -1 && clasesDe(botonActivar).indexOf('hz-btn-primario') !== -1,
     'F-02: #hz-btn-seg-activar debe llevar hz-btn hz-btn-primario');
-  afirmar(botonActivar.getAttribute('disabled') === 'disabled', 'S-03.4: el botón Activar protección debe iniciar deshabilitado hasta marcar la casilla');
+  afirmar(botonActivar.getAttribute('disabled') === 'disabled', 'H-04: el botón Activar protección debe iniciar deshabilitado hasta marcar la casilla');
 
   checkboxConfirmo.checked = true;
   checkboxConfirmo.despachar('change', {});
-  afirmar(botonActivar.getAttribute('disabled') === null, 'S-03.3: al marcar la casilla de confirmación, el botón debe habilitarse');
+  afirmar(botonActivar.getAttribute('disabled') === null, 'H-04: al marcar la casilla, el botón debe habilitarse');
 
-  var errorSeg = buscarPorId(cardSeg, 'hz-seg-error');
-  var formSeg = campoPass1;
-  while (formSeg && (formSeg.tagName || '').toLowerCase() !== 'form') { formSeg = formSeg.parentNode; }
-
-  formSeg.despachar('submit', {});
-  afirmar(errorSeg.textContent === 'Escribe la contraseña en ambos campos.', 'S-03.4: campos vacíos -- error nunca silencioso');
-  afirmar(seguridadMock._llamadas.activar.length === 0, 'S-03.4: con campos vacíos, Seguridad.activar NO debe llamarse');
+  var errorProteger = buscarPorId(dialogoProteger, 'hz-seg-error');
+  formProtegerNodo.despachar('submit', {});
+  afirmar(errorProteger.textContent === 'Escribe la contraseña en ambos campos.', 'H-04: campos vacíos -- error nunca silencioso');
+  afirmar(seguridadMock._llamadas.activar.length === 0, 'H-04: con campos vacíos, Seguridad.activar NO debe llamarse');
 
   campoPass1.value = '123'; campoPass2.value = '123';
-  formSeg.despachar('submit', {});
-  afirmar(errorSeg.textContent === 'La contraseña debe tener al menos 8 caracteres.', 'S-03.4: contraseña corta -- error nunca silencioso');
+  formProtegerNodo.despachar('submit', {});
+  afirmar(errorProteger.textContent === 'La contraseña debe tener al menos 8 caracteres.', 'H-04: contraseña corta -- error nunca silencioso');
 
   campoPass1.value = 'abcdefgh'; campoPass2.value = 'abcdefgx';
-  formSeg.despachar('submit', {});
-  afirmar(errorSeg.textContent === 'Las contraseñas no coinciden.', 'S-03.4: contraseñas distintas -- error nunca silencioso');
+  formProtegerNodo.despachar('submit', {});
+  afirmar(errorProteger.textContent === 'Las contraseñas no coinciden.', 'H-04: contraseñas distintas -- error nunca silencioso');
 
-  // Válido: estado ocupado ANTES de resolver, luego fallo (asíncrono).
   campoPass1.value = 'abcdefgh'; campoPass2.value = 'abcdefgh';
-  formSeg.despachar('submit', {});
+  formProtegerNodo.despachar('submit', {});
   afirmar(seguridadMock._llamadas.activar.length === 1 && seguridadMock._llamadas.activar[0] === 'abcdefgh',
-    'S-03.4: con datos válidos, debe llamar Seguridad.activar con la contraseña');
-  afirmar(botonActivar.getAttribute('disabled') === 'disabled', 'S-03.4: durante el cifrado, el botón debe deshabilitarse (estado ocupado)');
+    'H-04: con datos válidos, debe llamar Seguridad.activar con la contraseña');
+  afirmar(botonActivar.getAttribute('disabled') === 'disabled', 'H-04: durante el cifrado, el botón debe deshabilitarse (estado ocupado)');
   afirmar(botonActivar.textContent === 'Cifrando…', 'C-10: el botón ocupado debe decir EXACTAMENTE "Cifrando…"');
 
-  promesaActivar.resolver({ ok: false, errores: ['No se pudo activar la protección en este dispositivo.'] });
-  afirmar(errorSeg.textContent === 'No se pudo activar la protección en este dispositivo.', 'S-03.4: fallo de activar -- error nunca silencioso');
-  afirmar(botonActivar.getAttribute('disabled') === null, 'S-03.4: tras el fallo, el botón vuelve a habilitarse');
-  afirmar(campoPass1.value === '' && campoPass2.value === '', 'S-03: los campos de contraseña se limpian tras la operación (también en fallo, nunca se persisten)');
-
-  // Reintento exitoso: contraseñas limpiadas tras éxito + mensaje de éxito
-  // consumo-único en el remontaje.
-  campoPass1.value = 'abcdefgh'; campoPass2.value = 'abcdefgh';
-  formSeg.despachar('submit', {});
   promesaActivar.resolver({ ok: true, errores: [] });
-  afirmar(campoPass1.value === '' && campoPass2.value === '', 'S-03: los campos de contraseña deben limpiarse tras un ÉXITO de activar');
-  var cardSegTrasExito = buscarPorId(rootSeg, 'hz-card-seguridad');
-  var notaExitoSeg = buscarPorId(cardSegTrasExito, 'hz-seg-exito');
-  afirmar(!!notaExitoSeg && notaExitoSeg.textContent === 'Protección activada. Tus datos quedaron cifrados en este dispositivo.',
-    'C-10: tras activar con éxito, el remontaje debe mostrar el mensaje EXACTO de confirmación');
+  afirmar(!dialogoProteger.hasAttribute('open'), 'H-04: éxito -- Seguridad.activar debe cerrar el diálogo');
+  afirmar(campoPass1.value === '' && campoPass2.value === '', 'H-04: las contraseñas se limpian tras el éxito');
 
   globalThis.Herzon.Almacen = undefined;
   globalThis.Herzon.Seguridad = undefined;
 });
 
 // ---------------------------------------------------------------------
-// 25. S-03: estado CON protección (Seguridad.activa()===true) -- bloquear/
-// cambiar/quitar/respaldo; "Bloquear ahora" llama Seguridad.bloquear() +
-// Almacen.volverADemo(); "Quitar protección" con confirmación en dos
-// pasos (F-02); respaldo (S-04) presente en ambos bloques.
+// documentoStubConBoton: stub mínimo de `document` con getElementById que
+// devuelve un único botón #hz-btn-seguridad (TestDOM no tiene
+// document.getElementById; H-08 lo localiza así) -- para las secciones 25
+// y 26 de abajo.
+// ---------------------------------------------------------------------
+function documentoStubConBoton() {
+  var boton = doc.createElement('button');
+  boton.setAttribute('hidden', '');
+  var d = { getElementById: function (id) { return id === 'hz-btn-seguridad' ? boton : null; } };
+  return { documento: d, boton: boton };
+}
+
+// ---------------------------------------------------------------------
+// 25. H-08 + H-06: #hz-btn-seguridad (localizado vía document.getElementById,
+// guardado) -- hidden salvo real desbloqueado; conecta su click (una sola
+// vez) para abrir #hz-dialogo-seguridad. Con protección activa: estado,
+// "Bloquear ahora", "Cambiar contraseña" (con mensaje de éxito consumo-
+// único), "Respaldo"; SIN "Quitar protección" (P-5); botón Cerrar.
 // ---------------------------------------------------------------------
 conBusDeEventosAislado(function () {
   var seguridadMock = crearSeguridadMock({ activa: true });
   globalThis.Herzon.Seguridad = seguridadMock;
   var almacenMock = crearAlmacenMock({ modo: 'real', bloqueado: false });
   globalThis.Herzon.Almacen = almacenMock;
+  var stub = documentoStubConBoton();
+  globalThis.document = stub.documento;
 
   var rootProtegido = contenedorNuevo();
   Herzon.Views.perfil(rootProtegido);
-  var cardProtegido = buscarPorId(rootProtegido, 'hz-card-seguridad');
-  afirmar(!!cardProtegido, 'S-03: con Seguridad.activa()===true, #hz-card-seguridad debe montarse en el estado protegido');
-  afirmar(textosDe(cardProtegido).join(' ').indexOf('Protección activada') !== -1, 'C-10: debe mostrarse la línea de estado "Protección activada"');
 
-  var botonBloquear = buscarPorId(cardProtegido, 'hz-btn-seg-bloquear');
+  afirmar(stub.boton.hasAttribute('hidden'), 'H-08: antes de sincronizar, el botón sigue con su estado inicial (hidden)');
+  listenersPorTipo['herzon:modo-cambiado'][0]();
+  afirmar(!stub.boton.hasAttribute('hidden'), 'H-08: con modo real y desbloqueado, #hz-btn-seguridad debe quedar visible (sin hidden)');
+
+  stub.boton.despachar('click', {});
+  var dialogoSeg = buscarPorId(rootProtegido, 'hz-dialogo-seguridad');
+  afirmar(!!dialogoSeg, 'H-08/H-06: el click en #hz-btn-seguridad debe abrir #hz-dialogo-seguridad');
+  afirmar((dialogoSeg.tagName || '').toLowerCase() === 'dialog' && clasesDe(dialogoSeg).indexOf('hz-dialogo') !== -1,
+    'H-02: #hz-dialogo-seguridad debe ser un <dialog class="hz-dialogo">');
+  afirmar(dialogoSeg.hasAttribute('open'), 'H-06: debe quedar abierto');
+
+  var tituloSeg = recolectarNodos(dialogoSeg).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
+  afirmar(!!tituloSeg && tituloSeg.textContent === 'Seguridad y respaldo', 'C-10: título EXACTO "Seguridad y respaldo"');
+  afirmar(textosDe(dialogoSeg).join(' ').indexOf('Protección activada') !== -1, 'C-10: debe mostrarse la línea de estado "Protección activada"');
+
+  afirmar(!buscarPorId(dialogoSeg, 'hz-btn-seg-desactivar'), 'P-5: NO debe existir #hz-btn-seg-desactivar ("Quitar protección" eliminado de la UI)');
+  afirmar(!buscarPorId(dialogoSeg, 'hz-seg-quitar-pass'), 'P-5: NO debe existir #hz-seg-quitar-pass');
+  afirmar(textosDe(dialogoSeg).join(' ').indexOf('Al quitar la contraseña, los datos quedan guardados SIN cifrar en este dispositivo.') === -1,
+    'P-5: NO debe aparecer la advertencia de "Quitar protección"');
+  afirmar(!recolectarNodos(dialogoSeg).some(function (n) { return (n.tagName || '').toLowerCase() === 'button' && n.textContent === 'Quitar contraseña'; }),
+    'P-5: ningún botón debe decir "Quitar contraseña"');
+
+  var botonBloquear = buscarPorId(dialogoSeg, 'hz-btn-seg-bloquear');
   afirmar(!!botonBloquear && botonBloquear.textContent === 'Bloquear ahora', 'C-10: texto EXACTO "Bloquear ahora"');
   afirmar(clasesDe(botonBloquear).indexOf('hz-btn-secundario') !== -1, 'F-02: #hz-btn-seg-bloquear debe ser hz-btn-secundario');
-  botonBloquear.despachar('click', {});
-  afirmar(seguridadMock._llamadas.bloquear.length === 1, 'S-02: "Bloquear ahora" debe llamar Seguridad.bloquear()');
-  afirmar(almacenMock._llamadas.volverADemo.length === 1, 'S-02: "Bloquear ahora" también debe llamar Almacen.volverADemo()');
 
   ['hz-seg-actual', 'hz-seg-nueva-1', 'hz-seg-nueva-2'].forEach(function (id) {
-    afirmar(!!buscarPorId(cardProtegido, id), 'S-03: debe existir el campo #' + id + ' de "Cambiar contraseña"');
+    afirmar(!!buscarPorId(dialogoSeg, id), 'H-06: debe existir el campo #' + id + ' de "Cambiar contraseña"');
   });
-  var botonCambiar = buscarPorId(cardProtegido, 'hz-btn-seg-cambiar');
+  var botonCambiar = buscarPorId(dialogoSeg, 'hz-btn-seg-cambiar');
   afirmar(!!botonCambiar && botonCambiar.textContent === 'Cambiar contraseña' && clasesDe(botonCambiar).indexOf('hz-btn-primario') !== -1,
     'C-10/F-02: botón "Cambiar contraseña" primario');
 
-  var campoQuitarPass = buscarPorId(cardProtegido, 'hz-seg-quitar-pass');
-  var botonQuitar = buscarPorId(cardProtegido, 'hz-btn-seg-desactivar');
-  afirmar(!!campoQuitarPass && !!botonQuitar && botonQuitar.textContent === 'Quitar contraseña', 'C-10: campo y botón EXACTOS de "Quitar protección"');
-  afirmar(clasesDe(botonQuitar).indexOf('hz-btn-peligro') !== -1, 'F-02: #hz-btn-seg-desactivar debe ser hz-btn-peligro');
-  afirmar(botonQuitar.getAttribute('data-confirmar') === 'false', 'F-02: "Quitar protección" inicia con data-confirmar=false (2 pasos)');
-  botonQuitar.despachar('click', {});
-  afirmar(seguridadMock._llamadas.desactivar.length === 0, 'F-02: el PRIMER click de "Quitar protección" NO debe ejecutar la baja todavía');
-  afirmar(botonQuitar.getAttribute('data-confirmar') === 'true', 'F-02: tras el primer click, data-confirmar pasa a true');
-  afirmar(textosDe(cardProtegido).join(' ').indexOf('Al quitar la contraseña, los datos quedan guardados SIN cifrar en este dispositivo.') !== -1,
-    'C-10: advertencia EXACTA antes de quitar la contraseña');
-
-  afirmar(!!buscarPorId(cardProtegido, 'hz-btn-seg-respaldo'), 'S-04: la sección Respaldo (con protección) debe ofrecer "Descargar respaldo (.json)"');
-  afirmar(textosDe(cardProtegido).join(' ').indexOf('El respaldo se descarga SIN cifrar. Incluye a todos los clientes: guárdalo en un lugar seguro.') !== -1,
+  afirmar(!!buscarPorId(dialogoSeg, 'hz-btn-seg-respaldo'), 'S-04: la sección Respaldo debe ofrecer "Descargar respaldo (.json)"');
+  afirmar(textosDe(dialogoSeg).join(' ').indexOf('El respaldo se descarga SIN cifrar. Incluye a todos los clientes: guárdalo en un lugar seguro.') !== -1,
     'C-10: nota de custodia EXACTA del respaldo');
-  afirmar(!!buscarPorId(cardProtegido, 'hz-seg-input-restaurar'), 'S-04: la sección Respaldo debe ofrecer restaurar (input file)');
+  afirmar(!!buscarPorId(dialogoSeg, 'hz-seg-input-restaurar'), 'S-04: la sección Respaldo debe ofrecer restaurar (input file)');
 
+  var botonCerrarSeg = buscarPorId(dialogoSeg, 'hz-btn-cerrar-seguridad');
+  afirmar(!!botonCerrarSeg && botonCerrarSeg.textContent === 'Cerrar', 'H-06: botón "Cerrar" con id #hz-btn-cerrar-seguridad');
+  afirmar(clasesDe(botonCerrarSeg).indexOf('hz-btn-secundario') !== -1, 'H-06: "Cerrar" debe ser secundario');
+
+  // T-064 (H-06 fix): #hz-btn-cerrar-seguridad va SOLO dentro de un
+  // div.hz-form-acciones, hijo de un div.hz-dialogo-pie, ÚLTIMO hijo de
+  // la card del diálogo (después del bloque de restauración de Respaldo).
+  var accionesCerrarSeg = botonCerrarSeg.parentNode;
+  afirmar(!!accionesCerrarSeg && clasesDe(accionesCerrarSeg).indexOf('hz-form-acciones') !== -1,
+    'T-064/H-06: #hz-btn-cerrar-seguridad debe vivir dentro de un div.hz-form-acciones');
+  afirmar(accionesCerrarSeg.children.length === 1,
+    'T-064/H-06: #hz-btn-cerrar-seguridad va SOLO dentro de su div.hz-form-acciones');
+  var pieCerrarSeg = accionesCerrarSeg.parentNode;
+  afirmar(!!pieCerrarSeg && clasesDe(pieCerrarSeg).indexOf('hz-dialogo-pie') !== -1,
+    'T-064/H-06: el div.hz-form-acciones de Cerrar debe vivir dentro de un div.hz-dialogo-pie');
+  var cardSeg = dialogoSeg.children[0];
+  afirmar(cardSeg.children[cardSeg.children.length - 1] === pieCerrarSeg,
+    'T-064/H-06: el div.hz-dialogo-pie de Cerrar es el ÚLTIMO hijo de la card de #hz-dialogo-seguridad (después de Respaldo)');
+
+  var errorSeg = buscarPorId(dialogoSeg, 'hz-seg-error');
+  var campoActual = buscarPorId(dialogoSeg, 'hz-seg-actual');
+  var campoNueva1 = buscarPorId(dialogoSeg, 'hz-seg-nueva-1');
+  var campoNueva2 = buscarPorId(dialogoSeg, 'hz-seg-nueva-2');
+  var formCambiar = campoActual;
+  while (formCambiar && (formCambiar.tagName || '').toLowerCase() !== 'form') { formCambiar = formCambiar.parentNode; }
+
+  formCambiar.despachar('submit', {});
+  afirmar(errorSeg.textContent === 'Completa los 3 campos.', 'H-06: campos vacíos -- error nunca silencioso');
+  afirmar(seguridadMock._llamadas.cambiar.length === 0, 'H-06: con campos vacíos, Seguridad.cambiar NO debe llamarse');
+
+  campoActual.value = 'actual123'; campoNueva1.value = '123'; campoNueva2.value = '123';
+  formCambiar.despachar('submit', {});
+  afirmar(errorSeg.textContent === 'La contraseña nueva debe tener al menos 8 caracteres.', 'H-06: contraseña nueva corta -- error nunca silencioso');
+
+  campoNueva1.value = 'nuevaclave1'; campoNueva2.value = 'nuevaclave2';
+  formCambiar.despachar('submit', {});
+  afirmar(errorSeg.textContent === 'Las contraseñas nuevas no coinciden.', 'H-06: contraseñas nuevas distintas -- error nunca silencioso');
+
+  var promesaCambiar = null;
+  seguridadMock.cambiar = function (actual, nueva) {
+    seguridadMock._llamadas.cambiar.push({ actual: actual, nueva: nueva });
+    promesaCambiar = promesaControlada();
+    return promesaCambiar;
+  };
+  campoActual.value = 'actual123'; campoNueva1.value = 'nuevaclave1'; campoNueva2.value = 'nuevaclave1';
+  formCambiar.despachar('submit', {});
+  afirmar(seguridadMock._llamadas.cambiar.length === 1, 'H-06: con datos válidos, debe llamar Seguridad.cambiar');
+  afirmar(botonCambiar.getAttribute('disabled') === 'disabled', 'H-06: durante el cambio, el botón debe deshabilitarse (estado ocupado)');
+  afirmar(botonCambiar.textContent === 'Cifrando…', 'C-10: el botón ocupado de cambiar debe decir EXACTAMENTE "Cifrando…"');
+
+  promesaCambiar.resolver({ ok: true, errores: [] });
+  afirmar(dialogoSeg.hasAttribute('open'), 'H-06: "Cambiar contraseña" con éxito NO debe cerrar el diálogo');
+  var dialogoSegTrasCambiar = buscarPorId(rootProtegido, 'hz-dialogo-seguridad');
+  afirmar(dialogoSegTrasCambiar === dialogoSeg, 'H-02: sigue siendo el mismo diálogo (singleton), solo se reconstruyó su contenido');
+  var notaExitoSeg = buscarPorId(dialogoSegTrasCambiar, 'hz-seg-exito');
+  afirmar(!!notaExitoSeg && notaExitoSeg.textContent === 'Contraseña actualizada.', 'H-06: tras cambiar con éxito debe mostrarse #hz-seg-exito');
+
+  var botonBloquearTrasCambiar = buscarPorId(dialogoSegTrasCambiar, 'hz-btn-seg-bloquear');
+  botonBloquearTrasCambiar.despachar('click', {});
+  afirmar(seguridadMock._llamadas.bloquear.length === 1, 'H-06: "Bloquear ahora" debe llamar Seguridad.bloquear()');
+  afirmar(almacenMock._llamadas.volverADemo.length === 1, 'H-06: "Bloquear ahora" debe llamar Almacen.volverADemo() (fallback sin bloquearYVolverADemo en el mock)');
+  afirmar(!dialogoSegTrasCambiar.hasAttribute('open'), 'H-06: "Bloquear ahora" debe cerrar el diálogo');
+  afirmar(!buscarPorId(rootProtegido, 'hz-dialogo-desbloqueo'), 'H-06: tras bloquear manualmente, el desbloqueo NO debe reabrirse solo (P-4 solo aplica al cargar)');
+
+  delete globalThis.document;
   globalThis.Herzon.Almacen = undefined;
   globalThis.Herzon.Seguridad = undefined;
 });
 
+// H-06: tolerancia sin protección -- mismo contenido de H-04 (título del
+// diálogo sigue siendo "Seguridad y respaldo"; el bloque de activación se
+// anida debajo).
+conBusDeEventosAislado(function () {
+  globalThis.Herzon.Seguridad = undefined;
+  var almacenMock = crearAlmacenMock({ modo: 'real', bloqueado: false, clientes: [] });
+  globalThis.Herzon.Almacen = almacenMock;
+  var stub = documentoStubConBoton();
+  globalThis.document = stub.documento;
+  var rootSegTolerancia = contenedorNuevo();
+  Herzon.Views.perfil(rootSegTolerancia);
+  listenersPorTipo['herzon:modo-cambiado'][0]();
+  stub.boton.despachar('click', {});
+  var dialogoTolerancia = buscarPorId(rootSegTolerancia, 'hz-dialogo-seguridad');
+  afirmar(!!dialogoTolerancia, 'H-06: tolerancia sin protección -- el diálogo igual debe poder abrirse');
+  var tituloTolerancia = recolectarNodos(dialogoTolerancia).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
+  afirmar(!!tituloTolerancia && tituloTolerancia.textContent === 'Seguridad y respaldo', 'H-06: el título del diálogo siempre es "Seguridad y respaldo"');
+  afirmar(!!buscarPorId(dialogoTolerancia, 'hz-btn-seg-activar'), 'H-06: sin protección, el diálogo debe mostrar el mismo bloque de activación que H-04');
+  var botonCerrarTolerancia = buscarPorId(dialogoTolerancia, 'hz-btn-cerrar-seguridad');
+  afirmar(!!botonCerrarTolerancia, 'H-06: incluso en la tolerancia sin protección, debe existir #hz-btn-cerrar-seguridad');
+  afirmar(clasesDe(botonCerrarTolerancia.parentNode).indexOf('hz-form-acciones') !== -1,
+    'T-064/H-06: en la tolerancia sin protección, #hz-btn-cerrar-seguridad también vive en su propio div.hz-form-acciones');
+  afirmar(clasesDe(botonCerrarTolerancia.parentNode.parentNode).indexOf('hz-dialogo-pie') !== -1,
+    'T-064/H-06: en la tolerancia sin protección, el div.hz-form-acciones de Cerrar también vive dentro de un div.hz-dialogo-pie');
+  globalThis.Herzon.Almacen = undefined;
+  delete globalThis.document;
+});
+
 // ---------------------------------------------------------------------
-// 26. S-04: restaurar respaldo desde la card de seguridad (con
+// 26. S-04: restaurar respaldo desde #hz-dialogo-seguridad (con
 // protección) -- confirmación con conteos REALES (N actuales / M del
 // archivo, C-11), confirmación en dos pasos, y Almacen.restaurarRespaldo
 // recibe el objeto leído del archivo.
@@ -1751,12 +2010,16 @@ conBusDeEventosAislado(function () {
   });
   globalThis.Herzon.Almacen = almacenMock;
   globalThis.HERZON_DATA = datosClienteVacio();
+  var stub = documentoStubConBoton();
+  globalThis.document = stub.documento;
 
   var rootS04 = contenedorNuevo();
   Herzon.Views.perfil(rootS04);
-  var cardSegS04 = buscarPorId(rootS04, 'hz-card-seguridad');
-  var inputRestaurar = buscarPorId(cardSegS04, 'hz-seg-input-restaurar');
-  afirmar(!!inputRestaurar, 'S-04: debe existir #hz-seg-input-restaurar en la card de seguridad');
+  listenersPorTipo['herzon:modo-cambiado'][0]();
+  stub.boton.despachar('click', {});
+  var dialogoSegS04 = buscarPorId(rootS04, 'hz-dialogo-seguridad');
+  var inputRestaurar = buscarPorId(dialogoSegS04, 'hz-seg-input-restaurar');
+  afirmar(!!inputRestaurar, 'S-04: debe existir #hz-seg-input-restaurar en el diálogo de seguridad');
 
   function FileReaderStubS04() { this.onload = null; this.onerror = null; this.result = null; }
   FileReaderStubS04.prototype.readAsText = function (archivo) {
@@ -1772,13 +2035,13 @@ conBusDeEventosAislado(function () {
   inputRestaurar.files = [respaldoValido];
   inputRestaurar.despachar('change');
 
-  afirmar(textosDe(cardSegS04).join(' ').indexOf('Restaurar este respaldo reemplaza los 2 clientes actuales de este dispositivo por los 3 clientes del archivo (exportado el 2026-08-01). Esta acción no se puede deshacer.') !== -1,
+  afirmar(textosDe(dialogoSegS04).join(' ').indexOf('Restaurar este respaldo reemplaza los 2 clientes actuales de este dispositivo por los 3 clientes del archivo (exportado el 2026-08-01). Esta acción no se puede deshacer.') !== -1,
     'C-11/S-04: la confirmación debe mostrar los conteos REALES (N actuales / M del archivo) y la fecha exportada');
 
-  var botonRespaldarAntes = recolectarNodos(cardSegS04).filter(function (n) { return (n.tagName || '').toLowerCase() === 'button' && n.textContent === 'Descargar respaldo de lo actual antes de continuar'; })[0];
+  var botonRespaldarAntes = recolectarNodos(dialogoSegS04).filter(function (n) { return (n.tagName || '').toLowerCase() === 'button' && n.textContent === 'Descargar respaldo de lo actual antes de continuar'; })[0];
   afirmar(!!botonRespaldarAntes, 'S-04: con N>0 clientes actuales, debe ofrecerse "Descargar respaldo de lo actual antes de continuar"');
 
-  var botonConfirmarRestaurar = buscarPorId(cardSegS04, 'hz-btn-seg-restaurar-confirmar');
+  var botonConfirmarRestaurar = buscarPorId(dialogoSegS04, 'hz-btn-seg-restaurar-confirmar');
   afirmar(!!botonConfirmarRestaurar && botonConfirmarRestaurar.textContent === 'Reemplazar todo y restaurar', 'C-10: texto EXACTO del botón de confirmación');
   afirmar(clasesDe(botonConfirmarRestaurar).indexOf('hz-btn-peligro') !== -1, 'F-02: el botón de restaurar confirmado debe ser hz-btn-peligro');
   afirmar(botonConfirmarRestaurar.getAttribute('data-confirmar') === 'false', 'S-04: confirmación en dos pasos -- inicia en false');
@@ -1792,10 +2055,107 @@ conBusDeEventosAislado(function () {
   afirmar(almacenMock._llamadas.restaurarRespaldo[0].datos.clientes['c-3'] !== undefined, 'S-04: restaurarRespaldo debe recibir el objeto EXACTO leído del archivo');
 
   delete globalThis.FileReader;
+  delete globalThis.document;
   globalThis.Herzon.Almacen = undefined;
   globalThis.Herzon.Seguridad = undefined;
   globalThis.HERZON_DATA = DATA;
 });
+
+// ---------------------------------------------------------------------
+// 27. H-07: PROHIBIDO cualquier <form> FUERA de un diálogo, #hz-card-
+// desbloqueo, #hz-card-seguridad o card "Editar perfil" FUERA de un
+// diálogo, dentro de rootEl de Perfil, en CUALQUIER modo (demo, real
+// desbloqueado, bloqueado).
+// ---------------------------------------------------------------------
+conBusDeEventosAislado(function () {
+  function esDescendienteDeDialogo(nodo) {
+    var actual = nodo.parentNode;
+    while (actual) {
+      if ((actual.tagName || '').toLowerCase() === 'dialog') { return true; }
+      actual = actual.parentNode;
+    }
+    return false;
+  }
+  function afirmarSinFormsNiCardsViejas(rootVista, etiqueta) {
+    var formsFuera = recolectarNodos(rootVista).filter(function (n) {
+      return (n.tagName || '').toLowerCase() === 'form' && !esDescendienteDeDialogo(n);
+    });
+    afirmar(formsFuera.length === 0, 'H-07 (' + etiqueta + '): rootEl de Perfil NO debe contener ningún <form> FUERA de un diálogo');
+    afirmar(!buscarPorId(rootVista, 'hz-card-desbloqueo'), 'H-07 (' + etiqueta + '): NO debe existir #hz-card-desbloqueo');
+    afirmar(!buscarPorId(rootVista, 'hz-card-seguridad'), 'H-07 (' + etiqueta + '): NO debe existir #hz-card-seguridad');
+    var cardsEditarFuera = recolectarNodos(rootVista).filter(function (n) {
+      return clasesDe(n).indexOf('hz-card-title') !== -1 && n.textContent === 'Editar perfil' && !esDescendienteDeDialogo(n);
+    });
+    afirmar(cardsEditarFuera.length === 0, 'H-07 (' + etiqueta + '): NO debe existir ninguna card titulada "Editar perfil" FUERA de un diálogo');
+  }
+
+  var rootDemoH07 = contenedorNuevo();
+  Herzon.Views.perfil(rootDemoH07);
+  afirmarSinFormsNiCardsViejas(rootDemoH07, 'demo');
+
+  var almacenReal = crearAlmacenMock({ modo: 'real', bloqueado: false, clientes: [{ id: 'c-1' }] });
+  globalThis.Herzon.Almacen = almacenReal;
+  var rootRealH07 = contenedorNuevo();
+  Herzon.Views.perfil(rootRealH07);
+  afirmarSinFormsNiCardsViejas(rootRealH07, 'real desbloqueado');
+
+  var almacenBloqueado = crearAlmacenMock({ modo: 'real', bloqueado: true });
+  globalThis.Herzon.Almacen = almacenBloqueado;
+  var rootBloqueadoH07 = contenedorNuevo();
+  Herzon.Views.perfil(rootBloqueadoH07);
+  afirmarSinFormsNiCardsViejas(rootBloqueadoH07, 'bloqueado');
+  afirmar(!!buscarPorId(rootBloqueadoH07, 'hz-card-bloqueado'), 'H-07: bloqueado -- SÍ debe existir #hz-card-bloqueado');
+
+  globalThis.Herzon.Almacen = undefined;
+});
+
+// ---------------------------------------------------------------------
+// 28. H-08: arranque a nivel de módulo -- vuelve a requerir el módulo
+// (idempotente, preámbulo 3.A) con globalThis.document PRE-configurado
+// ANTES del require, para ejercer la ruta real "cuando el DOM está listo"
+// (readyState/DOMContentLoaded) tal como corre en producción; esta ruta
+// solo se ejecuta UNA vez, en el instante del require, así que no es
+// alcanzable desde ningún listener ya capturado más arriba. Sección
+// FINAL: deja re-requerido el módulo para el resto del proceso
+// (idempotencia, sin efecto sobre las aserciones ya corridas).
+// ---------------------------------------------------------------------
+(function () {
+  var listenersDOMContentLoaded = [];
+  var botonArranque = doc.createElement('button');
+  botonArranque.setAttribute('hidden', '');
+  var documentoStubArranque = {
+    readyState: 'loading',
+    getElementById: function (id) { return id === 'hz-btn-seguridad' ? botonArranque : null; },
+    addEventListener: function (tipo, manejador) {
+      if (tipo === 'DOMContentLoaded') { listenersDOMContentLoaded.push(manejador); }
+    }
+  };
+  globalThis.document = documentoStubArranque;
+  globalThis.Herzon.Almacen = crearAlmacenMock({ modo: 'real', bloqueado: true, clientes: [] });
+  globalThis.Herzon.Seguridad = undefined;
+
+  delete require.cache[require.resolve(VISTAS_PATH)];
+  require(VISTAS_PATH);
+
+  afirmar(listenersDOMContentLoaded.length === 1,
+    'H-08: con readyState="loading", el arranque debe esperar UN listener de DOMContentLoaded, nunca evaluar de inmediato');
+  afirmar(botonArranque.hasAttribute('hidden'),
+    'H-08: antes de DOMContentLoaded, el botón de seguridad no se ha sincronizado todavía (sigue con su estado inicial)');
+
+  var rootArranque = contenedorNuevo();
+  Herzon.Views.perfil(rootArranque);
+
+  listenersDOMContentLoaded[0]();
+
+  afirmar(botonArranque.hasAttribute('hidden'),
+    'H-08: con bloqueado()===true, el botón de seguridad sigue oculto tras el arranque (modo real && !bloqueado)');
+  var dialogoArranque = buscarPorId(rootArranque, 'hz-dialogo-desbloqueo');
+  afirmar(!!dialogoArranque && dialogoArranque.hasAttribute('open'),
+    'H-08/P-4: con bloqueado()===true, el arranque debe abrir #hz-dialogo-desbloqueo automáticamente');
+
+  delete globalThis.document;
+  globalThis.Herzon.Almacen = undefined;
+})();
 
 // ---------------------------------------------------------------------
 // Cierre

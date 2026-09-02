@@ -26,8 +26,8 @@ La aplicación vive en la GitHub Page de este repositorio.
   de dieta).
 - Modo demo (datos sintéticos, de solo lectura, nunca se guarda ni se cifra)
   y modo real (datos de clientes verdaderos, capturados y editables en el
-  dispositivo, protegibles con contraseña). Ver la sección de seguridad más
-  abajo.
+  dispositivo, protegidos con una contraseña obligatoria). Ver la sección de
+  seguridad más abajo.
 
 ## Estructura
 
@@ -66,10 +66,16 @@ Requiere Node.js. Sin dependencias (`npm install` no hace falta).
 
 ## Protección con contraseña: alcance y límites
 
-Rinde puede proteger los datos reales de los clientes con una contraseña que
-cifra la información en el propio dispositivo. Esta sección enumera, sin
-adornos, qué cubre esa protección y qué no cubre, para que quien la activa
-sepa exactamente qué está obteniendo.
+En modo real la contraseña es obligatoria: no existe la opción de omitirla.
+Rinde la exige mediante un diálogo bloqueante en cuanto hay algo real que
+proteger, ya sea al crear el primer cliente o al abrir la aplicación con
+datos reales previos que todavía no estaban cifrados (por ejemplo, tras una
+actualización), y ese diálogo no se puede cerrar sin fijarla. A partir de
+ahí, la aplicación pide la contraseña en cada apertura mientras exista el
+sobre cifrado: sin ella sólo se ve la demo sintética, nunca los datos ni los
+nombres de los clientes reales. Esta sección enumera, sin adornos, qué cubre
+esa protección y qué no cubre, para que quien la usa sepa exactamente qué
+está obteniendo.
 
 ### Qué sí protege
 

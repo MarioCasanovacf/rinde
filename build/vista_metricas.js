@@ -83,8 +83,9 @@
   var LABEL_PASS_NUEVA_1 = 'Contraseña nueva (mínimo 8 caracteres)';
   var LABEL_PASS_NUEVA_2 = 'Repite la contraseña nueva';
   var TEXTO_BOTON_CAMBIAR = 'Cambiar contraseña';
-  var TEXTO_BOTON_QUITAR = 'Quitar contraseña';
-  var NOTA_QUITAR_ADVERTENCIA = 'Al quitar la contraseña, los datos quedan guardados SIN cifrar en este dispositivo.';
+  // P-5 (R12): "Quitar protección" se elimina de la UI -- Seguridad.desactivar
+  // (build/seguridad.js, INTOCABLE) queda intacta en la API, sin punto de
+  // entrada desde esta vista.
 
   var NOTA_RESPALDO_CUSTODIA = 'El respaldo se descarga SIN cifrar. Incluye a todos los clientes: guárdalo en un lugar seguro.';
   var LABEL_IMPORTAR_RESPALDO = 'Restaurar respaldo (.json)';
@@ -337,26 +338,292 @@
   }
 
   // -----------------------------------------------------------------------
-  // R11 (D-01/D-02/D-03/D-06): formulario de alta de cliente como <dialog
-  // class="hz-dialogo"> nativo (CSS de T-059, shell.html sección 14), ids
-  // CONGELADOS (Adendum R9 punto 6: #hz-card-alta-cliente, #hz-form-alta-
-  // cliente, #hz-alta-nombre/sexo/edad/talla/peso/actividad/objetivo,
-  // #hz-alta-error, #hz-btn-crear-cliente, #hz-btn-cancelar-alta). Se
-  // construye UNA sola vez (singleton a nivel de módulo, sobrevive a
-  // cualquier limpiar()/remontaje de las vistas porque cuelga de
-  // document.body y no de ningún rootEl) -- así funciona aunque Vista
-  // Perfil nunca se haya montado (mountFn perezoso, D-02). En TestDOM (sin
-  // document.body ni dialog.showModal) se ancla al último rootEl de Perfil
-  // conocido en su lugar (guardas typeof en cada paso).
+  // R12 (H-02, contrato normativo de la ronda 12): helper genérico de
+  // diálogos modales -- crearDialogo(id, opciones) construye (una sola vez
+  // por id, singleton a nivel de módulo) un <dialog class="hz-dialogo">
+  // colgado de document.body (o del rootEl de Perfil conocido, en TestDOM
+  // sin document.body -- mismo patrón R11 que #hz-dialogo-alta) con una
+  // card.hz-card.hz-form-card como único hijo directo. Los diálogos H-03..
+  // H-06 se construyen sobre este helper; #hz-dialogo-alta (R11) se migra
+  // a él sin cambiar ids ni comportamiento.
   // -----------------------------------------------------------------------
-  var dialogoAltaEl = null;
+  var dialogosPorId = {};
   var rootPerfilConocido = null;
+  // R12 (H-05/H-06): siempre el render() del montaje VIGENTE de Vista
+  // Perfil (o null si Perfil nunca se ha montado) -- permite que los
+  // diálogos H-04/H-05, construidos a nivel de módulo (fuera de
+  // mountPerfil), pidan un repintado de Perfil tras cerrar con éxito.
+  var renderPerfilActual = null;
+  // R12 (H-05): mensaje de éxito de "Guardar cambios" -- patrón
+  // consumo-único (F-04.5 original): el diálogo lo fija ANTES de cerrar;
+  // el siguiente render() de Perfil lo consume una sola vez.
+  var mensajeExitoPerfil = '';
+  // R12 (H-06): mismo patrón consumo-único, para "Contraseña actualizada."
+  // dentro de #hz-dialogo-seguridad.
+  var mensajeExitoSeguridad = '';
 
-  function construirDialogoAlta(doc) {
+  // D-01: documento REAL con document.body disponible (navegador) -- en
+  // TestDOM (selfcheck) `G.document` no existe, así que esto es null y el
+  // llamador cae al fallback del rootEl de Perfil conocido.
+  function documentoConBody() {
+    return (G.document && typeof G.document.createElement === 'function' && G.document.body) ? G.document : null;
+  }
+
+  // H-02: primer <input> descendiente (recorrido en profundidad), para que
+  // abrir() pueda enfocarlo. Ningún diálogo de este módulo abre con un
+  // <select>/<textarea> como su primer control.
+  function primerInputDe(nodo) {
+    if ((nodo.tagName || '').toUpperCase() === 'INPUT') { return nodo; }
+    var hijos = nodo.children || [];
+    for (var i = 0; i < hijos.length; i++) {
+      var encontrado = primerInputDe(hijos[i]);
+      if (encontrado) { return encontrado; }
+    }
+    return null;
+  }
+
+  // H-02: true si el <dialog> está abierto -- .open (propiedad nativa real,
+  // reflejo automático del navegador) o el atributo 'open' (fallback
+  // TestDOM, donde .open no existe).
+  function dialogoEstaAbierto(dialog) {
+    return dialog.open === true || dialog.hasAttribute('open');
+  }
+
+  // H-02: crearDialogo(id, opciones) -> { dialog, card, abrir(), cerrar() }.
+  // Singleton por id (construido UNA sola vez; llamadas siguientes
+  // devuelven el mismo registro). En TestDOM (sin document.body) se ancla
+  // al rootEl de Perfil VIGENTE -- si el singleton ya existe pero quedó
+  // huérfano (limpiar(rootEl) lo desancla en cada render()), se reancla
+  // aquí, nunca se reconstruye (mismo patrón R11 de #hz-dialogo-alta).
+  // opciones.bloqueante === true: el 'cancel' nativo (Escape) hace
+  // preventDefault() -- el diálogo se pinta SIN botón Cancelar/Cerrar
+  // (responsabilidad del llamador, que simplemente no lo agrega).
+  function crearDialogo(id, opciones) {
+    opciones = opciones || {};
+    var existente = dialogosPorId[id];
+    if (existente) {
+      if (!documentoConBody() && rootPerfilConocido && existente.dialog.parentNode !== rootPerfilConocido) {
+        rootPerfilConocido.appendChild(existente.dialog);
+      }
+      return existente;
+    }
+
+    var docReal = documentoConBody();
+    var doc = docReal || (rootPerfilConocido && rootPerfilConocido.ownerDocument);
+    if (!doc) { return null; }
+
     var dialog = crear(doc, 'dialog', ['hz-dialogo']);
-    dialog.setAttribute('id', 'hz-dialogo-alta');
-
+    dialog.setAttribute('id', id);
     var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
+    dialog.appendChild(card);
+
+    if (opciones.bloqueante === true) {
+      dialog.addEventListener('cancel', function (ev) {
+        if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+      });
+    }
+
+    if (docReal) {
+      docReal.body.appendChild(dialog);
+    } else if (rootPerfilConocido) {
+      rootPerfilConocido.appendChild(dialog);
+    }
+
+    function abrir() {
+      if (typeof dialog.showModal === 'function') {
+        if (!dialog.open) { dialog.showModal(); }
+      } else {
+        dialog.setAttribute('open', '');
+      }
+      var primerInput = primerInputDe(dialog);
+      if (primerInput && typeof primerInput.focus === 'function') { primerInput.focus(); }
+    }
+
+    function cerrar() {
+      if (typeof dialog.close === 'function') { dialog.close(); }
+      else { dialog.removeAttribute('open'); }
+    }
+
+    var registro = { dialog: dialog, card: card, abrir: abrir, cerrar: cerrar };
+    dialogosPorId[id] = registro;
+    return registro;
+  }
+
+  // -----------------------------------------------------------------------
+  // R10/S-04 (movidos a nivel de módulo en R12: ahora los usan varios
+  // diálogos construidos FUERA de mountPerfil): botón de descarga de
+  // respaldo y bloque de restauración, compartidos entre #hz-dialogo-
+  // desbloqueo y #hz-dialogo-seguridad. Ya no cierran sobre un `Almacen`
+  // capturado en el momento del montaje -- lo piden de nuevo en cada
+  // manejador (obtenerAlmacen()), porque estos diálogos se construyen UNA
+  // sola vez y sobreviven a cualquier remontaje de Vista Perfil.
+  // -----------------------------------------------------------------------
+  function construirBotonDescargarRespaldo(doc) {
+    var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_RESPALDO);
+    boton.setAttribute('type', 'button');
+    boton.setAttribute('id', 'hz-btn-seg-respaldo');
+    boton.addEventListener('click', function () {
+      var Almacen = obtenerAlmacen();
+      if (!Almacen || typeof Almacen.exportarRespaldo !== 'function') { return; }
+      var res = Almacen.exportarRespaldo();
+      if (!res || !res.ok) { return; }
+      var Docs = G.Herzon && G.Herzon.Docs;
+      if (Docs && typeof Docs.descargarArchivo === 'function') {
+        Docs.descargarArchivo(doc, res.json, res.nombreArchivo, 'application/json');
+      }
+    });
+    return boton;
+  }
+
+  function construirBloqueRestaurarRespaldo(doc, idLabel, idInput, idBotonConfirmar, textoExtra) {
+    var contenedor = crear(doc, 'div', ['hz-doc-import']);
+    var label = crear(doc, 'label', ['hz-doc-import-label'], LABEL_IMPORTAR_RESPALDO);
+    label.setAttribute('id', idLabel);
+    label.setAttribute('for', idInput);
+    var input = crear(doc, 'input');
+    input.setAttribute('type', 'file');
+    input.setAttribute('id', idInput);
+    input.setAttribute('accept', '.json,application/json');
+    contenedor.appendChild(label);
+    contenedor.appendChild(input);
+
+    var zonaConfirmacion = crear(doc, 'div');
+    contenedor.appendChild(zonaConfirmacion);
+
+    function manejarObjetoLeido(objeto) {
+      limpiar(zonaConfirmacion);
+      var Almacen = obtenerAlmacen();
+      var formaValida = objeto && typeof objeto === 'object' && objeto.formato === 'rinde-respaldo-1' &&
+        objeto.datos && typeof objeto.datos === 'object' && objeto.datos.clientes && typeof objeto.datos.clientes === 'object';
+      if (!formaValida) {
+        zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], MSG_RESPALDO_INVALIDO));
+        return;
+      }
+      var n = (Almacen && typeof Almacen.clientes === 'function') ? Almacen.clientes().length : 0;
+      var m = Object.keys(objeto.datos.clientes).length;
+      var textoConfirmacion = 'Restaurar este respaldo reemplaza los ' + n + ' clientes actuales de este dispositivo por los ' +
+        m + ' clientes del archivo (exportado el ' + (objeto.exportado || '—') + '). Esta acción no se puede deshacer.';
+      if (textoExtra) { textoConfirmacion += ' ' + textoExtra; }
+      zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], textoConfirmacion));
+
+      if (n > 0) {
+        var botonRespaldarAntes = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_RESPALDAR_ANTES);
+        botonRespaldarAntes.setAttribute('type', 'button');
+        botonRespaldarAntes.addEventListener('click', function () {
+          var AlmacenAntes = obtenerAlmacen();
+          if (!AlmacenAntes || typeof AlmacenAntes.exportarRespaldo !== 'function') { return; }
+          var resExport = AlmacenAntes.exportarRespaldo();
+          if (!resExport || !resExport.ok) { return; }
+          var Docs = G.Herzon && G.Herzon.Docs;
+          if (Docs && typeof Docs.descargarArchivo === 'function') {
+            Docs.descargarArchivo(doc, resExport.json, resExport.nombreArchivo, 'application/json');
+          }
+        });
+        zonaConfirmacion.appendChild(botonRespaldarAntes);
+      }
+
+      var botonConfirmar = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_RESTAURAR_CONFIRMAR);
+      botonConfirmar.setAttribute('type', 'button');
+      botonConfirmar.setAttribute('id', idBotonConfirmar);
+      botonConfirmar.setAttribute('data-confirmar', 'false');
+      var temporizadorRestaurar = null;
+      botonConfirmar.addEventListener('click', function () {
+        if (botonConfirmar.getAttribute('data-confirmar') === 'true') {
+          var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
+          if (temporizadorRestaurar !== null) { temporizadorClear(temporizadorRestaurar); temporizadorRestaurar = null; }
+          var AlmacenRestaurar = obtenerAlmacen();
+          if (!AlmacenRestaurar || typeof AlmacenRestaurar.restaurarRespaldo !== 'function') { return; }
+          var resultado = AlmacenRestaurar.restaurarRespaldo(objeto);
+          limpiar(zonaConfirmacion);
+          if (!resultado || !resultado.ok) {
+            zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'],
+              (resultado && resultado.errores && resultado.errores.length) ? resultado.errores.join(' ') : MSG_RESPALDO_INVALIDO));
+            return;
+          }
+          var notaExitoRestaurar = crear(doc, 'p', ['hz-nota'], 'Respaldo restaurado: ' + resultado.clientes + ' clientes.');
+          notaExitoRestaurar.style.color = 'var(--delta-good)';
+          zonaConfirmacion.appendChild(notaExitoRestaurar);
+          // restaurarRespaldo ya disparó la secuencia de eventos completa
+          // (clientes-actualizados -> cliente-cambiado/modo-cambiado): las
+          // vistas ya remontaron con los datos nuevos; este bloque de
+          // confirmación queda huérfano tras ese remontaje (mismo patrón
+          // que cualquier otro submit exitoso de este archivo).
+          return;
+        }
+        botonConfirmar.setAttribute('data-confirmar', 'true');
+        var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
+        temporizadorRestaurar = temporizadorFn(function () {
+          botonConfirmar.setAttribute('data-confirmar', 'false');
+          temporizadorRestaurar = null;
+        }, MS_REVERSION_CONFIRMAR);
+      });
+      zonaConfirmacion.appendChild(botonConfirmar);
+
+      var botonCancelar = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Cancelar');
+      botonCancelar.setAttribute('type', 'button');
+      botonCancelar.addEventListener('click', function () {
+        limpiar(zonaConfirmacion);
+        input.value = '';
+      });
+      zonaConfirmacion.appendChild(botonCancelar);
+    }
+
+    input.addEventListener('change', function (ev) {
+      var archivo = (input.files && input.files[0]) || (ev && ev.target && ev.target.files && ev.target.files[0]);
+      input.value = '';
+      if (!archivo) { return; }
+      leerArchivoComoTextoLocal(archivo, function (texto, errorLectura) {
+        if (errorLectura || texto == null) {
+          limpiar(zonaConfirmacion);
+          zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], MSG_RESPALDO_INVALIDO));
+          return;
+        }
+        var objetoLeido = null;
+        try { objetoLeido = JSON.parse(texto); } catch (e) { objetoLeido = null; }
+        manejarObjetoLeido(objetoLeido);
+      });
+    });
+
+    return contenedor;
+  }
+
+  // S-02 (pie de #hz-dialogo-desbloqueo): "Borrar todos los datos" ->
+  // Almacen.borrarTodo(), confirmación en dos pasos (patrón 6s R9).
+  function montarBotonBorrarTodo(doc) {
+    var contenedor = crear(doc, 'div');
+    var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_BORRAR_TODO);
+    boton.setAttribute('type', 'button');
+    boton.setAttribute('id', 'hz-btn-desbloqueo-borrar-todo');
+    boton.setAttribute('data-confirmar', 'false');
+    var temporizadorBorrar = null;
+    boton.addEventListener('click', function () {
+      if (boton.getAttribute('data-confirmar') === 'true') {
+        var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
+        if (temporizadorBorrar !== null) { temporizadorClear(temporizadorBorrar); temporizadorBorrar = null; }
+        var Almacen = obtenerAlmacen();
+        if (Almacen && typeof Almacen.borrarTodo === 'function') { Almacen.borrarTodo(); }
+        return;
+      }
+      boton.setAttribute('data-confirmar', 'true');
+      var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
+      temporizadorBorrar = temporizadorFn(function () {
+        boton.setAttribute('data-confirmar', 'false');
+        temporizadorBorrar = null;
+      }, MS_REVERSION_CONFIRMAR);
+    });
+    contenedor.appendChild(boton);
+    return contenedor;
+  }
+
+  // -----------------------------------------------------------------------
+  // H-02 + R11 (D-01/D-02/D-03/D-06): #hz-dialogo-alta migrado al helper
+  // crearDialogo -- MISMOS ids y MISMO comportamiento que antes (D-01..D-06
+  // siguen aplicando literalmente). Se construye UNA sola vez, no
+  // bloqueante (Cancelar SIEMPRE presente, D-03).
+  // -----------------------------------------------------------------------
+  function construirContenidoAlta(registro) {
+    var doc = registro.dialog.ownerDocument;
+    var card = registro.card;
     card.setAttribute('id', 'hz-card-alta-cliente');
     card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_ALTA));
     card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_PRIVACIDAD_ALTA));
@@ -414,10 +681,9 @@
     // cliente con éxito cierran el diálogo Y limpian campos/error.
     function cerrarDialogoAlta() {
       limpiarCamposAlta();
-      if (typeof dialog.close === 'function') { dialog.close(); }
-      else { dialog.removeAttribute('open'); }
+      registro.cerrar();
     }
-    dialog.addEventListener('close', limpiarCamposAlta);
+    registro.dialog.addEventListener('close', limpiarCamposAlta);
 
     form.addEventListener('submit', function (ev) {
       if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
@@ -455,61 +721,558 @@
     });
 
     card.appendChild(form);
-    dialog.appendChild(card);
-    return dialog;
   }
 
-  // D-01: documento REAL con document.body disponible (navegador) -- en
-  // TestDOM (selfcheck) `G.document` no existe, así que esto es null y el
-  // llamador cae al fallback de rootEl.
-  function documentoConBody() {
-    return (G.document && typeof G.document.createElement === 'function' && G.document.body) ? G.document : null;
-  }
-
-  // D-01: crea el diálogo la PRIMERA vez que se necesita (singleton a nivel
-  // de módulo); llamadas siguientes devuelven el mismo nodo sin volver a
-  // construirlo. En TestDOM (fallback sin document.body) el diálogo cuelga
-  // del rootEl de Perfil, que limpiar(rootEl) desancla en cada render() --
-  // si el singleton ya existe pero quedó huérfano por eso, se reancla aquí
-  // (mismo nodo, nunca se reconstruye). En DOM real no aplica: el diálogo
-  // cuelga de document.body, ajeno a cualquier rootEl.
-  function asegurarDialogoAlta(rootElFallback) {
-    if (dialogoAltaEl) {
-      if (!documentoConBody() && rootElFallback && dialogoAltaEl.parentNode !== rootElFallback) {
-        rootElFallback.appendChild(dialogoAltaEl);
-      }
-      return dialogoAltaEl;
-    }
-    var docReal = documentoConBody();
-    if (docReal) {
-      dialogoAltaEl = construirDialogoAlta(docReal);
-      docReal.body.appendChild(dialogoAltaEl);
-    } else if (rootElFallback) {
-      dialogoAltaEl = construirDialogoAlta(rootElFallback.ownerDocument);
-      rootElFallback.appendChild(dialogoAltaEl);
-    }
-    return dialogoAltaEl;
+  // D-01: crea el diálogo la PRIMERA vez que se necesita (vía crearDialogo,
+  // singleton por id); llamadas siguientes devuelven el mismo registro sin
+  // volver a construir el contenido (guardado por card.children.length).
+  function obtenerDialogoAlta() {
+    var registro = crearDialogo('hz-dialogo-alta', { bloqueante: false });
+    if (!registro) { return null; }
+    if (registro.card.children.length === 0) { construirContenidoAlta(registro); }
+    return registro;
   }
 
   // D-02/D-06: abre el diálogo (showModal si existe; fallback
-  // setAttribute('open','') en TestDOM) y enfoca #hz-alta-nombre. Idempotente
-  // (guarda dialog.open): puede recibir la misma solicitud desde el listener
-  // de nivel de módulo Y desde el listener interno de mountPerfil sin lanzar
+  // setAttribute('open','') en TestDOM) y enfoca #hz-alta-nombre (vía
+  // registro.abrir(), H-02). Idempotente (guarda dialog.open dentro de
+  // abrir()): puede recibir la misma solicitud desde el listener de nivel
+  // de módulo Y desde el listener interno de mountPerfil sin lanzar
   // InvalidStateError por un showModal() duplicado.
-  function abrirDialogoAlta(rootElFallback) {
+  function abrirDialogoAlta() {
     var Almacen = obtenerAlmacen();
     // D-06: bloqueado === true -> el diálogo NO se abre.
     if (Almacen && typeof Almacen.bloqueado === 'function' && Almacen.bloqueado()) { return; }
-    var dialog = asegurarDialogoAlta(rootElFallback);
-    if (!dialog) { return; }
-    if (typeof dialog.showModal === 'function') {
-      if (!dialog.open) { dialog.showModal(); }
-    } else {
-      dialog.setAttribute('open', '');
-    }
-    var nombreInput = buscarHijoPorId(dialog, 'hz-alta-nombre');
-    if (nombreInput && typeof nombreInput.focus === 'function') { nombreInput.focus(); }
+    var registro = obtenerDialogoAlta();
+    if (!registro) { return; }
+    registro.abrir();
   }
+
+  // -----------------------------------------------------------------------
+  // H-03: #hz-dialogo-desbloqueo (reemplaza a la antigua #hz-card-
+  // desbloqueo inline, S-02). Se construye UNA sola vez; no bloqueante
+  // (Escape y "Seguir en demo" cierran). Se abre: (a) al cargar si
+  // Almacen.bloqueado()===true (P-4, ver arranque más abajo), (b) con
+  // herzon:desbloqueo-solicitado, (c) con #hz-btn-abrir-desbloqueo (H-07,
+  // #hz-card-bloqueado). Éxito de desbloqueo: cierra.
+  // -----------------------------------------------------------------------
+  function construirContenidoDesbloqueo(registro) {
+    var doc = registro.dialog.ownerDocument;
+    var card = registro.card;
+    card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_DESBLOQUEO));
+    card.appendChild(crear(doc, 'p', null, CUERPO_DESBLOQUEO));
+
+    var form = crear(doc, 'form', ['hz-form']);
+    var campoPass = crearCampoInput(doc, form, 'hz-desbloqueo-pass', 'Contraseña', 'password', '',
+      { autocomplete: 'current-password' });
+
+    var errorEl = crear(doc, 'p', ['hz-form-error']);
+    errorEl.setAttribute('id', 'hz-desbloqueo-error');
+    form.appendChild(errorEl);
+
+    var acciones = crear(doc, 'div', ['hz-form-acciones']);
+    var botonDesbloquear = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_DESBLOQUEAR);
+    botonDesbloquear.setAttribute('type', 'submit');
+    botonDesbloquear.setAttribute('id', 'hz-btn-desbloquear');
+    acciones.appendChild(botonDesbloquear);
+    // H-03: "Seguir en demo" (secundario) -- cierra el diálogo sin
+    // desbloquear, para poder seguir viendo el demo.
+    var botonSeguirDemo = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Seguir en demo');
+    botonSeguirDemo.setAttribute('type', 'button');
+    botonSeguirDemo.setAttribute('id', 'hz-btn-desbloqueo-seguir-demo');
+    botonSeguirDemo.addEventListener('click', function () { registro.cerrar(); });
+    acciones.appendChild(botonSeguirDemo);
+    form.appendChild(acciones);
+
+    form.addEventListener('submit', function (ev) {
+      if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+      errorEl.textContent = '';
+      var Almacen = obtenerAlmacen();
+      if (!Almacen || typeof Almacen.desbloquearYMontar !== 'function') {
+        errorEl.textContent = MSG_DESBLOQUEO_INCORRECTO;
+        return;
+      }
+      // S-02: estado ocupado obligatorio -- sin doble submit, sin ocultar
+      // progreso.
+      botonDesbloquear.setAttribute('disabled', 'disabled');
+      botonDesbloquear.textContent = TEXTO_BOTON_DESBLOQUEANDO;
+      campoPass.input.setAttribute('disabled', 'disabled');
+      Almacen.desbloquearYMontar(campoPass.input.value).then(function (res) {
+        if (!res || !res.ok) {
+          botonDesbloquear.removeAttribute('disabled');
+          botonDesbloquear.textContent = TEXTO_BOTON_DESBLOQUEAR;
+          campoPass.input.removeAttribute('disabled');
+          campoPass.input.value = '';
+          errorEl.textContent = (res && res.error) || MSG_DESBLOQUEO_INCORRECTO;
+          return;
+        }
+        // Éxito: desbloquearYMontar ya disparó clientes-actualizados ->
+        // cliente-cambiado -> modo-cambiado de forma SÍNCRONA (S-02) --
+        // las vistas montadas ya remontaron con bloqueado()===false. El
+        // diálogo cierra (H-03).
+        registro.cerrar();
+      });
+    });
+
+    card.appendChild(form);
+
+    // Pie .hz-dialogo-pie (H-03/S-04): disponible incluso bloqueado -- las
+    // DOS salidas del contrato: restaurar un respaldo o borrar todos los
+    // datos.
+    var pie = crear(doc, 'div', ['hz-dialogo-pie']);
+    pie.appendChild(crear(doc, 'p', ['hz-nota'], TEXTO_PIE_RECUPERACION));
+    pie.appendChild(construirBloqueRestaurarRespaldo(doc,
+      'hz-desbloqueo-import-label', 'hz-desbloqueo-input-restaurar',
+      'hz-btn-desbloqueo-restaurar-confirmar', TEXTO_EXTRA_RESTAURAR_BLOQUEADO));
+    pie.appendChild(montarBotonBorrarTodo(doc));
+    card.appendChild(pie);
+  }
+
+  function obtenerDialogoDesbloqueo() {
+    var registro = crearDialogo('hz-dialogo-desbloqueo', { bloqueante: false });
+    if (!registro) { return null; }
+    if (registro.card.children.length === 0) { construirContenidoDesbloqueo(registro); }
+    return registro;
+  }
+
+  function abrirDialogoDesbloqueo() {
+    var registro = obtenerDialogoDesbloqueo();
+    if (!registro) { return; }
+    registro.abrir();
+  }
+
+  // -----------------------------------------------------------------------
+  // H-04: #hz-dialogo-proteger, BLOQUEANTE (crearDialogo con
+  // bloqueante:true -- Escape no cierra, sin botón Cancelar). Comparte su
+  // contenido con la tolerancia sin protección de H-06 (idéntico bloque de
+  // activación) vía construirBloqueActivarProteccion.
+  // -----------------------------------------------------------------------
+  function construirBloqueActivarProteccion(doc, contenedor, cerrarDialogo) {
+    contenedor.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Protege tus datos'));
+    contenedor.appendChild(crear(doc, 'p', null,
+      'Rinde cifra los datos de tus clientes en este dispositivo con una contraseña. Es obligatoria y no se puede recuperar: si la olvidas, solo un respaldo te devuelve los datos.'));
+    contenedor.appendChild(construirBotonDescargarRespaldo(doc));
+
+    var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
+    var campoPass1 = crearCampoInput(doc, form, 'hz-seg-pass-1', LABEL_PASS_1, 'password', '', { autocomplete: 'new-password', minlength: 8 });
+    var campoPass2 = crearCampoInput(doc, form, 'hz-seg-pass-2', LABEL_PASS_2, 'password', '', { autocomplete: 'new-password', minlength: 8 });
+
+    var filaConfirmo = crearCampoCheckbox(doc, form, 'hz-seg-confirmo', LABEL_CONFIRMO, false);
+    filaConfirmo.campo.classList.add('hz-form-ancho');
+
+    var errorEl = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
+    errorEl.setAttribute('id', 'hz-seg-error');
+    form.appendChild(errorEl);
+
+    var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+    var botonActivar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_ACTIVAR);
+    botonActivar.setAttribute('type', 'submit');
+    botonActivar.setAttribute('id', 'hz-btn-seg-activar');
+    // S-03.4: deshabilitado hasta marcar la casilla de confirmación.
+    botonActivar.setAttribute('disabled', 'disabled');
+    acciones.appendChild(botonActivar);
+    form.appendChild(acciones);
+
+    filaConfirmo.input.addEventListener('change', function () {
+      if (filaConfirmo.input.checked) { botonActivar.removeAttribute('disabled'); }
+      else { botonActivar.setAttribute('disabled', 'disabled'); }
+    });
+
+    form.addEventListener('submit', function (ev) {
+      if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+      errorEl.textContent = '';
+      if (!filaConfirmo.input.checked) { return; }
+      var p1 = campoPass1.input.value;
+      var p2 = campoPass2.input.value;
+      if (!p1 || !p2) { errorEl.textContent = 'Escribe la contraseña en ambos campos.'; return; }
+      if (p1.length < 8) { errorEl.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
+      if (p1 !== p2) { errorEl.textContent = 'Las contraseñas no coinciden.'; return; }
+      var Seguridad = G.Herzon && G.Herzon.Seguridad;
+      if (!Seguridad || typeof Seguridad.activar !== 'function') {
+        errorEl.textContent = 'No se pudo activar la protección en este dispositivo.';
+        return;
+      }
+      var textoOriginal = botonActivar.textContent;
+      botonActivar.setAttribute('disabled', 'disabled');
+      botonActivar.textContent = TEXTO_BOTON_CIFRANDO;
+      Seguridad.activar(p1).then(function (res) {
+        campoPass1.input.value = '';
+        campoPass2.input.value = '';
+        if (!res || !res.ok) {
+          botonActivar.removeAttribute('disabled');
+          botonActivar.textContent = textoOriginal;
+          errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo activar la protección en este dispositivo.';
+          return;
+        }
+        // Éxito (H-04): Seguridad.activar -> cerrar diálogo -> render() de
+        // Perfil -> H-01 muestra #hz-btn-seguridad.
+        cerrarDialogo();
+        if (typeof renderPerfilActual === 'function') { renderPerfilActual(); }
+        sincronizarBotonSeguridad();
+      });
+    });
+
+    contenedor.appendChild(form);
+  }
+
+  function construirContenidoProteger(registro) {
+    var doc = registro.dialog.ownerDocument;
+    construirBloqueActivarProteccion(doc, registro.card, registro.cerrar);
+  }
+
+  function obtenerDialogoProteger() {
+    var registro = crearDialogo('hz-dialogo-proteger', { bloqueante: true });
+    if (!registro) { return null; }
+    if (registro.card.children.length === 0) { construirContenidoProteger(registro); }
+    return registro;
+  }
+
+  // H-04: condición de apertura -- real, >= 1 cliente, sin protección
+  // activa. Evaluada al cargar (arranque, más abajo) y en herzon:modo-
+  // cambiado/herzon:clientes-actualizados (sincronizarYEvaluar, más
+  // abajo). Idempotente: si ya está abierto no se reabre (showModal()
+  // sobre un <dialog> ya abierto lanza InvalidStateError en DOM real).
+  function evaluarAperturaProteger() {
+    var Almacen = obtenerAlmacen();
+    if (!Almacen || typeof Almacen.modo !== 'function' || typeof Almacen.clientes !== 'function') { return; }
+    var Seguridad = G.Herzon && G.Herzon.Seguridad;
+    var protegido = !!(Seguridad && typeof Seguridad.activa === 'function' && Seguridad.activa());
+    if (Almacen.modo() !== 'real' || Almacen.clientes().length < 1 || protegido) { return; }
+    var registro = obtenerDialogoProteger();
+    if (!registro || dialogoEstaAbierto(registro.dialog)) { return; }
+    registro.abrir();
+  }
+
+  // -----------------------------------------------------------------------
+  // H-05: #hz-dialogo-perfil (edición) -- reemplaza a la antigua card
+  // inline "Editar perfil". Se reconstruye ENTERO en cada apertura
+  // (limpiar + reconstruir) para que los campos siempre precarguen el
+  // cliente activo vigente, nunca datos obsoletos de una apertura previa.
+  // -----------------------------------------------------------------------
+  function construirContenidoPerfil(registro) {
+    var doc = registro.dialog.ownerDocument;
+    var card = registro.card;
+    limpiar(card);
+    var Almacen = obtenerAlmacen();
+    var data = G.HERZON_DATA || {};
+    var paciente = data.paciente || {};
+
+    card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Editar perfil'));
+    var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
+
+    var campoNombre = crearCampoInput(doc, form, 'hz-editar-nombre', 'Nombre', 'text', paciente.nombre || '');
+    campoNombre.campo.classList.add('hz-form-ancho');
+    var campoSexo = crearCampoSelect(doc, form, 'hz-editar-sexo', 'Sexo', OPCIONES_SEXO);
+    campoSexo.select.value = paciente.sexo || '';
+    var campoEdad = crearCampoInput(doc, form, 'hz-editar-edad', 'Edad (años)', 'number',
+      paciente.edad != null ? String(paciente.edad) : '', { min: 1, max: 120, step: 1 });
+    var campoTalla = crearCampoInput(doc, form, 'hz-editar-talla', 'Talla (cm)', 'number',
+      paciente.talla_cm != null ? String(paciente.talla_cm) : '', { min: 50, max: 250, step: 1 });
+    var campoPeso = crearCampoInput(doc, form, 'hz-editar-peso', 'Peso inicial (kg)', 'number',
+      paciente.pesoInicial_kg != null ? String(paciente.pesoInicial_kg) : '', { min: 20, max: 400, step: 0.1 });
+    var campoActividad = crearCampoSelect(doc, form, 'hz-editar-actividad', 'Nivel de actividad',
+      opcionesActividad(data.factoresActividad));
+    campoActividad.select.value = paciente.actividad || '';
+    var campoObjetivo = crearCampoInput(doc, form, 'hz-editar-objetivo', 'Objetivo', 'text', paciente.objetivo || '');
+
+    // S-05: casilla de laboratorios ocultos, precargada del config
+    // vigente (ausente => false, tolerancia declarada del contrato).
+    var labsOcultosInicial = !!(data.config && data.config.labsOcultos);
+    var campoLabsOcultos = crearCampoCheckbox(doc, form, 'hz-perfil-labs-ocultos', LABEL_LABS_OCULTOS, labsOcultosInicial);
+    campoLabsOcultos.campo.classList.add('hz-form-ancho');
+    form.appendChild(crear(doc, 'p', ['hz-nota', 'hz-form-ancho'], NOTA_LABS_OCULTOS));
+
+    var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+    var botonGuardar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Guardar cambios');
+    botonGuardar.setAttribute('type', 'submit');
+    botonGuardar.setAttribute('id', 'hz-btn-guardar-perfil');
+    acciones.appendChild(botonGuardar);
+    var botonCancelar = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Cancelar');
+    botonCancelar.setAttribute('type', 'button');
+    botonCancelar.setAttribute('id', 'hz-btn-cancelar-perfil');
+    botonCancelar.addEventListener('click', function () { registro.cerrar(); });
+    acciones.appendChild(botonCancelar);
+    form.appendChild(acciones);
+
+    var errorEl = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
+    errorEl.setAttribute('id', 'hz-editar-error');
+    form.appendChild(errorEl);
+
+    form.addEventListener('submit', function (ev) {
+      if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+      errorEl.textContent = '';
+      var perfilObj = {
+        nombre: campoNombre.input.value,
+        sexo: campoSexo.select.value,
+        edad: parseFloat(campoEdad.input.value),
+        talla_cm: parseFloat(campoTalla.input.value),
+        pesoInicial_kg: parseFloat(campoPeso.input.value),
+        actividad: campoActividad.select.value,
+        objetivo: campoObjetivo.input.value
+      };
+      ['edad', 'talla_cm', 'pesoInicial_kg'].forEach(function (clave) {
+        if (isNaN(perfilObj[clave])) { perfilObj[clave] = undefined; }
+      });
+      var AlmacenSubmit = obtenerAlmacen();
+      var ok = AlmacenSubmit && typeof AlmacenSubmit.actualizarPerfil === 'function' && AlmacenSubmit.actualizarPerfil(perfilObj);
+      if (!ok) {
+        errorEl.textContent = 'No se pudo guardar el perfil.';
+        return;
+      }
+      mensajeExitoPerfil = MENSAJE_EXITO_PERFIL;
+      var labsOcultosNuevo = campoLabsOcultos.input.checked === true;
+      registro.cerrar();
+      if (labsOcultosNuevo !== labsOcultosInicial && AlmacenSubmit && typeof AlmacenSubmit.actualizarConfig === 'function') {
+        AlmacenSubmit.actualizarConfig({ labsOcultos: labsOcultosNuevo });
+        // S-05: actualizarConfig ya disparó herzon:modo-cambiado de forma
+        // SÍNCRONA -- el listener de Perfil ya remontó, consumiendo
+        // mensajeExitoPerfil. Un segundo render() aquí lo perdería.
+        return;
+      }
+      // actualizarPerfil (sin cambio de configuración) NO emite
+      // herzon:modo-cambiado: Perfil se refresca llamando directamente a
+      // su propio render() vigente.
+      if (typeof renderPerfilActual === 'function') { renderPerfilActual(); }
+    });
+
+    card.appendChild(form);
+
+    // H-05: pie .hz-dialogo-pie con eliminación en dos pasos (reversión a
+    // 6s, MC-06), ahora dentro del diálogo de edición -- eliminar cierra
+    // el diálogo.
+    var clienteActual = (Almacen && typeof Almacen.clienteActivo === 'function') ? Almacen.clienteActivo() : null;
+    if (clienteActual) {
+      var pie = crear(doc, 'div', ['hz-dialogo-pie']);
+      var botonEliminar = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_ELIMINAR_NORMAL);
+      botonEliminar.setAttribute('type', 'button');
+      botonEliminar.setAttribute('id', 'hz-btn-eliminar-cliente');
+      botonEliminar.setAttribute('data-confirmar', 'false');
+      var temporizador = null;
+      botonEliminar.addEventListener('click', function () {
+        if (botonEliminar.getAttribute('data-confirmar') === 'true') {
+          var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
+          if (temporizador !== null) { temporizadorClear(temporizador); temporizador = null; }
+          var AlmacenEliminar = obtenerAlmacen();
+          if (AlmacenEliminar && typeof AlmacenEliminar.eliminarCliente === 'function') {
+            AlmacenEliminar.eliminarCliente(clienteActual.id);
+          }
+          registro.cerrar();
+          return;
+        }
+        botonEliminar.setAttribute('data-confirmar', 'true');
+        botonEliminar.textContent = '¿Eliminar a ' + clienteActual.nombre + '? Confirmar';
+        var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
+        temporizador = temporizadorFn(function () {
+          botonEliminar.setAttribute('data-confirmar', 'false');
+          botonEliminar.textContent = TEXTO_BOTON_ELIMINAR_NORMAL;
+          temporizador = null;
+        }, MS_REVERSION_CONFIRMAR);
+      });
+      pie.appendChild(botonEliminar);
+      card.appendChild(pie);
+    }
+  }
+
+  function abrirDialogoPerfil() {
+    var registro = crearDialogo('hz-dialogo-perfil', { bloqueante: false });
+    if (!registro) { return; }
+    construirContenidoPerfil(registro);
+    registro.abrir();
+  }
+
+  // -----------------------------------------------------------------------
+  // H-06: #hz-dialogo-seguridad -- reemplaza a la antigua #hz-card-
+  // seguridad. Se abre con #hz-btn-seguridad del header (H-08). Se
+  // reconstruye entero en cada apertura y tras cada acción que deba dejarlo
+  // abierto (cambiar contraseña), consumiendo mensajeExitoSeguridad.
+  // -----------------------------------------------------------------------
+  function construirBloqueSeguridadActiva(doc, card, registro, Seguridad) {
+    var bloqueEstado = crear(doc, 'div');
+    bloqueEstado.appendChild(crear(doc, 'p', null, TEXTO_ESTADO_PROTEGIDA));
+    var botonBloquear = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_BLOQUEAR);
+    botonBloquear.setAttribute('type', 'button');
+    botonBloquear.setAttribute('id', 'hz-btn-seg-bloquear');
+    botonBloquear.addEventListener('click', function () {
+      // Re-bloqueo (S-02, fix T-058): Seguridad.bloquear() borra la clave
+      // de sesión (síncrono) y Almacen.bloquearYVolverADemo() fija
+      // bloqueadoActual=true + repinta la demo. H-06: cierra el diálogo y
+      // NO reabre el desbloqueo automáticamente (P-4 solo aplica al
+      // cargar, nunca al re-bloquear manualmente).
+      if (Seguridad && typeof Seguridad.bloquear === 'function') { Seguridad.bloquear(); }
+      var Almacen = obtenerAlmacen();
+      if (Almacen && typeof Almacen.bloquearYVolverADemo === 'function') { Almacen.bloquearYVolverADemo(); }
+      else if (Almacen && typeof Almacen.volverADemo === 'function') { Almacen.volverADemo(); }
+      registro.cerrar();
+    });
+    bloqueEstado.appendChild(botonBloquear);
+    card.appendChild(bloqueEstado);
+
+    var errorEl = crear(doc, 'p', ['hz-form-error']);
+    errorEl.setAttribute('id', 'hz-seg-error');
+    card.appendChild(errorEl);
+
+    card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Cambiar contraseña'));
+    var formCambiar = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
+    var campoActual = crearCampoInput(doc, formCambiar, 'hz-seg-actual', LABEL_PASS_ACTUAL, 'password', '', { autocomplete: 'current-password' });
+    var campoNueva1 = crearCampoInput(doc, formCambiar, 'hz-seg-nueva-1', LABEL_PASS_NUEVA_1, 'password', '', { autocomplete: 'new-password', minlength: 8 });
+    var campoNueva2 = crearCampoInput(doc, formCambiar, 'hz-seg-nueva-2', LABEL_PASS_NUEVA_2, 'password', '', { autocomplete: 'new-password', minlength: 8 });
+    var accionesCambiar = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+    var botonCambiar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_CAMBIAR);
+    botonCambiar.setAttribute('type', 'submit');
+    botonCambiar.setAttribute('id', 'hz-btn-seg-cambiar');
+    accionesCambiar.appendChild(botonCambiar);
+    formCambiar.appendChild(accionesCambiar);
+
+    if (mensajeExitoSeguridad) {
+      var notaExitoSeg = crear(doc, 'p', ['hz-nota'], mensajeExitoSeguridad);
+      notaExitoSeg.setAttribute('id', 'hz-seg-exito');
+      notaExitoSeg.style.color = 'var(--delta-good)';
+      formCambiar.appendChild(notaExitoSeg);
+      mensajeExitoSeguridad = '';
+    }
+
+    formCambiar.addEventListener('submit', function (ev) {
+      if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+      errorEl.textContent = '';
+      var actual = campoActual.input.value;
+      var n1 = campoNueva1.input.value;
+      var n2 = campoNueva2.input.value;
+      if (!actual || !n1 || !n2) { errorEl.textContent = 'Completa los 3 campos.'; return; }
+      if (n1.length < 8) { errorEl.textContent = 'La contraseña nueva debe tener al menos 8 caracteres.'; return; }
+      if (n1 !== n2) { errorEl.textContent = 'Las contraseñas nuevas no coinciden.'; return; }
+      if (!Seguridad || typeof Seguridad.cambiar !== 'function') {
+        errorEl.textContent = 'No se pudo cambiar la contraseña en este dispositivo.';
+        return;
+      }
+      var textoOriginalCambiar = botonCambiar.textContent;
+      botonCambiar.setAttribute('disabled', 'disabled');
+      botonCambiar.textContent = TEXTO_BOTON_CIFRANDO;
+      Seguridad.cambiar(actual, n1).then(function (res) {
+        campoActual.input.value = '';
+        campoNueva1.input.value = '';
+        campoNueva2.input.value = '';
+        if (!res || !res.ok) {
+          botonCambiar.removeAttribute('disabled');
+          botonCambiar.textContent = textoOriginalCambiar;
+          errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo cambiar la contraseña.';
+          return;
+        }
+        mensajeExitoSeguridad = 'Contraseña actualizada.';
+        construirContenidoSeguridad(registro);
+      });
+    });
+    card.appendChild(formCambiar);
+
+    card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Respaldo'));
+    card.appendChild(construirBotonDescargarRespaldo(doc));
+    card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_RESPALDO_CUSTODIA));
+    card.appendChild(construirBloqueRestaurarRespaldo(doc, 'hz-seg-import-label', 'hz-seg-input-restaurar', 'hz-btn-seg-restaurar-confirmar', null));
+  }
+
+  function construirContenidoSeguridad(registro) {
+    var doc = registro.dialog.ownerDocument;
+    var card = registro.card;
+    limpiar(card);
+    var Seguridad = G.Herzon && G.Herzon.Seguridad;
+    var protegido = !!(Seguridad && typeof Seguridad.activa === 'function' && Seguridad.activa());
+
+    card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_SEGURIDAD));
+
+    if (protegido) {
+      construirBloqueSeguridadActiva(doc, card, registro, Seguridad);
+    } else {
+      // H-06: tolerancia sin protección (no debería ocurrir por H-04) --
+      // el diálogo muestra el mismo contenido de H-04.
+      construirBloqueActivarProteccion(doc, card, registro.cerrar);
+    }
+
+    // T-064 (H-06 fix): Cerrar va SOLO en su propio div.hz-form-acciones,
+    // dentro de un div.hz-dialogo-pie, último hijo de la card -- ya no es
+    // un hermano inline pegado al bloque de restauración de respaldo.
+    var pieSeguridad = crear(doc, 'div', ['hz-dialogo-pie']);
+    var accionesPieSeguridad = crear(doc, 'div', ['hz-form-acciones']);
+    var botonCerrar = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Cerrar');
+    botonCerrar.setAttribute('type', 'button');
+    botonCerrar.setAttribute('id', 'hz-btn-cerrar-seguridad');
+    botonCerrar.addEventListener('click', function () { registro.cerrar(); });
+    accionesPieSeguridad.appendChild(botonCerrar);
+    pieSeguridad.appendChild(accionesPieSeguridad);
+    card.appendChild(pieSeguridad);
+  }
+
+  function abrirDialogoSeguridad() {
+    var registro = crearDialogo('hz-dialogo-seguridad', { bloqueante: false });
+    if (!registro) { return; }
+    construirContenidoSeguridad(registro);
+    registro.abrir();
+  }
+
+  // -----------------------------------------------------------------------
+  // H-08: cableado del botón #hz-btn-seguridad del header (shell.html,
+  // T-062) -- vive FUERA de cualquier rootEl de vista, así que se localiza
+  // vía G.document (guardado: ausente/sin getElementById en TestDOM, se
+  // degrada sin lanzar).
+  // -----------------------------------------------------------------------
+  function elementoBotonSeguridad() {
+    var d = G.document;
+    return (d && typeof d.getElementById === 'function') ? d.getElementById('hz-btn-seguridad') : null;
+  }
+
+  // H-08: #hz-btn-seguridad sin hidden SOLO si modo real Y desbloqueado;
+  // conecta su click (una sola vez, guardado en el propio nodo) para abrir
+  // H-06.
+  function sincronizarBotonSeguridad() {
+    var boton = elementoBotonSeguridad();
+    if (!boton) { return; }
+    var Almacen = obtenerAlmacen();
+    var visible = !!(Almacen && typeof Almacen.modo === 'function' && Almacen.modo() === 'real' &&
+      typeof Almacen.bloqueado === 'function' && !Almacen.bloqueado());
+    if (visible) { boton.removeAttribute('hidden'); } else { boton.setAttribute('hidden', ''); }
+    if (!boton._hzSeguridadConectado) {
+      boton.addEventListener('click', function () { abrirDialogoSeguridad(); });
+      boton._hzSeguridadConectado = true;
+    }
+  }
+
+  // H-08: se ejecuta en herzon:modo-cambiado y herzon:clientes-actualizados
+  // (registrado UNA sola vez, a nivel de módulo).
+  function sincronizarYEvaluar() {
+    sincronizarBotonSeguridad();
+    evaluarAperturaProteger();
+  }
+
+  if (typeof G.addEventListener === 'function') {
+    G.addEventListener('herzon:modo-cambiado', sincronizarYEvaluar);
+    G.addEventListener('herzon:clientes-actualizados', sincronizarYEvaluar);
+    // H-03 (b): el botón/selector del header despachan este evento en vez
+    // de activarReal() mientras bloqueado()===true (R10, S-02).
+    G.addEventListener('herzon:desbloqueo-solicitado', function () { abrirDialogoDesbloqueo(); });
+  }
+
+  // H-08: arranque -- cuando el DOM está listo (readyState !== 'loading' o
+  // DOMContentLoaded), evalúa P-4 (H-03: bloqueado -> abre desbloqueo) y
+  // H-04 (proteger). Tolerante si Almacen/Seguridad no existen (las
+  // funciones de abajo ya guardan typeof en cada paso). En TestDOM
+  // (G.document ausente) esto es un no-op inmediato: "todo degrada sin
+  // lanzar" (H-08).
+  function evaluarArranqueSeguridad() {
+    sincronizarBotonSeguridad();
+    var Almacen = obtenerAlmacen();
+    if (Almacen && typeof Almacen.bloqueado === 'function' && Almacen.bloqueado()) {
+      abrirDialogoDesbloqueo();
+    }
+    evaluarAperturaProteger();
+  }
+
+  (function arrancarSeguridad() {
+    var d = G.document;
+    if (!d) { return; }
+    if (d.readyState === 'loading' && typeof d.addEventListener === 'function') {
+      d.addEventListener('DOMContentLoaded', evaluarArranqueSeguridad);
+    } else {
+      evaluarArranqueSeguridad();
+    }
+  })();
 
   // -----------------------------------------------------------------------
   // Vista Resumen: UN número héroe (peso actual + delta con signo + sparkline
@@ -680,14 +1443,15 @@
   // de módulo, se disparaba al vacío. Se registra aquí (nivel superior del
   // IIFE): abre el diálogo de alta directamente, SIN cambiar de pestaña
   // (R11 punto 1, D-02) -- construyéndolo bajo demanda si Perfil nunca se
-  // ha montado (abrirDialogoAlta/asegurarDialogoAlta arriba). El listener
-  // interno registrado dentro de mountPerfil (más abajo) sigue cubriendo el
-  // caso "Perfil ya montada"; abrirDialogoAlta es idempotente, así que no
-  // importa que ambos disparen para el mismo evento.
+  // ha montado (abrirDialogoAlta/obtenerDialogoAlta arriba, R12: usa
+  // crearDialogo/rootPerfilConocido). El listener interno registrado
+  // dentro de mountPerfil (más abajo) sigue cubriendo el caso "Perfil ya
+  // montada"; abrirDialogoAlta es idempotente, así que no importa que
+  // ambos disparen para el mismo evento.
   // -----------------------------------------------------------------------
   if (typeof G.addEventListener === 'function') {
     G.addEventListener('herzon:cliente-nuevo-solicitado', function () {
-      abrirDialogoAlta(rootPerfilConocido);
+      abrirDialogoAlta();
     });
   }
 
@@ -709,22 +1473,17 @@
   // -----------------------------------------------------------------------
   function mountPerfil(rootEl) {
     var doc = rootEl.ownerDocument;
-    // D-01/D-02: recuerda el rootEl de Perfil -- el listener de nivel de
-    // módulo lo usa como fallback en TestDOM (donde no hay document.body)
-    // para anclar el diálogo de alta si se construye bajo demanda ahí.
-    rootPerfilConocido = rootEl;
-    // F-04.5: mensaje de éxito de "Guardar cambios" -- patrón consumo-único:
-    // el submit exitoso lo fija ANTES de provocar el siguiente montaje
-    // (propio, o vía herzon:modo-cambiado si S-05 cambió la configuración);
-    // ese siguiente montaje lo consume una sola vez.
-    var mensajeExitoPerfil = '';
-    // S-03: mismo patrón consumo-único, compartido por las tres acciones de
-    // la card de seguridad (activar/cambiar/quitar) -- solo un panel
-    // (sin protección o con protección) se monta por render, así que
-    // comparten un único mensaje sin colisión posible.
-    var mensajeExitoSeguridad = '';
 
     function render() {
+      // D-01/D-02/H-02: recuerda el rootEl de Perfil VIGENTE en CADA
+      // render() (no solo al montar) -- los diálogos construidos a nivel
+      // de módulo lo usan como fallback en TestDOM (donde no hay
+      // document.body) para anclarse/reanclarse. Refrescarlo aquí (no solo
+      // una vez en mountPerfil) es lo que permite que un remontaje vía
+      // herzon:modo-cambiado de UN root en concreto reancle sus diálogos a
+      // ESE mismo root, incluso si otro root de Perfil se montó (y quedó
+      // como "el más reciente") entre medio.
+      rootPerfilConocido = rootEl;
       limpiar(rootEl);
       var Almacen = obtenerAlmacen();
       var data = G.HERZON_DATA || {};
@@ -733,10 +1492,20 @@
       var enReal = esModoReal(Almacen);
       var bloqueado = !!(Almacen && typeof Almacen.bloqueado === 'function' && Almacen.bloqueado());
 
-      // --- S-02: mientras bloqueado()===true, la vista monta SIEMPRE, como
-      // PRIMERA card, el formulario de desbloqueo (C-3). ---
+      // --- H-07 punto 1: mientras bloqueado()===true, la vista monta
+      // SIEMPRE, como PRIMERA card, #hz-card-bloqueado -- botón que abre
+      // #hz-dialogo-desbloqueo (H-03), ya NO un formulario inline. ---
       if (bloqueado) {
-        montarCardDesbloqueo();
+        var cardBloqueado = crear(doc, 'div', ['hz-card', 'hz-form-card']);
+        cardBloqueado.setAttribute('id', 'hz-card-bloqueado');
+        cardBloqueado.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_DESBLOQUEO));
+        cardBloqueado.appendChild(crear(doc, 'p', null, 'Desbloquea con tu contraseña para ver a tus clientes.'));
+        var botonAbrirDesbloqueo = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Desbloquear');
+        botonAbrirDesbloqueo.setAttribute('type', 'button');
+        botonAbrirDesbloqueo.setAttribute('id', 'hz-btn-abrir-desbloqueo');
+        botonAbrirDesbloqueo.addEventListener('click', function () { abrirDialogoDesbloqueo(); });
+        cardBloqueado.appendChild(botonAbrirDesbloqueo);
+        rootEl.appendChild(cardBloqueado);
       }
 
       // --- LY-02 pieza (a): héroe IMC como PRIMER hijo del grid de 3. ---
@@ -788,6 +1557,31 @@
 
       rootEl.appendChild(grid);
 
+      // --- H-07 punto 3: SOLO real desbloqueado, div#hz-perfil-acciones
+      // con #hz-btn-editar-perfil (abre H-05) y, si hay un mensaje
+      // pendiente, p.hz-nota#hz-perfil-exito como HIJO de
+      // #hz-perfil-acciones, a la derecha del botón (T-064/H-07 fix;
+      // consumo-único, F-04.5 original). ---
+      if (enReal && !bloqueado) {
+        var accionesPerfil = crear(doc, 'div', ['hz-perfil-acciones']);
+        accionesPerfil.setAttribute('id', 'hz-perfil-acciones');
+        var botonEditarPerfil = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Editar perfil');
+        botonEditarPerfil.setAttribute('type', 'button');
+        botonEditarPerfil.setAttribute('id', 'hz-btn-editar-perfil');
+        botonEditarPerfil.addEventListener('click', function () { abrirDialogoPerfil(); });
+        accionesPerfil.appendChild(botonEditarPerfil);
+
+        if (mensajeExitoPerfil) {
+          var notaExitoPerfil = crear(doc, 'p', ['hz-nota'], mensajeExitoPerfil);
+          notaExitoPerfil.setAttribute('id', 'hz-perfil-exito');
+          notaExitoPerfil.style.color = 'var(--delta-good)';
+          accionesPerfil.appendChild(notaExitoPerfil);
+          mensajeExitoPerfil = '';
+        }
+
+        rootEl.appendChild(accionesPerfil);
+      }
+
       // --- LY-02 pieza (b): 7 semáforos en grid anidado dentro de cardLabs.
       // S-05: con labsOcultos===true en modo real, la card se OMITE por
       // completo (decisión clínica del nutriólogo, no un vacío); en demo o
@@ -830,155 +1624,12 @@
         rootEl.appendChild(tarjetaLabs);
       }
 
-      // --- R8 punto 5 + F-04/F-05/S-05: edición de perfil (con la casilla
-      // de labs ocultos y el pie de eliminación) SOLO en modo real. ---
-      if (enReal) {
-        var cardEditarPerfil = montarFormularioEdicionPerfil();
-        montarBotonEliminarCliente(cardEditarPerfil);
-      }
-
-      // --- S-03: card de seguridad y respaldo, SOLO real desbloqueado. ---
-      if (enReal && !bloqueado) {
-        montarCardSeguridad();
-      }
-
-      // --- D-05 (R11): SOLO en modo demo (nunca en real ni bloqueado),
+      // --- H-07 punto 5 (D-05, R11): SOLO en modo demo (nunca en real ni bloqueado),
       // última card de la vista -- explica qué habilita el modo real
       // (contraseña, laboratorios ocultos, rutina editable) y ofrece el
       // mismo punto de entrada al alta que el header ("Usar mis datos"). ---
       if (!enReal && !bloqueado) {
         montarCardModoReal();
-      }
-
-      // -----------------------------------------------------------------
-      // R8 punto 5 + F-04 + S-05: edición de perfil (nombre/sexo/edad/
-      // talla/peso inicial/actividad/objetivo, casilla de labs ocultos) ->
-      // Herzon.Almacen.actualizarPerfil (+ actualizarConfig si la casilla
-      // cambió). Sistema de formularios F-01/F-02: card hz-form-card, form
-      // hz-form-columnas. DEVUELVE la card (F-04.6: la necesitan F-05 y la
-      // llamada de arriba).
-      // -----------------------------------------------------------------
-      function montarFormularioEdicionPerfil() {
-        var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
-        card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Editar perfil'));
-        var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
-
-        var campoNombre = crearCampoInput(doc, form, 'hz-editar-nombre', 'Nombre', 'text', paciente.nombre || '');
-        campoNombre.campo.classList.add('hz-form-ancho');
-        var campoSexo = crearCampoSelect(doc, form, 'hz-editar-sexo', 'Sexo', OPCIONES_SEXO);
-        campoSexo.select.value = paciente.sexo || '';
-        var campoEdad = crearCampoInput(doc, form, 'hz-editar-edad', 'Edad (años)', 'number',
-          paciente.edad != null ? String(paciente.edad) : '', { min: 1, max: 120, step: 1 });
-        var campoTalla = crearCampoInput(doc, form, 'hz-editar-talla', 'Talla (cm)', 'number',
-          paciente.talla_cm != null ? String(paciente.talla_cm) : '', { min: 50, max: 250, step: 1 });
-        var campoPeso = crearCampoInput(doc, form, 'hz-editar-peso', 'Peso inicial (kg)', 'number',
-          paciente.pesoInicial_kg != null ? String(paciente.pesoInicial_kg) : '', { min: 20, max: 400, step: 0.1 });
-        var campoActividad = crearCampoSelect(doc, form, 'hz-editar-actividad', 'Nivel de actividad',
-          opcionesActividad(data.factoresActividad));
-        campoActividad.select.value = paciente.actividad || '';
-        var campoObjetivo = crearCampoInput(doc, form, 'hz-editar-objetivo', 'Objetivo', 'text', paciente.objetivo || '');
-
-        // S-05: casilla de laboratorios ocultos, precargada del config
-        // vigente (ausente => false, tolerancia declarada del contrato).
-        var labsOcultosInicial = !!(data.config && data.config.labsOcultos);
-        var campoLabsOcultos = crearCampoCheckbox(doc, form, 'hz-perfil-labs-ocultos', LABEL_LABS_OCULTOS, labsOcultosInicial);
-        campoLabsOcultos.campo.classList.add('hz-form-ancho');
-        form.appendChild(crear(doc, 'p', ['hz-nota', 'hz-form-ancho'], NOTA_LABS_OCULTOS));
-
-        var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
-        var botonGuardar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Guardar cambios');
-        botonGuardar.setAttribute('type', 'submit');
-        acciones.appendChild(botonGuardar);
-        form.appendChild(acciones);
-
-        // F-04.5: notaEstado va DESPUÉS de las acciones (orden final de la
-        // card, F-04.7); consume mensajeExitoPerfil una sola vez.
-        var notaEstado = crear(doc, 'p', ['hz-nota', 'hz-form-ancho']);
-        if (mensajeExitoPerfil) {
-          notaEstado.textContent = mensajeExitoPerfil;
-          notaEstado.style.color = 'var(--delta-good)';
-          mensajeExitoPerfil = '';
-        }
-        form.appendChild(notaEstado);
-
-        form.addEventListener('submit', function (ev) {
-          if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
-          var perfilObj = {
-            nombre: campoNombre.input.value,
-            sexo: campoSexo.select.value,
-            edad: parseFloat(campoEdad.input.value),
-            talla_cm: parseFloat(campoTalla.input.value),
-            pesoInicial_kg: parseFloat(campoPeso.input.value),
-            actividad: campoActividad.select.value,
-            objetivo: campoObjetivo.input.value
-          };
-          ['edad', 'talla_cm', 'pesoInicial_kg'].forEach(function (clave) {
-            if (isNaN(perfilObj[clave])) { perfilObj[clave] = undefined; }
-          });
-          var ok = Almacen && typeof Almacen.actualizarPerfil === 'function' && Almacen.actualizarPerfil(perfilObj);
-          if (!ok) {
-            notaEstado.textContent = 'No se pudo guardar el perfil.';
-            notaEstado.style.color = 'var(--delta-bad)';
-            return;
-          }
-          mensajeExitoPerfil = MENSAJE_EXITO_PERFIL;
-          var labsOcultosNuevo = campoLabsOcultos.input.checked === true;
-          if (labsOcultosNuevo !== labsOcultosInicial && Almacen && typeof Almacen.actualizarConfig === 'function') {
-            Almacen.actualizarConfig({ labsOcultos: labsOcultosNuevo });
-            // S-05: actualizarConfig ya disparó herzon:modo-cambiado de
-            // forma SÍNCRONA (mismo patrón que crearCliente/BUG 2 más
-            // abajo): el listener de este módulo ya remontó la vista
-            // completa, consumiendo mensajeExitoPerfil. Un segundo
-            // render() aquí perdería el mensaje ya consumido.
-            return;
-          }
-          // actualizarPerfil (sin cambio de configuración) NO emite
-          // herzon:modo-cambiado (no es un remontaje de cliente): esta
-          // vista se refresca a sí misma, llamando de nuevo a la MISMA
-          // render() que la montó.
-          render();
-        });
-
-        card.appendChild(form);
-        rootEl.appendChild(card);
-        return card;
-      }
-
-      // -----------------------------------------------------------------
-      // MC-06 + F-05: eliminación individual con confirmación en dos pasos
-      // (texto en el botón, reversión automática a los 6s), ahora discreta
-      // en el pie de la card de Editar perfil (jamás banda de ancho
-      // completo).
-      // -----------------------------------------------------------------
-      function montarBotonEliminarCliente(cardEditarPerfil) {
-        var clienteActual = (Almacen && typeof Almacen.clienteActivo === 'function') ? Almacen.clienteActivo() : null;
-        if (!clienteActual) { return; }
-        var pie = crear(doc, 'div', ['hz-form-pie']);
-        var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_ELIMINAR_NORMAL);
-        boton.setAttribute('type', 'button');
-        boton.setAttribute('id', 'hz-btn-eliminar-cliente');
-        boton.setAttribute('data-confirmar', 'false');
-        var temporizador = null;
-        boton.addEventListener('click', function () {
-          if (boton.getAttribute('data-confirmar') === 'true') {
-            var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
-            if (temporizador !== null) { temporizadorClear(temporizador); temporizador = null; }
-            if (Almacen && typeof Almacen.eliminarCliente === 'function') {
-              Almacen.eliminarCliente(clienteActual.id);
-            }
-            return;
-          }
-          boton.setAttribute('data-confirmar', 'true');
-          boton.textContent = '¿Eliminar a ' + clienteActual.nombre + '? Confirmar';
-          var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
-          temporizador = temporizadorFn(function () {
-            boton.setAttribute('data-confirmar', 'false');
-            boton.textContent = TEXTO_BOTON_ELIMINAR_NORMAL;
-            temporizador = null;
-          }, MS_REVERSION_CONFIRMAR);
-        });
-        pie.appendChild(boton);
-        cardEditarPerfil.appendChild(pie);
       }
 
       // -----------------------------------------------------------------
@@ -996,7 +1647,7 @@
           'En modo real registras clientes reales y se habilitan estas funciones:'));
         var lista = crear(doc, 'ul');
         [
-          'Contraseña: cifra los datos de tus clientes en este dispositivo.',
+          'Contraseña obligatoria: cifra los datos de tus clientes en este dispositivo.',
           'Laboratorios ocultos: quita la sección de labs a los clientes que no se los hacen.',
           'Rutina editable: prescribe días y ejercicios e imprímela.'
         ].forEach(function (texto) {
@@ -1018,474 +1669,12 @@
         rootEl.appendChild(card);
       }
 
-      // -----------------------------------------------------------------
-      // S-02: card de desbloqueo -- textos exactos C-10. vista_metricas.js
-      // posee el DOM (C-4); Almacen posee estado/eventos.
-      // -----------------------------------------------------------------
-      function montarCardDesbloqueo() {
-        var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
-        card.setAttribute('id', 'hz-card-desbloqueo');
-        card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_DESBLOQUEO));
-        card.appendChild(crear(doc, 'p', null, CUERPO_DESBLOQUEO));
-
-        var form = crear(doc, 'form', ['hz-form']);
-        var campoPass = crearCampoInput(doc, form, 'hz-desbloqueo-pass', 'Contraseña', 'password', '',
-          { autocomplete: 'current-password' });
-
-        var errorEl = crear(doc, 'p', ['hz-form-error']);
-        errorEl.setAttribute('id', 'hz-desbloqueo-error');
-        form.appendChild(errorEl);
-
-        var acciones = crear(doc, 'div', ['hz-form-acciones']);
-        var botonDesbloquear = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_DESBLOQUEAR);
-        botonDesbloquear.setAttribute('type', 'submit');
-        botonDesbloquear.setAttribute('id', 'hz-btn-desbloquear');
-        acciones.appendChild(botonDesbloquear);
-        form.appendChild(acciones);
-
-        form.addEventListener('submit', function (ev) {
-          if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
-          errorEl.textContent = '';
-          if (!Almacen || typeof Almacen.desbloquearYMontar !== 'function') {
-            errorEl.textContent = MSG_DESBLOQUEO_INCORRECTO;
-            return;
-          }
-          // S-02: estado ocupado obligatorio -- sin doble submit, sin
-          // ocultar progreso.
-          botonDesbloquear.setAttribute('disabled', 'disabled');
-          botonDesbloquear.textContent = TEXTO_BOTON_DESBLOQUEANDO;
-          campoPass.input.setAttribute('disabled', 'disabled');
-          Almacen.desbloquearYMontar(campoPass.input.value).then(function (res) {
-            if (!res || !res.ok) {
-              botonDesbloquear.removeAttribute('disabled');
-              botonDesbloquear.textContent = TEXTO_BOTON_DESBLOQUEAR;
-              campoPass.input.removeAttribute('disabled');
-              campoPass.input.value = '';
-              errorEl.textContent = (res && res.error) || MSG_DESBLOQUEO_INCORRECTO;
-              return;
-            }
-            // Éxito: desbloquearYMontar ya disparó
-            // clientes-actualizados -> cliente-cambiado -> modo-cambiado de
-            // forma SÍNCRONA (S-02) -- el listener de este mismo módulo
-            // (registrado más abajo, fuera de render()) ya remontó la
-            // vista completa, con bloqueado()===false y el cliente activo
-            // montado. No hace falta ningún trabajo adicional aquí.
-          });
-        });
-
-        card.appendChild(form);
-
-        // Pie fijo de recuperación (S-04): disponible incluso bloqueado --
-        // las DOS salidas del contrato: restaurar un respaldo o borrar
-        // todos los datos.
-        var pie = crear(doc, 'div', ['hz-form-pie']);
-        pie.appendChild(crear(doc, 'p', ['hz-nota'], TEXTO_PIE_RECUPERACION));
-        pie.appendChild(construirBloqueRestaurarRespaldo(
-          'hz-desbloqueo-import-label', 'hz-desbloqueo-input-restaurar',
-          'hz-btn-desbloqueo-restaurar-confirmar', TEXTO_EXTRA_RESTAURAR_BLOQUEADO));
-        pie.appendChild(montarBotonBorrarTodo());
-        card.appendChild(pie);
-
-        rootEl.appendChild(card);
-      }
-
-      // -----------------------------------------------------------------
-      // S-03: card 'Seguridad y respaldo', SOLO real desbloqueado. Estado
-      // sin protección (activar) o con protección (bloquear/cambiar/
-      // quitar/respaldo) -- nunca coexisten (F-02: un solo primario por
-      // formulario).
-      // -----------------------------------------------------------------
-      function montarCardSeguridad() {
-        var Seguridad = G.Herzon && G.Herzon.Seguridad;
-        var protegido = !!(Seguridad && typeof Seguridad.activa === 'function' && Seguridad.activa());
-
-        var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
-        card.setAttribute('id', 'hz-card-seguridad');
-        card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_SEGURIDAD));
-        card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_AMBITO_SEGURIDAD));
-
-        if (mensajeExitoSeguridad) {
-          var notaExitoSeguridad = crear(doc, 'p', ['hz-nota'], mensajeExitoSeguridad);
-          notaExitoSeguridad.setAttribute('id', 'hz-seg-exito');
-          notaExitoSeguridad.style.color = 'var(--delta-good)';
-          card.appendChild(notaExitoSeguridad);
-          mensajeExitoSeguridad = '';
-        }
-
-        if (protegido) {
-          montarSeguridadConProteccion(card, Seguridad);
-        } else {
-          montarSeguridadSinProteccion(card, Seguridad);
-        }
-
-        rootEl.appendChild(card);
-      }
-
-      // ESTADO SIN PROTECCIÓN, bloque #hz-seg-activar (S-03).
-      function montarSeguridadSinProteccion(card, Seguridad) {
-        var bloque = crear(doc, 'div');
-        bloque.setAttribute('id', 'hz-seg-activar');
-
-        bloque.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_RESPALDO_PREVIO));
-        bloque.appendChild(construirBotonDescargarRespaldo());
-
-        var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
-        var campoPass1 = crearCampoInput(doc, form, 'hz-seg-pass-1', LABEL_PASS_1, 'password', '',
-          { autocomplete: 'new-password', minlength: 8 });
-        var campoPass2 = crearCampoInput(doc, form, 'hz-seg-pass-2', LABEL_PASS_2, 'password', '',
-          { autocomplete: 'new-password', minlength: 8 });
-
-        var filaConfirmo = crearCampoCheckbox(doc, form, 'hz-seg-confirmo', LABEL_CONFIRMO, false);
-        filaConfirmo.campo.classList.add('hz-form-ancho');
-
-        var errorEl = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
-        errorEl.setAttribute('id', 'hz-seg-error');
-        form.appendChild(errorEl);
-
-        var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
-        var botonActivar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_ACTIVAR);
-        botonActivar.setAttribute('type', 'submit');
-        botonActivar.setAttribute('id', 'hz-btn-seg-activar');
-        // S-03.4: deshabilitado hasta marcar la casilla de confirmación.
-        botonActivar.setAttribute('disabled', 'disabled');
-        acciones.appendChild(botonActivar);
-        form.appendChild(acciones);
-
-        filaConfirmo.input.addEventListener('change', function () {
-          if (filaConfirmo.input.checked) { botonActivar.removeAttribute('disabled'); }
-          else { botonActivar.setAttribute('disabled', 'disabled'); }
-        });
-
-        form.addEventListener('submit', function (ev) {
-          if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
-          errorEl.textContent = '';
-          if (!filaConfirmo.input.checked) { return; }
-          var p1 = campoPass1.input.value;
-          var p2 = campoPass2.input.value;
-          if (!p1 || !p2) { errorEl.textContent = 'Escribe la contraseña en ambos campos.'; return; }
-          if (p1.length < 8) { errorEl.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
-          if (p1 !== p2) { errorEl.textContent = 'Las contraseñas no coinciden.'; return; }
-          if (!Seguridad || typeof Seguridad.activar !== 'function') {
-            errorEl.textContent = 'No se pudo activar la protección en este dispositivo.';
-            return;
-          }
-          var textoOriginal = botonActivar.textContent;
-          botonActivar.setAttribute('disabled', 'disabled');
-          botonActivar.textContent = TEXTO_BOTON_CIFRANDO;
-          Seguridad.activar(p1).then(function (res) {
-            campoPass1.input.value = '';
-            campoPass2.input.value = '';
-            if (!res || !res.ok) {
-              botonActivar.removeAttribute('disabled');
-              botonActivar.textContent = textoOriginal;
-              errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo activar la protección en este dispositivo.';
-              return;
-            }
-            mensajeExitoSeguridad = MSG_ACTIVADA;
-            render();
-          });
-        });
-
-        bloque.appendChild(form);
-        card.appendChild(bloque);
-      }
-
-      // ESTADO CON PROTECCIÓN (sesión desbloqueada, S-03).
-      function montarSeguridadConProteccion(card, Seguridad) {
-        var bloqueEstado = crear(doc, 'div');
-        bloqueEstado.appendChild(crear(doc, 'p', null, TEXTO_ESTADO_PROTEGIDA));
-        var botonBloquear = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_BLOQUEAR);
-        botonBloquear.setAttribute('type', 'button');
-        botonBloquear.setAttribute('id', 'hz-btn-seg-bloquear');
-        botonBloquear.addEventListener('click', function () {
-          // Re-bloqueo (S-02, fix T-058): Seguridad.bloquear() borra la
-          // clave de sesión (síncrono) y Almacen.bloquearYVolverADemo()
-          // fija bloqueadoActual=true + repinta la demo -- equivale a
-          // recargar la página sin recargarla (a diferencia de
-          // Almacen.volverADemo(), que usa el toggle #hz-btn-modo para
-          // previsualizar demo SIN re-bloquear). Fallback tolerante a
-          // volverADemo() si la función nueva no existe (sin flag day).
-          if (Seguridad && typeof Seguridad.bloquear === 'function') { Seguridad.bloquear(); }
-          if (Almacen && typeof Almacen.bloquearYVolverADemo === 'function') { Almacen.bloquearYVolverADemo(); }
-          else if (Almacen && typeof Almacen.volverADemo === 'function') { Almacen.volverADemo(); }
-        });
-        bloqueEstado.appendChild(botonBloquear);
-        card.appendChild(bloqueEstado);
-
-        // Área de error COMPARTIDA por "Cambiar contraseña" y "Quitar
-        // protección" (el contrato solo fija el id #hz-seg-error una vez
-        // por card -- ambos bloques coexisten en este estado).
-        var errorEl = crear(doc, 'p', ['hz-form-error']);
-        errorEl.setAttribute('id', 'hz-seg-error');
-        card.appendChild(errorEl);
-
-        // Cambiar contraseña.
-        card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Cambiar contraseña'));
-        var formCambiar = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
-        var campoActual = crearCampoInput(doc, formCambiar, 'hz-seg-actual', LABEL_PASS_ACTUAL, 'password', '', { autocomplete: 'current-password' });
-        var campoNueva1 = crearCampoInput(doc, formCambiar, 'hz-seg-nueva-1', LABEL_PASS_NUEVA_1, 'password', '', { autocomplete: 'new-password', minlength: 8 });
-        var campoNueva2 = crearCampoInput(doc, formCambiar, 'hz-seg-nueva-2', LABEL_PASS_NUEVA_2, 'password', '', { autocomplete: 'new-password', minlength: 8 });
-        var accionesCambiar = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
-        var botonCambiar = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], TEXTO_BOTON_CAMBIAR);
-        botonCambiar.setAttribute('type', 'submit');
-        botonCambiar.setAttribute('id', 'hz-btn-seg-cambiar');
-        accionesCambiar.appendChild(botonCambiar);
-        formCambiar.appendChild(accionesCambiar);
-        formCambiar.addEventListener('submit', function (ev) {
-          if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
-          errorEl.textContent = '';
-          var actual = campoActual.input.value;
-          var n1 = campoNueva1.input.value;
-          var n2 = campoNueva2.input.value;
-          if (!actual || !n1 || !n2) { errorEl.textContent = 'Completa los 3 campos.'; return; }
-          if (n1.length < 8) { errorEl.textContent = 'La contraseña nueva debe tener al menos 8 caracteres.'; return; }
-          if (n1 !== n2) { errorEl.textContent = 'Las contraseñas nuevas no coinciden.'; return; }
-          if (!Seguridad || typeof Seguridad.cambiar !== 'function') {
-            errorEl.textContent = 'No se pudo cambiar la contraseña en este dispositivo.';
-            return;
-          }
-          var textoOriginalCambiar = botonCambiar.textContent;
-          botonCambiar.setAttribute('disabled', 'disabled');
-          botonCambiar.textContent = TEXTO_BOTON_CIFRANDO;
-          Seguridad.cambiar(actual, n1).then(function (res) {
-            campoActual.input.value = '';
-            campoNueva1.input.value = '';
-            campoNueva2.input.value = '';
-            if (!res || !res.ok) {
-              botonCambiar.removeAttribute('disabled');
-              botonCambiar.textContent = textoOriginalCambiar;
-              errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo cambiar la contraseña.';
-              return;
-            }
-            mensajeExitoSeguridad = 'Contraseña actualizada.';
-            render();
-          });
-        });
-        card.appendChild(formCambiar);
-
-        // Quitar protección.
-        card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Quitar protección'));
-        var notaQuitar = crear(doc, 'p', ['hz-nota'], NOTA_QUITAR_ADVERTENCIA);
-        notaQuitar.style.color = 'var(--delta-bad)';
-        card.appendChild(notaQuitar);
-        var bloqueQuitar = crear(doc, 'div');
-        var campoQuitarPass = crearCampoInput(doc, bloqueQuitar, 'hz-seg-quitar-pass', LABEL_PASS_ACTUAL, 'password', '', { autocomplete: 'current-password' });
-        var botonQuitar = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_QUITAR);
-        botonQuitar.setAttribute('type', 'button');
-        botonQuitar.setAttribute('id', 'hz-btn-seg-desactivar');
-        botonQuitar.setAttribute('data-confirmar', 'false');
-        var temporizadorQuitar = null;
-        botonQuitar.addEventListener('click', function () {
-          if (botonQuitar.getAttribute('data-confirmar') === 'true') {
-            var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
-            if (temporizadorQuitar !== null) { temporizadorClear(temporizadorQuitar); temporizadorQuitar = null; }
-            errorEl.textContent = '';
-            if (!Seguridad || typeof Seguridad.desactivar !== 'function') {
-              errorEl.textContent = 'No se pudo quitar la protección en este dispositivo.';
-              return;
-            }
-            botonQuitar.setAttribute('disabled', 'disabled');
-            Seguridad.desactivar(campoQuitarPass.input.value).then(function (res) {
-              campoQuitarPass.input.value = '';
-              botonQuitar.removeAttribute('disabled');
-              botonQuitar.setAttribute('data-confirmar', 'false');
-              if (!res || !res.ok) {
-                errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo quitar la protección.';
-                return;
-              }
-              mensajeExitoSeguridad = 'Protección desactivada. Tus datos se guardan sin cifrar en este dispositivo.';
-              render();
-            });
-            return;
-          }
-          botonQuitar.setAttribute('data-confirmar', 'true');
-          var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
-          temporizadorQuitar = temporizadorFn(function () {
-            botonQuitar.setAttribute('data-confirmar', 'false');
-            temporizadorQuitar = null;
-          }, MS_REVERSION_CONFIRMAR);
-        });
-        bloqueQuitar.appendChild(botonQuitar);
-        card.appendChild(bloqueQuitar);
-
-        // Respaldo (S-04): descarga + restauración.
-        card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Respaldo'));
-        card.appendChild(construirBotonDescargarRespaldo());
-        card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_RESPALDO_CUSTODIA));
-        card.appendChild(construirBloqueRestaurarRespaldo(
-          'hz-seg-import-label', 'hz-seg-input-restaurar', 'hz-btn-seg-restaurar-confirmar', null));
-      }
-
-      // Botón compartido (sin protección bullet 1, y sección Respaldo de
-      // con protección -- mutuamente excluyentes, mismo id sin colisión).
-      function construirBotonDescargarRespaldo() {
-        var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_RESPALDO);
-        boton.setAttribute('type', 'button');
-        boton.setAttribute('id', 'hz-btn-seg-respaldo');
-        boton.addEventListener('click', function () {
-          if (!Almacen || typeof Almacen.exportarRespaldo !== 'function') { return; }
-          var res = Almacen.exportarRespaldo();
-          if (!res || !res.ok) { return; }
-          var Docs = G.Herzon && G.Herzon.Docs;
-          if (Docs && typeof Docs.descargarArchivo === 'function') {
-            Docs.descargarArchivo(doc, res.json, res.nombreArchivo, 'application/json');
-          }
-        });
-        return boton;
-      }
-
-      // S-04: bloque de restauración (label + input file oculto +
-      // confirmación con conteos reales). Compartido por la card de
-      // seguridad y la card de desbloqueo (C-11: conteos reales en AMBAS
-      // rutas); `textoExtra` agrega la frase de la ruta desde bloqueado.
-      function construirBloqueRestaurarRespaldo(idLabel, idInput, idBotonConfirmar, textoExtra) {
-        var contenedor = crear(doc, 'div', ['hz-doc-import']);
-        var label = crear(doc, 'label', ['hz-doc-import-label'], LABEL_IMPORTAR_RESPALDO);
-        label.setAttribute('id', idLabel);
-        label.setAttribute('for', idInput);
-        var input = crear(doc, 'input');
-        input.setAttribute('type', 'file');
-        input.setAttribute('id', idInput);
-        input.setAttribute('accept', '.json,application/json');
-        contenedor.appendChild(label);
-        contenedor.appendChild(input);
-
-        var zonaConfirmacion = crear(doc, 'div');
-        contenedor.appendChild(zonaConfirmacion);
-
-        function manejarObjetoLeido(objeto) {
-          limpiar(zonaConfirmacion);
-          var formaValida = objeto && typeof objeto === 'object' && objeto.formato === 'rinde-respaldo-1' &&
-            objeto.datos && typeof objeto.datos === 'object' && objeto.datos.clientes && typeof objeto.datos.clientes === 'object';
-          if (!formaValida) {
-            zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], MSG_RESPALDO_INVALIDO));
-            return;
-          }
-          var n = (Almacen && typeof Almacen.clientes === 'function') ? Almacen.clientes().length : 0;
-          var m = Object.keys(objeto.datos.clientes).length;
-          var textoConfirmacion = 'Restaurar este respaldo reemplaza los ' + n + ' clientes actuales de este dispositivo por los ' +
-            m + ' clientes del archivo (exportado el ' + (objeto.exportado || '—') + '). Esta acción no se puede deshacer.';
-          if (textoExtra) { textoConfirmacion += ' ' + textoExtra; }
-          zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], textoConfirmacion));
-
-          if (n > 0) {
-            var botonRespaldarAntes = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], TEXTO_BOTON_RESPALDAR_ANTES);
-            botonRespaldarAntes.setAttribute('type', 'button');
-            botonRespaldarAntes.addEventListener('click', function () {
-              if (!Almacen || typeof Almacen.exportarRespaldo !== 'function') { return; }
-              var resExport = Almacen.exportarRespaldo();
-              if (!resExport || !resExport.ok) { return; }
-              var Docs = G.Herzon && G.Herzon.Docs;
-              if (Docs && typeof Docs.descargarArchivo === 'function') {
-                Docs.descargarArchivo(doc, resExport.json, resExport.nombreArchivo, 'application/json');
-              }
-            });
-            zonaConfirmacion.appendChild(botonRespaldarAntes);
-          }
-
-          var botonConfirmar = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_RESTAURAR_CONFIRMAR);
-          botonConfirmar.setAttribute('type', 'button');
-          botonConfirmar.setAttribute('id', idBotonConfirmar);
-          botonConfirmar.setAttribute('data-confirmar', 'false');
-          var temporizadorRestaurar = null;
-          botonConfirmar.addEventListener('click', function () {
-            if (botonConfirmar.getAttribute('data-confirmar') === 'true') {
-              var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
-              if (temporizadorRestaurar !== null) { temporizadorClear(temporizadorRestaurar); temporizadorRestaurar = null; }
-              if (!Almacen || typeof Almacen.restaurarRespaldo !== 'function') { return; }
-              var resultado = Almacen.restaurarRespaldo(objeto);
-              limpiar(zonaConfirmacion);
-              if (!resultado || !resultado.ok) {
-                zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'],
-                  (resultado && resultado.errores && resultado.errores.length) ? resultado.errores.join(' ') : MSG_RESPALDO_INVALIDO));
-                return;
-              }
-              var notaExitoRestaurar = crear(doc, 'p', ['hz-nota'], 'Respaldo restaurado: ' + resultado.clientes + ' clientes.');
-              notaExitoRestaurar.style.color = 'var(--delta-good)';
-              zonaConfirmacion.appendChild(notaExitoRestaurar);
-              // restaurarRespaldo ya disparó la secuencia de eventos
-              // completa (clientes-actualizados -> cliente-cambiado/
-              // modo-cambiado): el listener de este módulo ya remontó la
-              // vista con los datos nuevos; este bloque de confirmación
-              // queda huérfano tras ese remontaje (mismo patrón que
-              // cualquier otro submit exitoso de este archivo).
-              return;
-            }
-            botonConfirmar.setAttribute('data-confirmar', 'true');
-            var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
-            temporizadorRestaurar = temporizadorFn(function () {
-              botonConfirmar.setAttribute('data-confirmar', 'false');
-              temporizadorRestaurar = null;
-            }, MS_REVERSION_CONFIRMAR);
-          });
-          zonaConfirmacion.appendChild(botonConfirmar);
-
-          var botonCancelar = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Cancelar');
-          botonCancelar.setAttribute('type', 'button');
-          botonCancelar.addEventListener('click', function () {
-            limpiar(zonaConfirmacion);
-            input.value = '';
-          });
-          zonaConfirmacion.appendChild(botonCancelar);
-        }
-
-        input.addEventListener('change', function (ev) {
-          var archivo = (input.files && input.files[0]) || (ev && ev.target && ev.target.files && ev.target.files[0]);
-          input.value = '';
-          if (!archivo) { return; }
-          leerArchivoComoTextoLocal(archivo, function (texto, errorLectura) {
-            if (errorLectura || texto == null) {
-              limpiar(zonaConfirmacion);
-              zonaConfirmacion.appendChild(crear(doc, 'p', ['hz-form-error'], MSG_RESPALDO_INVALIDO));
-              return;
-            }
-            var objetoLeido = null;
-            try { objetoLeido = JSON.parse(texto); } catch (e) { objetoLeido = null; }
-            manejarObjetoLeido(objetoLeido);
-          });
-        });
-
-        return contenedor;
-      }
-
-      // S-02 (pie de card-desbloqueo): "Borrar todos los datos" ->
-      // Almacen.borrarTodo(), confirmación en dos pasos (patrón 6s R9).
-      function montarBotonBorrarTodo() {
-        var contenedor = crear(doc, 'div');
-        var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-peligro'], TEXTO_BOTON_BORRAR_TODO);
-        boton.setAttribute('type', 'button');
-        boton.setAttribute('id', 'hz-btn-desbloqueo-borrar-todo');
-        boton.setAttribute('data-confirmar', 'false');
-        var temporizadorBorrar = null;
-        boton.addEventListener('click', function () {
-          if (boton.getAttribute('data-confirmar') === 'true') {
-            var temporizadorClear = (typeof G.clearTimeout === 'function') ? G.clearTimeout : clearTimeout;
-            if (temporizadorBorrar !== null) { temporizadorClear(temporizadorBorrar); temporizadorBorrar = null; }
-            if (Almacen && typeof Almacen.borrarTodo === 'function') { Almacen.borrarTodo(); }
-            return;
-          }
-          boton.setAttribute('data-confirmar', 'true');
-          var temporizadorFn = (typeof G.setTimeout === 'function') ? G.setTimeout : setTimeout;
-          temporizadorBorrar = temporizadorFn(function () {
-            boton.setAttribute('data-confirmar', 'false');
-            temporizadorBorrar = null;
-          }, MS_REVERSION_CONFIRMAR);
-        });
-        contenedor.appendChild(boton);
-        return contenedor;
-      }
-
-      // D-01: construye (y ancla) el diálogo de alta al final de CADA
-      // render(). En DOM real es un no-op tras la primera vez (el
-      // singleton cuelga de document.body, ajeno a rootEl -- limpiar(rootEl)
-      // nunca lo toca). En TestDOM (fallback sin document.body) SÍ cuelga
-      // de rootEl, y limpiar(rootEl) al INICIO de cada render() lo
-      // desancla -- por eso se reancla aquí en cada render(), sin
-      // reconstruirlo (asegurarDialogoAlta reengancha el mismo nodo si ya
-      // existe pero quedó huérfano).
-      asegurarDialogoAlta(rootEl);
+      obtenerDialogoAlta();
     }
 
+    // R12: expone el render() vigente de este montaje de Perfil a los
+    // diálogos H-04/H-05 (construidos a nivel de módulo).
+    renderPerfilActual = render;
     render();
 
     if (typeof G.addEventListener === 'function') {
@@ -1497,7 +1686,7 @@
       // módulo también dispare para el mismo evento -- SIN cambiar de
       // pestaña (R11 punto 1) y sin necesidad de un render().
       G.addEventListener('herzon:cliente-nuevo-solicitado', function () {
-        abrirDialogoAlta(rootEl);
+        abrirDialogoAlta();
       });
     }
   }

@@ -875,6 +875,14 @@ dialog.hz-dialogo:not([open]) { display: none; }
 .hz-form-campo.hz-form-check { flex-direction: row; align-items: center; gap: 10px; }
 .hz-form-campo.hz-form-check input[type="checkbox"] { width: 18px; height: 18px; margin: 0; padding: 0; flex: 0 0 auto; accent-color: var(--series-1); }
 .hz-form-campo.hz-form-check label { font-size: 0.95rem; color: var(--text-primary); }
+
+/* ---------- 15. Adendum R12 (H-01): header Seguridad, acciones de Perfil y pie de dialogo ---------- */
+#hz-btn-seguridad[hidden] { display: none; }
+.hz-perfil-acciones { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; }
+.hz-dialogo-pie { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }
+/* R12 (H-06/H-07 fix): ritmo vertical en diálogos y acciones de Perfil */
+.hz-dialogo .hz-card-title:not(:first-child) { margin-top: 20px; }
+.hz-dialogo .hz-dialogo-pie .hz-form-acciones { margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -891,6 +899,7 @@ dialog.hz-dialogo:not([open]) { display: none; }
        "Cambiar tema"); la lógica de cambio de modo la cablea T-039
        (build/almacen.js), que también actualiza el texto de #hz-modo-datos. -->
   <button type="button" id="hz-btn-modo" class="hz-toggle-tema" aria-pressed="false">Usar mis datos</button>
+  <button type="button" id="hz-btn-seguridad" class="hz-toggle-tema" hidden>Seguridad</button>
   <button type="button" id="toggle-tema" class="hz-toggle-tema" aria-pressed="false">Cambiar tema</button>
 </header>
 

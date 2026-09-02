@@ -637,17 +637,22 @@ var R10_CLASSES = [
 // hz-form-check (D-07, T-061): casilla en línea con su etiqueta, también
 // definida SOLO en la sección 14.
 var R11_CLASSES = ['hz-dialogo', 'hz-form-check'];
+// Adendum R12 (sección 15, H-01, T-062): header Seguridad, acciones de
+// Perfil y pie de diálogo. Dos clases nuevas fuera de hz-reco-/hz-doc-,
+// definidas SOLO en la sección 15 (el botón #hz-btn-seguridad reusa
+// .hz-toggle-tema, ya congelada, y no suma clase nueva).
+var R12_CLASSES = ['hz-perfil-acciones', 'hz-dialogo-pie'];
 var cssTextSinComentarios = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
 var classSelectorRe = /\.([a-zA-Z][a-zA-Z0-9-]*)/g;
 var classesEnCss = {};
 var cmSel;
 while ((cmSel = classSelectorRe.exec(cssTextSinComentarios))) { classesEnCss[cmSel[1]] = true; }
 var KNOWN_PREEXISTING = {};
-FROZEN_CLASSES.concat(MENU_CLASSES_R4).concat(CHROME_UTILITY_CLASSES).concat(R8_CLASSES).concat(R9_CLASSES).concat(R10_CLASSES).concat(R11_CLASSES).forEach(function (c) { KNOWN_PREEXISTING[c] = true; });
+FROZEN_CLASSES.concat(MENU_CLASSES_R4).concat(CHROME_UTILITY_CLASSES).concat(R8_CLASSES).concat(R9_CLASSES).concat(R10_CLASSES).concat(R11_CLASSES).concat(R12_CLASSES).forEach(function (c) { KNOWN_PREEXISTING[c] = true; });
 Object.keys(classesEnCss).sort().forEach(function (cls) {
   var esConocida = !!KNOWN_PREEXISTING[cls];
   var esRecoODoc = (cls.indexOf('hz-reco-') === 0) || (cls.indexOf('hz-doc-') === 0);
-  assert(esConocida || esRecoODoc, 'la clase .' + cls + ' definida en build/shell.html es previamente conocida (incluye .hz-vacio de R8, .hz-grid-pares/.hz-selector-cliente de R9, hz-form-*/hz-btn-*/hz-rutina-* de R10 y .hz-dialogo de R11) o lleva prefijo hz-reco-/hz-doc- (cero clases nuevas fuera de ese set, Adendum R5+R8+R9+R10+R11)');
+  assert(esConocida || esRecoODoc, 'la clase .' + cls + ' definida en build/shell.html es previamente conocida (incluye .hz-vacio de R8, .hz-grid-pares/.hz-selector-cliente de R9, hz-form-*/hz-btn-*/hz-rutina-* de R10, .hz-dialogo de R11 y .hz-perfil-acciones/.hz-dialogo-pie de R12) o lleva prefijo hz-reco-/hz-doc- (cero clases nuevas fuera de ese set, Adendum R5+R8+R9+R10+R11+R12)');
 });
 assert(Object.keys(classesEnCss).length >= 99, 'el bloque <style> define al menos 99 selectores de clase distintos (frozen + menú R4 + chrome + reco + doc + .hz-vacio de R8 + .hz-grid-pares/.hz-selector-cliente de R9 + 17 clases hz-form-*/hz-btn-*/hz-rutina-* de R10 + .hz-dialogo de R11)', 'encontrados=' + Object.keys(classesEnCss).length);
 
@@ -1242,6 +1247,96 @@ D07_LITERALES.forEach(function (regla) {
   var reglaRe = new RegExp(regla.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   assert(reglaRe.test(seccion14Block), 'D-07: la sección 14 contiene literal "' + regla + '"');
 });
+
+// ---------------------------------------------------------------
+// 27. Adendum R12 (H-01, T-062): botón #hz-btn-seguridad en el header
+//     (entre #hz-btn-modo y #toggle-tema) y sección 15 del <style>
+//     (#hz-btn-seguridad[hidden], .hz-perfil-acciones, .hz-dialogo-pie).
+//     Cabecera de una sola línea, literal (lección T-057: cero "*/"
+//     incrustado en la prosa antes del cierre real).
+// ---------------------------------------------------------------
+
+// 27.1 Markup: #hz-btn-seguridad existe, con clase .hz-toggle-tema,
+// atributo hidden y texto "Seguridad", posicionado en el header entre
+// #hz-btn-modo y #toggle-tema.
+assert(
+  /<button type="button" id="hz-btn-seguridad" class="hz-toggle-tema" hidden>Seguridad<\/button>/.test(headerText),
+  'H-01: existe el botón #hz-btn-seguridad con clase .hz-toggle-tema, atributo hidden y texto "Seguridad"'
+);
+assert(
+  headerText.indexOf('id="hz-btn-modo"') < headerText.indexOf('id="hz-btn-seguridad"') && headerText.indexOf('id="hz-btn-seguridad"') < headerText.indexOf('id="toggle-tema"'),
+  'H-01: #hz-btn-seguridad está en el header entre #hz-btn-modo y #toggle-tema'
+);
+var hzBtnSeguridadTagMatch = /<button type="button" id="hz-btn-seguridad"[^>]*>/.exec(headerText);
+var hzBtnSeguridadTag = hzBtnSeguridadTagMatch ? hzBtnSeguridadTagMatch[0] : '';
+assert(!/onclick|addEventListener/.test(hzBtnSeguridadTag), '#hz-btn-seguridad no lleva lógica cableada en el markup del shell (la cablea T-063/vista_metricas.js)');
+
+// 27.2 Existencia del bloque "sección 15", DESPUÉS de la sección 14 y
+// ANTES de </style>.
+var headerSeccion15 = '/* ---------- 15. Adendum R12 (H-01): header Seguridad, acciones de Perfil y pie de dialogo ---------- */';
+var idxSeccion15 = html.indexOf(headerSeccion15);
+assert(idxSeccion15 > -1 && idxSeccion15 > idxSeccion14, 'existe el bloque "sección 15. Adendum R12 (H-01): header Seguridad, acciones de Perfil y pie de dialogo" DESPUÉS de la sección 14, con cabecera literal de una sola línea');
+assert(idxStyleEnd > -1 && idxSeccion15 < idxStyleEnd, 'la sección 15 (H-01) aparece ANTES de </style>');
+
+var seccion15Block = html.slice(idxSeccion15, idxStyleEnd);
+assert(seccion15Block.length > 0, 'el bloque de la sección 15 tiene contenido (patrón extractBlock delimitado por cabecera y </style>)');
+
+// 27.3 Anti-regresión T-057: el PRIMER "*/" encontrado a partir de la
+// apertura del comentario de cabecera ES su cierre real.
+var headerAbierto15 = '/* ---------- 15. Adendum R12 (H-01): header Seguridad, acciones de Perfil y pie de dialogo ----------';
+var idxHeaderAbierto15 = html.indexOf(headerAbierto15);
+assert(idxHeaderAbierto15 > -1, 'prerrequisito: existe el comentario de cabecera abierto de la sección 15');
+var idxPrimerCierre15 = html.indexOf('*/', idxHeaderAbierto15);
+assert(idxPrimerCierre15 > -1, 'prerrequisito: el comentario de cabecera de la sección 15 tiene un cierre "*/"');
+var textoCabecera15 = html.slice(idxHeaderAbierto15, idxPrimerCierre15);
+assert(textoCabecera15.indexOf('*/') === -1, 'anti-regresión T-057: el comentario de cabecera de la sección 15 no contiene un "*/" incrustado antes de su cierre real (el primer "*/" hallado ES el cierre)');
+assert(html.slice(idxHeaderAbierto15, idxPrimerCierre15 + 2) === headerSeccion15, 'el comentario de cabecera de la sección 15 cierra exactamente en el texto literal esperado, sin cierre prematuro ni contenido extra');
+
+// 27.4 H-01: las 3 reglas EXACTAS, literales (la de .hz-perfil-acciones
+// fue MODIFICADA por el fix T-064/H-07: gana align-items: center).
+var H01_LITERALES = [
+  '#hz-btn-seguridad[hidden] { display: none; }',
+  '.hz-perfil-acciones { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; }',
+  '.hz-dialogo-pie { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px; }'
+];
+H01_LITERALES.forEach(function (regla) {
+  assert(seccion15Block.indexOf(regla) !== -1, 'H-01: la sección 15 contiene literal "' + regla + '"');
+});
+assert(seccion15Block.indexOf('.hz-perfil-acciones { display: flex; gap: 12px; margin: 0 0 16px; }') === -1, 'T-064/H-07: la regla ANTIGUA de .hz-perfil-acciones (sin align-items) ya no aparece literal en la sección 15');
+assert(/\.hz-perfil-acciones\s*\{[^}]*align-items:\s*center;[^}]*\}/.test(seccion15Block), 'T-064/H-07: la regla .hz-perfil-acciones declara align-items: center (centra verticalmente #hz-perfil-exito junto al botón)');
+
+// 27.4bis T-064 (H-06/H-07 fix): comentario de una línea y las 2 reglas
+// nuevas de ritmo vertical, EXACTAS y literales, DESPUÉS de las 3 de H-01.
+var COMENTARIO_FIX_R12 = '/* R12 (H-06/H-07 fix): ritmo vertical en diálogos y acciones de Perfil */';
+assert(!/\*\//.test(COMENTARIO_FIX_R12.slice(2, -2)), 'anti-regresión T-057: el comentario del fix R12 no lleva un "*/" incrustado antes de su cierre real');
+var idxComentarioFixR12 = seccion15Block.indexOf(COMENTARIO_FIX_R12);
+assert(idxComentarioFixR12 !== -1, 'T-064: la sección 15 contiene el comentario de una línea "' + COMENTARIO_FIX_R12 + '"');
+var idxUltimoLiteralH01 = seccion15Block.indexOf(H01_LITERALES[2]);
+assert(idxUltimoLiteralH01 > -1 && idxComentarioFixR12 > idxUltimoLiteralH01, 'T-064: el comentario del fix R12 aparece DESPUÉS de las 3 reglas H-01 existentes');
+
+var R12_FIX_LITERALES = [
+  '.hz-dialogo .hz-card-title:not(:first-child) { margin-top: 20px; }',
+  '.hz-dialogo .hz-dialogo-pie .hz-form-acciones { margin-top: 12px; }'
+];
+R12_FIX_LITERALES.forEach(function (regla) {
+  var idxRegla = seccion15Block.indexOf(regla);
+  assert(idxRegla !== -1, 'T-064: la sección 15 contiene literal "' + regla + '"');
+  assert(idxRegla > idxComentarioFixR12, 'T-064: la regla "' + regla + '" aparece DESPUÉS del comentario del fix R12');
+});
+
+// 27.5 Impresión: nada nuevo (el header ya queda oculto por la sección 10).
+assert(seccion15Block.indexOf('@media print') === -1, 'la sección 15 no agrega ninguna regla @media print nueva (contrato: el header ya queda oculto por la sección 10)');
+
+// 27.6 Cero hexes nuevos (P-6): la sección 15 sólo usa var(...) y valores
+// literales sin color (display/flex/gap/margin/border-top/padding-top).
+assert(!/#[0-9a-fA-F]{3,8}\b/.test(seccion15Block), 'la sección 15 no declara ningún hex nuevo (paleta congelada, P-6)');
+
+// 27.7 Clases nuevas .hz-perfil-acciones y .hz-dialogo-pie autorizadas
+// explícitamente por el Adendum R12 (H-01), registradas en el allowlist
+// de la sección 22.1 de este mismo selfcheck (ver R12_CLASSES arriba).
+assert(R12_CLASSES.indexOf('hz-perfil-acciones') !== -1 && R12_CLASSES.indexOf('hz-dialogo-pie') !== -1, 'prerrequisito: hz-perfil-acciones y hz-dialogo-pie están declaradas en el allowlist R12_CLASSES de este selfcheck');
+assert(hasClassSelector(cssText, 'hz-perfil-acciones'), 'clase nueva .hz-perfil-acciones (Adendum R12) tiene una regla CSS definida en build/shell.html');
+assert(hasClassSelector(cssText, 'hz-dialogo-pie'), 'clase nueva .hz-dialogo-pie (Adendum R12) tiene una regla CSS definida en build/shell.html');
 
 console.log('checks ejecutados: ' + checks);
 process.exit(0);
