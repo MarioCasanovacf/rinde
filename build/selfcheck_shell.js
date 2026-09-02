@@ -631,19 +631,25 @@ var R10_CLASSES = [
   'hz-rutina-lista', 'hz-rutina-item', 'hz-rutina-nombre', 'hz-rutina-dosis',
   'hz-rutina-descanso', 'hz-rutina-nota'
 ];
+// Adendum R11 (sección 14, D-01, T-059): diálogo modal nativo
+// dialog.hz-dialogo (alta de clientes como pop-up); única clase nueva
+// fuera de los sets previos, definida SOLO en la sección 14.
+// hz-form-check (D-07, T-061): casilla en línea con su etiqueta, también
+// definida SOLO en la sección 14.
+var R11_CLASSES = ['hz-dialogo', 'hz-form-check'];
 var cssTextSinComentarios = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
 var classSelectorRe = /\.([a-zA-Z][a-zA-Z0-9-]*)/g;
 var classesEnCss = {};
 var cmSel;
 while ((cmSel = classSelectorRe.exec(cssTextSinComentarios))) { classesEnCss[cmSel[1]] = true; }
 var KNOWN_PREEXISTING = {};
-FROZEN_CLASSES.concat(MENU_CLASSES_R4).concat(CHROME_UTILITY_CLASSES).concat(R8_CLASSES).concat(R9_CLASSES).concat(R10_CLASSES).forEach(function (c) { KNOWN_PREEXISTING[c] = true; });
+FROZEN_CLASSES.concat(MENU_CLASSES_R4).concat(CHROME_UTILITY_CLASSES).concat(R8_CLASSES).concat(R9_CLASSES).concat(R10_CLASSES).concat(R11_CLASSES).forEach(function (c) { KNOWN_PREEXISTING[c] = true; });
 Object.keys(classesEnCss).sort().forEach(function (cls) {
   var esConocida = !!KNOWN_PREEXISTING[cls];
   var esRecoODoc = (cls.indexOf('hz-reco-') === 0) || (cls.indexOf('hz-doc-') === 0);
-  assert(esConocida || esRecoODoc, 'la clase .' + cls + ' definida en build/shell.html es previamente conocida (incluye .hz-vacio de R8, .hz-grid-pares/.hz-selector-cliente de R9 y hz-form-*/hz-btn-*/hz-rutina-* de R10) o lleva prefijo hz-reco-/hz-doc- (cero clases nuevas fuera de ese set, Adendum R5+R8+R9+R10)');
+  assert(esConocida || esRecoODoc, 'la clase .' + cls + ' definida en build/shell.html es previamente conocida (incluye .hz-vacio de R8, .hz-grid-pares/.hz-selector-cliente de R9, hz-form-*/hz-btn-*/hz-rutina-* de R10 y .hz-dialogo de R11) o lleva prefijo hz-reco-/hz-doc- (cero clases nuevas fuera de ese set, Adendum R5+R8+R9+R10+R11)');
 });
-assert(Object.keys(classesEnCss).length >= 98, 'el bloque <style> define al menos 98 selectores de clase distintos (frozen + menú R4 + chrome + reco + doc + .hz-vacio de R8 + .hz-grid-pares/.hz-selector-cliente de R9 + 17 clases hz-form-*/hz-btn-*/hz-rutina-* de R10)', 'encontrados=' + Object.keys(classesEnCss).length);
+assert(Object.keys(classesEnCss).length >= 99, 'el bloque <style> define al menos 99 selectores de clase distintos (frozen + menú R4 + chrome + reco + doc + .hz-vacio de R8 + .hz-grid-pares/.hz-selector-cliente de R9 + 17 clases hz-form-*/hz-btn-*/hz-rutina-* de R10 + .hz-dialogo de R11)', 'encontrados=' + Object.keys(classesEnCss).length);
 
 // 22.1-bis Prefijos de clase nuevos de R10 autorizados SOLO en shell.html
 // (nadie más define hz-form-*/hz-btn-*/hz-rutina-*, Adendum R10 punto 1).
@@ -1145,6 +1151,97 @@ assert(/var TAB_ORDER = \['resumen', 'perfil', 'plan', 'rutina', 'seguimiento', 
 // 25.6 R-01.3: filtro-rango sigue exclusivo de Seguimiento (nada más
 // cambia en esa lógica, contrato R-01.3 "nada más cambia").
 assert(/if \(id === 'seguimiento'\) \{ filtroEl\.removeAttribute\('hidden'\); \}/.test(runtimeSrc), 'filtro-rango sigue condicionado exclusivamente a id === "seguimiento" (R-01.3: nada más cambia)');
+
+// ---------------------------------------------------------------
+// 26. Adendum R11 (D-01, T-059): sección 14, diálogo modal
+//     dialog.hz-dialogo (alta de clientes como pop-up en vez de card,
+//     T-060 en paralelo lo consume). Cabecera de una sola línea,
+//     literal, para evitar la lección T-057 (un "*/" incrustado en la
+//     prosa de un comentario cierra el bloque antes de tiempo y tumba
+//     las reglas en silencio).
+// ---------------------------------------------------------------
+
+// 26.1 Existencia del bloque "sección 14", DESPUÉS de la sección 13 y
+// ANTES de </style>.
+var headerSeccion14 = '/* ---------- 14. Adendum R11 (D-01): dialogo modal hz-dialogo ---------- */';
+var idxSeccion14 = html.indexOf(headerSeccion14);
+assert(idxSeccion14 > -1 && idxSeccion14 > idxSeccion13, 'existe el bloque "sección 14. Adendum R11 (D-01): dialogo modal hz-dialogo" DESPUÉS de la sección 13, con cabecera literal de una sola línea');
+assert(idxStyleEnd > -1 && idxSeccion14 < idxStyleEnd, 'la sección 14 (D-01) aparece ANTES de </style>');
+
+var seccion14Block = html.slice(idxSeccion14, idxStyleEnd);
+assert(seccion14Block.length > 0, 'el bloque de la sección 14 tiene contenido (patrón extractBlock delimitado por cabecera y </style>)');
+
+// 26.2 Anti-regresión T-057: el PRIMER "*/" encontrado a partir de la
+// apertura del comentario de cabecera ES su cierre real -- ningún
+// "asterisco seguido de slash" queda incrustado en la prosa antes de
+// ese cierre, y el texto entre apertura y ese cierre coincide EXACTO
+// con la cabecera literal esperada (sin contenido extra ni cierre
+// prematuro).
+var headerAbierto14 = '/* ---------- 14. Adendum R11 (D-01): dialogo modal hz-dialogo ----------';
+var idxHeaderAbierto14 = html.indexOf(headerAbierto14);
+assert(idxHeaderAbierto14 > -1, 'prerrequisito: existe el comentario de cabecera abierto de la sección 14');
+var idxPrimerCierre14 = html.indexOf('*/', idxHeaderAbierto14);
+assert(idxPrimerCierre14 > -1, 'prerrequisito: el comentario de cabecera de la sección 14 tiene un cierre "*/"');
+var textoCabecera14 = html.slice(idxHeaderAbierto14, idxPrimerCierre14);
+assert(textoCabecera14.indexOf('*/') === -1, 'anti-regresión T-057: el comentario de cabecera de la sección 14 no contiene un "*/" incrustado antes de su cierre real (el primer "*/" hallado ES el cierre)');
+assert(html.slice(idxHeaderAbierto14, idxPrimerCierre14 + 2) === headerSeccion14, 'el comentario de cabecera de la sección 14 cierra exactamente en el texto literal esperado, sin cierre prematuro ni contenido extra');
+
+// 26.3 D-01: las 5 reglas EXACTAS del diálogo modal, literales, copiadas
+// del contrato (mismo patrón de tokens que la sección 12: var(--border),
+// var(--surface-1), var(--text-primary), var(--shadow-card); único rgba
+// literal permitido es el del ::backdrop).
+var D01_LITERALES = [
+  'dialog.hz-dialogo { border: 1px solid var(--border); border-radius: 16px; background: var(--surface-1); color: var(--text-primary); padding: 0; width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-shadow: var(--shadow-card); overflow: auto; }',
+  'dialog.hz-dialogo::backdrop { background: rgba(11, 11, 11, 0.55); backdrop-filter: blur(2px); }',
+  'dialog.hz-dialogo > .hz-form-card { max-width: none; margin: 0; }',
+  'dialog.hz-dialogo:not([open]) { display: none; }'
+];
+D01_LITERALES.forEach(function (regla) {
+  assert(seccion14Block.indexOf(regla) !== -1, 'D-01: la sección 14 contiene literal "' + regla + '"');
+});
+
+var dialogoCoarseOuter = extractBlock(seccion14Block, '@media (max-width: 599px) {');
+assert(dialogoCoarseOuter.length > 0, 'D-01: existe un @media (max-width: 599px) { ... } propio de dialog.hz-dialogo en la sección 14 (patrón extractBlock)');
+assert(
+  dialogoCoarseOuter.indexOf('dialog.hz-dialogo { width: calc(100vw - 16px); border-radius: 12px; }') !== -1,
+  'D-01: el media de anchos angostos fija width:calc(100vw - 16px) y border-radius:12px en dialog.hz-dialogo (literal)'
+);
+
+// 26.4 Impresión: la compuerta existente (sección 10, R-01.6) sigue
+// intacta y sin reglas de print nuevas para el diálogo (contrato: "no
+// agregar reglas de print nuevas").
+assert(
+  html.indexOf('body > *:not(#documento-plan):not(#documento-rutina) { display: none !important; }') !== -1,
+  'la compuerta de impresión existente (R-01.6) sigue literal, cubre implícitamente cualquier <dialog> hijo directo de body sin regla nueva'
+);
+assert(seccion14Block.indexOf('@media print') === -1, 'la sección 14 no agrega ninguna regla @media print nueva (contrato D-01)');
+
+// 26.5 Cero hexes nuevos: el único literal de color fuera de var(...) en
+// la sección 14 es el rgba(11, 11, 11, 0.55) del ::backdrop.
+assert(!/#[0-9a-fA-F]{3,8}\b/.test(seccion14Block), 'la sección 14 no declara ningún hex nuevo (paleta congelada, solo tokens var(...) y el rgba del backdrop)');
+
+// 26.6 Clase nueva .hz-dialogo autorizada explícitamente por el Adendum
+// R11 (D-01), fuera del prefijo hz-reco-/hz-doc- y de los prefijos R10
+// (hz-form-/hz-btn-/hz-rutina-): se registra en el allowlist de la
+// sección 22.1 de este mismo selfcheck (ver R11_CLASSES arriba).
+assert(R11_CLASSES.indexOf('hz-dialogo') !== -1, 'prerrequisito: hz-dialogo está declarada en el allowlist R11_CLASSES de este selfcheck');
+assert(hasClassSelector(cssText, 'hz-dialogo'), 'clase nueva .hz-dialogo (Adendum R11) tiene una regla CSS definida en build/shell.html (dialog.hz-dialogo)');
+
+// 26.7 D-07 (T-061): casilla en línea con su etiqueta -- subbloque de la
+// sección 14, DESPUÉS del bloque responsivo del diálogo, con las 3 reglas
+// EXACTAS que sacan al checkbox de crearCampoCheckbox de la regla base
+// column-flex de .hz-form-campo. hz-form-check ya está en el allowlist
+// R11_CLASSES (ver arriba); estos 3 asserts regex son el único delta de
+// conteo de esta sección (umbral 646 + 3 = 649).
+var D07_LITERALES = [
+  '.hz-form-campo.hz-form-check { flex-direction: row; align-items: center; gap: 10px; }',
+  '.hz-form-campo.hz-form-check input[type="checkbox"] { width: 18px; height: 18px; margin: 0; padding: 0; flex: 0 0 auto; accent-color: var(--series-1); }',
+  '.hz-form-campo.hz-form-check label { font-size: 0.95rem; color: var(--text-primary); }'
+];
+D07_LITERALES.forEach(function (regla) {
+  var reglaRe = new RegExp(regla.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  assert(reglaRe.test(seccion14Block), 'D-07: la sección 14 contiene literal "' + regla + '"');
+});
 
 console.log('checks ejecutados: ' + checks);
 process.exit(0);

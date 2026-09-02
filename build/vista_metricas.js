@@ -47,7 +47,6 @@
   var TEXTO_VACIO = 'Sin datos aún — registra tu primera medición';
   var NOTA_PRIVACIDAD_CAPTURA = 'Tus datos se guardan solo en este dispositivo.';
   var NOTA_PRIVACIDAD_ALTA = 'Los datos de cada cliente se guardan solo en este dispositivo.';
-  var SUBTITULO_ALTA_PRIMER_USO = 'Registra a tu primer cliente para empezar a capturar mediciones.';
   var TITULO_ALTA = 'Nuevo cliente';
   var TITULO_NOTA_DEMO = 'Acerca del modo demo';
   var TEXTO_BOTON_ELIMINAR_NORMAL = 'Eliminar este cliente';
@@ -296,7 +295,7 @@
   // crearCampoSelect de arriba, pero con type=checkbox e input.checked en
   // vez de input.value).
   function crearCampoCheckbox(doc, contenedorEl, idCampo, etiquetaTexto, checkedInicial) {
-    var campo = crear(doc, 'div', ['hz-form-campo']);
+    var campo = crear(doc, 'div', ['hz-form-campo', 'hz-form-check', 'hz-form-ancho']);
     var input = crear(doc, 'input');
     input.setAttribute('id', idCampo);
     input.setAttribute('type', 'checkbox');
@@ -335,6 +334,181 @@
   function marcarBordeInvalido(campo) {
     campo.input.style.borderColor = 'var(--delta-bad)';
     campo.input.setAttribute('aria-invalid', 'true');
+  }
+
+  // -----------------------------------------------------------------------
+  // R11 (D-01/D-02/D-03/D-06): formulario de alta de cliente como <dialog
+  // class="hz-dialogo"> nativo (CSS de T-059, shell.html sección 14), ids
+  // CONGELADOS (Adendum R9 punto 6: #hz-card-alta-cliente, #hz-form-alta-
+  // cliente, #hz-alta-nombre/sexo/edad/talla/peso/actividad/objetivo,
+  // #hz-alta-error, #hz-btn-crear-cliente, #hz-btn-cancelar-alta). Se
+  // construye UNA sola vez (singleton a nivel de módulo, sobrevive a
+  // cualquier limpiar()/remontaje de las vistas porque cuelga de
+  // document.body y no de ningún rootEl) -- así funciona aunque Vista
+  // Perfil nunca se haya montado (mountFn perezoso, D-02). En TestDOM (sin
+  // document.body ni dialog.showModal) se ancla al último rootEl de Perfil
+  // conocido en su lugar (guardas typeof en cada paso).
+  // -----------------------------------------------------------------------
+  var dialogoAltaEl = null;
+  var rootPerfilConocido = null;
+
+  function construirDialogoAlta(doc) {
+    var dialog = crear(doc, 'dialog', ['hz-dialogo']);
+    dialog.setAttribute('id', 'hz-dialogo-alta');
+
+    var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
+    card.setAttribute('id', 'hz-card-alta-cliente');
+    card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_ALTA));
+    card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_PRIVACIDAD_ALTA));
+
+    var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
+    form.setAttribute('id', 'hz-form-alta-cliente');
+
+    var campoNombre = crearCampoInput(doc, form, 'hz-alta-nombre', 'Nombre', 'text', '');
+    campoNombre.campo.classList.add('hz-form-ancho');
+    var campoSexo = crearCampoSelect(doc, form, 'hz-alta-sexo', 'Sexo', OPCIONES_SEXO);
+    var campoEdad = crearCampoInput(doc, form, 'hz-alta-edad', 'Edad (años)', 'number', '', { min: 1, max: 120, step: 1 });
+    var campoTalla = crearCampoInput(doc, form, 'hz-alta-talla', 'Talla (cm)', 'number', '', { min: 50, max: 250, step: 1 });
+    var campoPeso = crearCampoInput(doc, form, 'hz-alta-peso', 'Peso (kg)', 'number', '', { min: 20, max: 400, step: 0.1 });
+    var campoActividad = crearCampoSelect(doc, form, 'hz-alta-actividad', 'Nivel de actividad',
+      opcionesActividad((G.HERZON_DATA || {}).factoresActividad));
+    var campoObjetivo = crearCampoInput(doc, form, 'hz-alta-objetivo', 'Objetivo', 'text', '');
+
+    var errorEl = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
+    errorEl.setAttribute('id', 'hz-alta-error');
+    errorEl.style.color = 'var(--delta-bad)';
+    form.appendChild(errorEl);
+
+    var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
+    var botonCrear = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Crear cliente');
+    botonCrear.setAttribute('type', 'submit');
+    botonCrear.setAttribute('id', 'hz-btn-crear-cliente');
+    acciones.appendChild(botonCrear);
+
+    // D-03: en el diálogo modal, Cancelar SIEMPRE está presente (ya no
+    // depende de clientesCount/enReal: el diálogo mismo es la vía de
+    // "salir sin guardar" en cualquier escenario, demo o real).
+    var botonCancelar = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Cancelar');
+    botonCancelar.setAttribute('type', 'button');
+    botonCancelar.setAttribute('id', 'hz-btn-cancelar-alta');
+    botonCancelar.addEventListener('click', function (ev) {
+      if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+      cerrarDialogoAlta();
+    });
+    acciones.appendChild(botonCancelar);
+    form.appendChild(acciones);
+
+    function limpiarCamposAlta() {
+      campoNombre.input.value = '';
+      campoNombre.input.removeAttribute('aria-invalid');
+      campoSexo.select.value = '';
+      campoEdad.input.value = '';
+      campoTalla.input.value = '';
+      campoPeso.input.value = '';
+      campoActividad.select.value = '';
+      campoObjetivo.input.value = '';
+      errorEl.textContent = '';
+    }
+
+    // D-03: Cancelar, Escape (evento 'close' nativo del <dialog>) y crear
+    // cliente con éxito cierran el diálogo Y limpian campos/error.
+    function cerrarDialogoAlta() {
+      limpiarCamposAlta();
+      if (typeof dialog.close === 'function') { dialog.close(); }
+      else { dialog.removeAttribute('open'); }
+    }
+    dialog.addEventListener('close', limpiarCamposAlta);
+
+    form.addEventListener('submit', function (ev) {
+      if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
+      errorEl.textContent = '';
+      // C-6: código nuevo/refactorizado usa SOLO aria-invalid + la regla
+      // CSS F-01.6, sin inline borderColor.
+      campoNombre.input.removeAttribute('aria-invalid');
+      var Almacen = obtenerAlmacen();
+      if (!Almacen || typeof Almacen.crearCliente !== 'function') {
+        errorEl.textContent = 'No se puede crear un cliente en este momento.';
+        return;
+      }
+      var perfilObj = {
+        nombre: campoNombre.input.value,
+        sexo: campoSexo.select.value,
+        edad: parseFloat(campoEdad.input.value),
+        talla_cm: parseFloat(campoTalla.input.value),
+        pesoInicial_kg: parseFloat(campoPeso.input.value),
+        actividad: campoActividad.select.value,
+        objetivo: campoObjetivo.input.value
+      };
+      ['edad', 'talla_cm', 'pesoInicial_kg'].forEach(function (clave) {
+        if (isNaN(perfilObj[clave])) { perfilObj[clave] = undefined; }
+      });
+      var res = Almacen.crearCliente(perfilObj);
+      if (!res || !res.ok) {
+        campoNombre.input.setAttribute('aria-invalid', 'true');
+        errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo crear el cliente.';
+        return;
+      }
+      // Éxito: crearCliente ya disparó herzon:modo-cambiado de forma
+      // SÍNCRONA (Adendum R9 punto 3) -- las vistas ya remontaron con el
+      // nuevo cliente montado. El diálogo cierra y se limpia (D-03).
+      cerrarDialogoAlta();
+    });
+
+    card.appendChild(form);
+    dialog.appendChild(card);
+    return dialog;
+  }
+
+  // D-01: documento REAL con document.body disponible (navegador) -- en
+  // TestDOM (selfcheck) `G.document` no existe, así que esto es null y el
+  // llamador cae al fallback de rootEl.
+  function documentoConBody() {
+    return (G.document && typeof G.document.createElement === 'function' && G.document.body) ? G.document : null;
+  }
+
+  // D-01: crea el diálogo la PRIMERA vez que se necesita (singleton a nivel
+  // de módulo); llamadas siguientes devuelven el mismo nodo sin volver a
+  // construirlo. En TestDOM (fallback sin document.body) el diálogo cuelga
+  // del rootEl de Perfil, que limpiar(rootEl) desancla en cada render() --
+  // si el singleton ya existe pero quedó huérfano por eso, se reancla aquí
+  // (mismo nodo, nunca se reconstruye). En DOM real no aplica: el diálogo
+  // cuelga de document.body, ajeno a cualquier rootEl.
+  function asegurarDialogoAlta(rootElFallback) {
+    if (dialogoAltaEl) {
+      if (!documentoConBody() && rootElFallback && dialogoAltaEl.parentNode !== rootElFallback) {
+        rootElFallback.appendChild(dialogoAltaEl);
+      }
+      return dialogoAltaEl;
+    }
+    var docReal = documentoConBody();
+    if (docReal) {
+      dialogoAltaEl = construirDialogoAlta(docReal);
+      docReal.body.appendChild(dialogoAltaEl);
+    } else if (rootElFallback) {
+      dialogoAltaEl = construirDialogoAlta(rootElFallback.ownerDocument);
+      rootElFallback.appendChild(dialogoAltaEl);
+    }
+    return dialogoAltaEl;
+  }
+
+  // D-02/D-06: abre el diálogo (showModal si existe; fallback
+  // setAttribute('open','') en TestDOM) y enfoca #hz-alta-nombre. Idempotente
+  // (guarda dialog.open): puede recibir la misma solicitud desde el listener
+  // de nivel de módulo Y desde el listener interno de mountPerfil sin lanzar
+  // InvalidStateError por un showModal() duplicado.
+  function abrirDialogoAlta(rootElFallback) {
+    var Almacen = obtenerAlmacen();
+    // D-06: bloqueado === true -> el diálogo NO se abre.
+    if (Almacen && typeof Almacen.bloqueado === 'function' && Almacen.bloqueado()) { return; }
+    var dialog = asegurarDialogoAlta(rootElFallback);
+    if (!dialog) { return; }
+    if (typeof dialog.showModal === 'function') {
+      if (!dialog.open) { dialog.showModal(); }
+    } else {
+      dialog.setAttribute('open', '');
+    }
+    var nombreInput = buscarHijoPorId(dialog, 'hz-alta-nombre');
+    if (nombreInput && typeof nombreInput.focus === 'function') { nombreInput.focus(); }
   }
 
   // -----------------------------------------------------------------------
@@ -494,32 +668,26 @@
   }
 
   // -----------------------------------------------------------------------
-  // MC-04 (corrección ronda 9, hallazgo del verifier en verificación real:
-  // BUG 1): el listener de `herzon:cliente-nuevo-solicitado` NO puede vivir
-  // SOLO dentro de mountPerfil(), porque Herzon.registerView monta esa
-  // vista de forma PEREZOSA (plan.md 3.C) -- mountPerfil solo se ejecuta la
-  // primera vez que la pestaña Perfil se activa. En una carga fresca real
-  // (pestaña activa por defecto = Resumen, contrato de shell.html), si el
-  // usuario nunca visitó Perfil y hace clic en "Usar mis datos" (0
-  // clientes) o en "+ Nuevo cliente..." del selector, Almacen.activarReal /
+  // D-02 (R11, hereda MC-04/BUG 1 del R9): el listener de
+  // `herzon:cliente-nuevo-solicitado` NO puede vivir SOLO dentro de
+  // mountPerfil(), porque Herzon.registerView monta esa vista de forma
+  // PEREZOSA (plan.md 3.C) -- mountPerfil solo se ejecuta la primera vez
+  // que la pestaña Perfil se activa. En una carga fresca real (pestaña
+  // activa por defecto = Resumen, contrato de shell.html), si el usuario
+  // nunca visitó Perfil y hace clic en "Usar mis datos" (0 clientes) o en
+  // "+ Nuevo cliente..." del selector, Almacen.activarReal/
   // Almacen.crearCliente despachan este evento y, sin este listener a nivel
   // de módulo, se disparaba al vacío. Se registra aquí (nivel superior del
-  // IIFE: se ejecuta siempre al cargar el script, antes de cualquier
-  // montaje perezoso, sin tocar `document` de forma síncrona en la carga --
-  // solo dentro del cuerpo diferido del manejador): deja la intención
-  // marcada en `altaPendienteAlMontar` y activa la pestaña Perfil (lo que
-  // dispara su primer montaje si aún no ocurrió). El listener interno
-  // registrado dentro de mountPerfil (más abajo) sigue cubriendo el caso
-  // "Perfil ya montada" (reapertura tras eliminar y crear de nuevo).
+  // IIFE): abre el diálogo de alta directamente, SIN cambiar de pestaña
+  // (R11 punto 1, D-02) -- construyéndolo bajo demanda si Perfil nunca se
+  // ha montado (abrirDialogoAlta/asegurarDialogoAlta arriba). El listener
+  // interno registrado dentro de mountPerfil (más abajo) sigue cubriendo el
+  // caso "Perfil ya montada"; abrirDialogoAlta es idempotente, así que no
+  // importa que ambos disparen para el mismo evento.
   // -----------------------------------------------------------------------
-  var altaPendienteAlMontar = false;
   if (typeof G.addEventListener === 'function') {
     G.addEventListener('herzon:cliente-nuevo-solicitado', function () {
-      altaPendienteAlMontar = true;
-      if (G.document && typeof G.document.getElementById === 'function') {
-        var tabPerfil = G.document.getElementById('tab-perfil');
-        if (tabPerfil && typeof tabPerfil.click === 'function') { tabPerfil.click(); }
-      }
+      abrirDialogoAlta(rootPerfilConocido);
     });
   }
 
@@ -529,26 +697,26 @@
   // laboratorios en grid anidado (LY-02, omitida por S-05 si el cliente
   // tiene labsOcultos), edición de perfil (F-04, con la casilla S-05 y el
   // pie de eliminación F-05) y eliminación de cliente en modo real (R8
-  // punto 5, MC-06), el formulario de alta de cliente en card centrada
-  // (F-03, MC-04, ids congelados en Adendum R9 punto 6), la card de
-  // desbloqueo (S-02, primera card mientras Almacen.bloqueado()===true) y
-  // la card de seguridad y respaldo (S-03/S-04, solo real desbloqueado).
-  // Orden real de la vista (C-3): [bloqueado: desbloqueo primera] -> cards
-  // actuales -> Editar perfil (casilla labs + pie de eliminación) ->
-  // seguridad -> (alta, normalmente oculta).
+  // punto 5, MC-06), la card de desbloqueo (S-02, primera card mientras
+  // Almacen.bloqueado()===true), la card de seguridad y respaldo (S-03/S-04,
+  // solo real desbloqueado) y, SOLO en modo demo (D-05, R11), la card
+  // #hz-card-modo-real al final. El alta de cliente (F-03, MC-04, ids
+  // congelados en Adendum R9 punto 6) YA NO vive inline en esta vista -- es
+  // el diálogo modal #hz-dialogo-alta (D-01, construido a nivel de módulo,
+  // ver arriba). Orden real de la vista (C-3): [bloqueado: desbloqueo
+  // primera] -> cards actuales -> Editar perfil (casilla labs + pie de
+  // eliminación) -> seguridad -> [demo: card Modo real al final].
   // -----------------------------------------------------------------------
   function mountPerfil(rootEl) {
     var doc = rootEl.ownerDocument;
-    // El primer montaje puede nacer con el formulario de alta ya abierto si
-    // el listener de módulo de arriba marcó la intención antes de que este
-    // montaje perezoso ocurriera (fix BUG 1); se consume una sola vez.
-    var mostrarAlta = altaPendienteAlMontar;
-    altaPendienteAlMontar = false;
-    // F-04.5: mensaje de éxito de "Guardar cambios" -- patrón consumo-único
-    // (como altaPendienteAlMontar arriba): el submit exitoso lo fija ANTES
-    // de provocar el siguiente montaje (propio, o vía herzon:modo-cambiado
-    // si S-05 cambió la configuración); ese siguiente montaje lo consume
-    // una sola vez.
+    // D-01/D-02: recuerda el rootEl de Perfil -- el listener de nivel de
+    // módulo lo usa como fallback en TestDOM (donde no hay document.body)
+    // para anclar el diálogo de alta si se construye bajo demanda ahí.
+    rootPerfilConocido = rootEl;
+    // F-04.5: mensaje de éxito de "Guardar cambios" -- patrón consumo-único:
+    // el submit exitoso lo fija ANTES de provocar el siguiente montaje
+    // (propio, o vía herzon:modo-cambiado si S-05 cambió la configuración);
+    // ese siguiente montaje lo consume una sola vez.
     var mensajeExitoPerfil = '';
     // S-03: mismo patrón consumo-único, compartido por las tres acciones de
     // la card de seguridad (activar/cambiar/quitar) -- solo un panel
@@ -674,11 +842,13 @@
         montarCardSeguridad();
       }
 
-      // --- MC-04/F-03: formulario de alta de cliente (ids congelados en
-      // Adendum R9 punto 6), ahora en card centrada (F-03). Siempre
-      // presente en el DOM; oculto salvo que `mostrarAlta` esté activo
-      // (herzon:cliente-nuevo-solicitado). ---
-      montarFormularioAlta();
+      // --- D-05 (R11): SOLO en modo demo (nunca en real ni bloqueado),
+      // última card de la vista -- explica qué habilita el modo real
+      // (contraseña, laboratorios ocultos, rutina editable) y ofrece el
+      // mismo punto de entrada al alta que el header ("Usar mis datos"). ---
+      if (!enReal && !bloqueado) {
+        montarCardModoReal();
+      }
 
       // -----------------------------------------------------------------
       // R8 punto 5 + F-04 + S-05: edición de perfil (nombre/sexo/edad/
@@ -812,115 +982,39 @@
       }
 
       // -----------------------------------------------------------------
-      // MC-04 + F-03: formulario de alta de cliente, ahora en card
-      // centrada. Ids congelados (Adendum R9 punto 6). Oculto por default;
-      // `herzon:cliente-nuevo-solicitado` lo muestra (ver el listener de
-      // abajo, fuera de render()).
+      // D-05 (R11): tarjeta 'Modo real' en modo demo -- feedback en vivo de
+      // Mario ("no veo el checkbox / no veo la rutina ni la contraseña"):
+      // en demo nada indicaba que la protección con contraseña, ocultar
+      // labs y editar la rutina existen en modo real. Última card de la
+      // vista (después de labs); ausente en real y en bloqueado (D-05).
       // -----------------------------------------------------------------
-      function montarFormularioAlta() {
+      function montarCardModoReal() {
         var card = crear(doc, 'div', ['hz-card', 'hz-form-card']);
-        card.setAttribute('id', 'hz-card-alta-cliente');
-        var form = crear(doc, 'form', ['hz-form', 'hz-form-columnas']);
-        form.setAttribute('id', 'hz-form-alta-cliente');
-        if (!mostrarAlta) {
-          // F-03.2: card y form se togglean JUNTOS -- ambos con `hidden`
-          // (assert de selfcheck_vistas_b.js:395 sigue verde sobre el
-          // form), y el inline style.display='none' en la CARD como
-          // cinturón verificado (F-01.11 ya cubre `.hz-form-card[hidden]`
-          // por CSS, pero el inline queda como refuerzo explícito, mismo
-          // patrón defensivo ya usado en R9 para .hz-form).
-          card.setAttribute('hidden', '');
-          card.style.display = 'none';
-          form.setAttribute('hidden', '');
-        }
-
-        card.appendChild(crear(doc, 'h3', ['hz-card-title'], TITULO_ALTA));
-
-        var clientesCount = (Almacen && typeof Almacen.clientes === 'function') ? Almacen.clientes().length : 0;
-        if (clientesCount === 0) {
-          card.appendChild(crear(doc, 'p', ['hz-nota'], SUBTITULO_ALTA_PRIMER_USO));
-        }
-        card.appendChild(crear(doc, 'p', ['hz-nota'], NOTA_PRIVACIDAD_ALTA));
-
-        var campoNombre = crearCampoInput(doc, form, 'hz-alta-nombre', 'Nombre', 'text', '');
-        campoNombre.campo.classList.add('hz-form-ancho');
-        var campoSexo = crearCampoSelect(doc, form, 'hz-alta-sexo', 'Sexo', OPCIONES_SEXO);
-        var campoEdad = crearCampoInput(doc, form, 'hz-alta-edad', 'Edad (años)', 'number', '', { min: 1, max: 120, step: 1 });
-        var campoTalla = crearCampoInput(doc, form, 'hz-alta-talla', 'Talla (cm)', 'number', '', { min: 50, max: 250, step: 1 });
-        var campoPeso = crearCampoInput(doc, form, 'hz-alta-peso', 'Peso (kg)', 'number', '', { min: 20, max: 400, step: 0.1 });
-        var campoActividad = crearCampoSelect(doc, form, 'hz-alta-actividad', 'Nivel de actividad',
-          opcionesActividad(data.factoresActividad));
-        var campoObjetivo = crearCampoInput(doc, form, 'hz-alta-objetivo', 'Objetivo', 'text', '');
-
-        var errorEl = crear(doc, 'p', ['hz-form-error', 'hz-form-ancho']);
-        errorEl.setAttribute('id', 'hz-alta-error');
-        errorEl.style.color = 'var(--delta-bad)';
-        form.appendChild(errorEl);
-
-        var acciones = crear(doc, 'div', ['hz-form-acciones', 'hz-form-ancho']);
-        var botonCrear = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Crear cliente');
-        botonCrear.setAttribute('type', 'submit');
-        botonCrear.setAttribute('id', 'hz-btn-crear-cliente');
-        acciones.appendChild(botonCrear);
-
-        // MC-04: "Cancelar" visible solo si ya existe al menos un cliente o
-        // se está en demo.
-        if (clientesCount >= 1 || !enReal) {
-          var botonCancelar = crear(doc, 'button', ['hz-btn', 'hz-btn-secundario'], 'Cancelar');
-          botonCancelar.setAttribute('type', 'button');
-          botonCancelar.setAttribute('id', 'hz-btn-cancelar-alta');
-          botonCancelar.addEventListener('click', function (ev) {
-            if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
-            mostrarAlta = false;
-            render();
-          });
-          acciones.appendChild(botonCancelar);
-        }
-        form.appendChild(acciones);
-
-        form.addEventListener('submit', function (ev) {
-          if (ev && typeof ev.preventDefault === 'function') { ev.preventDefault(); }
-          errorEl.textContent = '';
-          // C-6: código nuevo/refactorizado usa SOLO aria-invalid + la
-          // regla CSS F-01.6, sin inline borderColor.
-          campoNombre.input.removeAttribute('aria-invalid');
-          if (!Almacen || typeof Almacen.crearCliente !== 'function') {
-            errorEl.textContent = 'No se puede crear un cliente en este momento.';
-            return;
-          }
-          var perfilObj = {
-            nombre: campoNombre.input.value,
-            sexo: campoSexo.select.value,
-            edad: parseFloat(campoEdad.input.value),
-            talla_cm: parseFloat(campoTalla.input.value),
-            pesoInicial_kg: parseFloat(campoPeso.input.value),
-            actividad: campoActividad.select.value,
-            objetivo: campoObjetivo.input.value
-          };
-          ['edad', 'talla_cm', 'pesoInicial_kg'].forEach(function (clave) {
-            if (isNaN(perfilObj[clave])) { perfilObj[clave] = undefined; }
-          });
-          var res = Almacen.crearCliente(perfilObj);
-          if (!res || !res.ok) {
-            campoNombre.input.setAttribute('aria-invalid', 'true');
-            errorEl.textContent = (res && res.errores && res.errores.length) ? res.errores.join(' ') : 'No se pudo crear el cliente.';
-            return;
-          }
-          mostrarAlta = false;
-          // Éxito (corrección ronda 9, hallazgo del verifier en
-          // verificación real: BUG 2): crearCliente ya disparó
-          // herzon:modo-cambiado de forma SÍNCRONA (Adendum R9 punto 3)
-          // DENTRO de esta misma llamada -- ese render intermedio ocurrió
-          // con `mostrarAlta` todavía en `true` (el valor de ANTES de esta
-          // línea), así que reconstruyó el formulario visible. Se fuerza
-          // aquí un segundo render explícito, ya con `mostrarAlta` en
-          // `false`, que cierra el formulario y deja el perfil vacío del
-          // nuevo cliente ya montado (mismo patrón que
-          // montarFormularioEdicionPerfil usa tras actualizarPerfil).
-          render();
+        card.setAttribute('id', 'hz-card-modo-real');
+        card.appendChild(crear(doc, 'h3', ['hz-card-title'], 'Modo real: tus clientes'));
+        card.appendChild(crear(doc, 'p', ['hz-nota'],
+          'En modo real registras clientes reales y se habilitan estas funciones:'));
+        var lista = crear(doc, 'ul');
+        [
+          'Contraseña: cifra los datos de tus clientes en este dispositivo.',
+          'Laboratorios ocultos: quita la sección de labs a los clientes que no se los hacen.',
+          'Rutina editable: prescribe días y ejercicios e imprímela.'
+        ].forEach(function (texto) {
+          lista.appendChild(crear(doc, 'li', null, texto));
         });
+        card.appendChild(lista);
 
-        card.appendChild(form);
+        var acciones = crear(doc, 'div', ['hz-form-acciones']);
+        var boton = crear(doc, 'button', ['hz-btn', 'hz-btn-primario'], 'Registrar un cliente');
+        boton.setAttribute('type', 'button');
+        boton.setAttribute('id', 'hz-btn-modo-real-perfil');
+        boton.addEventListener('click', function () {
+          if (typeof G.dispatchEvent !== 'function' || typeof CustomEvent === 'undefined') { return; }
+          G.dispatchEvent(new CustomEvent('herzon:cliente-nuevo-solicitado', { detail: {} }));
+        });
+        acciones.appendChild(boton);
+        card.appendChild(acciones);
+
         rootEl.appendChild(card);
       }
 
@@ -1380,23 +1474,30 @@
         contenedor.appendChild(boton);
         return contenedor;
       }
+
+      // D-01: construye (y ancla) el diálogo de alta al final de CADA
+      // render(). En DOM real es un no-op tras la primera vez (el
+      // singleton cuelga de document.body, ajeno a rootEl -- limpiar(rootEl)
+      // nunca lo toca). En TestDOM (fallback sin document.body) SÍ cuelga
+      // de rootEl, y limpiar(rootEl) al INICIO de cada render() lo
+      // desancla -- por eso se reancla aquí en cada render(), sin
+      // reconstruirlo (asegurarDialogoAlta reengancha el mismo nodo si ya
+      // existe pero quedó huérfano).
+      asegurarDialogoAlta(rootEl);
     }
 
     render();
 
     if (typeof G.addEventListener === 'function') {
       G.addEventListener('herzon:modo-cambiado', function () { render(); });
-      // MC-04: activa la pestaña Perfil (solo DOM real -- TestDOM no
-      // implementa getElementById/click, así que este bloque no-opera en el
-      // selfcheck) y muestra el formulario de alta.
+      // D-02: cubre el caso "Perfil ya montada" (reapertura del diálogo de
+      // alta tras eliminar y crear de nuevo, o tras cualquier disparo del
+      // evento con esta vista ya viva). abrirDialogoAlta es idempotente
+      // (guarda dialog.open), así que da igual que el listener de nivel de
+      // módulo también dispare para el mismo evento -- SIN cambiar de
+      // pestaña (R11 punto 1) y sin necesidad de un render().
       G.addEventListener('herzon:cliente-nuevo-solicitado', function () {
-        var docReal = rootEl.ownerDocument;
-        if (docReal && typeof docReal.getElementById === 'function') {
-          var tabPerfil = docReal.getElementById('tab-perfil');
-          if (tabPerfil && typeof tabPerfil.click === 'function') { tabPerfil.click(); }
-        }
-        mostrarAlta = true;
-        render();
+        abrirDialogoAlta(rootEl);
       });
     }
   }

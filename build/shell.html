@@ -861,6 +861,20 @@ button, input, select { font-family: inherit; }
 .hz-rutina-dosis {flex:0 0 auto;font-weight:600;color:var(--text-primary);font-variant-numeric:tabular-nums;}
 .hz-rutina-descanso {flex:0 0 auto;color:var(--text-secondary);font-size:0.85rem;}
 .hz-rutina-nota {flex:1 1 100%;color:var(--text-secondary);font-size:0.8rem;}
+
+/* ---------- 14. Adendum R11 (D-01): dialogo modal hz-dialogo ---------- */
+dialog.hz-dialogo { border: 1px solid var(--border); border-radius: 16px; background: var(--surface-1); color: var(--text-primary); padding: 0; width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-shadow: var(--shadow-card); overflow: auto; }
+dialog.hz-dialogo::backdrop { background: rgba(11, 11, 11, 0.55); backdrop-filter: blur(2px); }
+dialog.hz-dialogo > .hz-form-card { max-width: none; margin: 0; }
+dialog.hz-dialogo:not([open]) { display: none; }
+@media (max-width: 599px) {
+  dialog.hz-dialogo { width: calc(100vw - 16px); border-radius: 12px; }
+}
+
+/* R11 (D-07): casilla en linea con su etiqueta */
+.hz-form-campo.hz-form-check { flex-direction: row; align-items: center; gap: 10px; }
+.hz-form-campo.hz-form-check input[type="checkbox"] { width: 18px; height: 18px; margin: 0; padding: 0; flex: 0 0 auto; accent-color: var(--series-1); }
+.hz-form-campo.hz-form-check label { font-size: 0.95rem; color: var(--text-primary); }
 </style>
 </head>
 <body>

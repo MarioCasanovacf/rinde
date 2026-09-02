@@ -468,26 +468,39 @@ var textosPerfil = textosDe(rootPerfil).join(' ');
 afirmar(textosPerfil.indexOf(String(DATA.paciente.talla_cm)) !== -1, 'La tarjeta antropometrica debe mostrar la talla del paciente');
 afirmar(textosPerfil.indexOf(DATA.paciente.objetivo) !== -1, 'La tarjeta clínica debe mostrar el objetivo del paciente');
 
-// Con Almacen ausente: enReal===false -> NO se monta edición de perfil ni
-// botón eliminar; el formulario de alta SÍ se monta (siempre presente) pero
-// OCULTO, con el subtítulo de "primer uso" (0 clientes reportados).
+// Con Almacen ausente (equivalente a demo): enReal===false -> NO se monta
+// edición de perfil ni botón eliminar; el diálogo de alta se construye
+// (D-01, siempre presente en el DOM, cerrado por default) y la vista monta
+// la card #hz-card-modo-real (D-05).
 afirmar(buscarPorId(rootPerfil, 'hz-btn-eliminar-cliente') === null,
   'sin Almacen (modo no-real), Vista Perfil NO debe montar #hz-btn-eliminar-cliente');
 var formEditarPerfilAusente = recolectarNodos(rootPerfil).filter(function (n) { return (n.tagName || '').toLowerCase() === 'form'; })
   .filter(function (f) { return f.getAttribute('id') !== 'hz-form-alta-cliente'; });
 afirmar(formEditarPerfilAusente.length === 0, 'sin Almacen (modo no-real), Vista Perfil NO debe montar el formulario de edición de perfil');
 
-// MC-04 + F-03: formulario de alta -- ids EXACTOS del Adendum R9 punto 6,
-// ahora envuelto en una card centrada (#hz-card-alta-cliente, hz-form-card).
-var cardAltaBase = buscarPorId(rootPerfil, 'hz-card-alta-cliente');
-afirmar(!!cardAltaBase, 'F-03: debe existir #hz-card-alta-cliente');
+// D-01: el diálogo de alta -- ids EXACTOS del Adendum R9 punto 6, ahora
+// DENTRO de un <dialog id="hz-dialogo-alta" class="hz-dialogo"> (CSS de
+// T-059, shell.html sección 14). En TestDOM (sin document.body) cuelga del
+// rootEl de Perfil -- D-04 exige distinguir "dentro del diálogo" de
+// "inline": el diálogo SÍ es descendiente de rootEl (fallback de TestDOM),
+// pero la card/form ya NO son hijos DIRECTOS de rootEl (no viven inline).
+var dialogoAltaBase = buscarPorId(rootPerfil, 'hz-dialogo-alta');
+afirmar(!!dialogoAltaBase, 'D-01: debe existir #hz-dialogo-alta tras montar Perfil');
+afirmar(clasesDe(dialogoAltaBase).indexOf('hz-dialogo') !== -1, 'D-01: #hz-dialogo-alta debe llevar la clase hz-dialogo (CSS de T-059)');
+afirmar((dialogoAltaBase.tagName || '').toLowerCase() === 'dialog', 'D-01: el nodo #hz-dialogo-alta debe ser un <dialog>');
+afirmar(rootPerfil.children.indexOf(dialogoAltaBase) !== -1, 'D-01: en TestDOM, el diálogo se ancla como hijo directo del rootEl de Perfil (fallback sin document.body)');
+afirmar(!dialogoAltaBase.hasAttribute('open'), 'D-02: el diálogo de alta NO debe abrirse solo al montar/cargar la app');
+
+var cardAltaBase = buscarPorId(dialogoAltaBase, 'hz-card-alta-cliente');
+afirmar(!!cardAltaBase, 'F-03: debe existir #hz-card-alta-cliente DENTRO del diálogo');
 afirmar(clasesDe(cardAltaBase).indexOf('hz-card') !== -1 && clasesDe(cardAltaBase).indexOf('hz-form-card') !== -1,
   'F-03: #hz-card-alta-cliente debe llevar las clases hz-card y hz-form-card (720px, sistema de formularios)');
-afirmar(cardAltaBase.hasAttribute('hidden') && cardAltaBase.style.display === 'none',
-  'F-03.2: la card de alta debe estar oculta por default (hidden + style.display=none, cinturón verificado)');
-var formAltaBase = buscarPorId(rootPerfil, 'hz-form-alta-cliente');
-afirmar(!!formAltaBase, 'MC-04: debe existir #hz-form-alta-cliente');
-afirmar(formAltaBase.hasAttribute('hidden'), 'MC-04: #hz-form-alta-cliente debe estar oculto por default (togglea junto con la card)');
+afirmar(cardAltaBase.parentNode === dialogoAltaBase, 'D-01: la card de alta debe ser hijo DIRECTO del diálogo (CSS T-059: dialog.hz-dialogo > .hz-form-card)');
+afirmar(rootPerfil.children.indexOf(cardAltaBase) === -1, 'D-04: #hz-card-alta-cliente NO debe ser hijo DIRECTO de rootEl (ya no vive inline)');
+
+var formAltaBase = buscarPorId(dialogoAltaBase, 'hz-form-alta-cliente');
+afirmar(!!formAltaBase, 'MC-04: debe existir #hz-form-alta-cliente DENTRO del diálogo');
+afirmar(rootPerfil.children.indexOf(formAltaBase) === -1, 'D-04: #hz-form-alta-cliente NO debe ser hijo DIRECTO de rootEl (ya no vive inline)');
 afirmar(clasesDe(formAltaBase).indexOf('hz-form') !== -1 && clasesDe(formAltaBase).indexOf('hz-form-columnas') !== -1,
   'F-03.2: el form de alta debe llevar las clases hz-form y hz-form-columnas');
 ['hz-alta-nombre', 'hz-alta-sexo', 'hz-alta-edad', 'hz-alta-talla', 'hz-alta-peso', 'hz-alta-actividad', 'hz-alta-objetivo',
@@ -495,7 +508,7 @@ afirmar(clasesDe(formAltaBase).indexOf('hz-form') !== -1 && clasesDe(formAltaBas
   afirmar(!!buscarPorId(formAltaBase, id), 'MC-04: el formulario de alta debe traer el id exacto #' + id);
 });
 afirmar(!!buscarPorId(formAltaBase, 'hz-btn-cancelar-alta'),
-  'MC-04: con 0 clientes y Almacen ausente (equivalente a demo), el botón Cancelar debe estar presente');
+  'D-03: Cancelar debe estar SIEMPRE presente en el diálogo (ya no depende de clientesCount/enReal)');
 // F-03.3: el campo Nombre cae en fila completa (hz-form-ancho).
 var campoNombreAltaBase = buscarPorId(formAltaBase, 'hz-alta-nombre');
 var wrapperNombreAltaBase = campoNombreAltaBase.parentNode;
@@ -508,20 +521,61 @@ afirmar(clasesDe(botonCrearBase).indexOf('hz-btn') !== -1 && clasesDe(botonCrear
 var botonCancelarAltaBase = buscarPorId(formAltaBase, 'hz-btn-cancelar-alta');
 afirmar(clasesDe(botonCancelarAltaBase).indexOf('hz-btn') !== -1 && clasesDe(botonCancelarAltaBase).indexOf('hz-btn-secundario') !== -1,
   'F-02/F-03.5: #hz-btn-cancelar-alta debe llevar hz-btn hz-btn-secundario');
-// F-03.1: título, subtítulo de primer uso y nota de privacidad son hijos de
-// la CARD (ANTES del form), no del form.
+// F-03.1: título y nota de privacidad son hijos de la CARD (ANTES del
+// form), no del form.
 var tituloAltaBase = recolectarNodos(cardAltaBase).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
 afirmar(!!tituloAltaBase && tituloAltaBase.textContent === 'Nuevo cliente', 'MC-04: el título del formulario de alta debe ser "Nuevo cliente"');
 afirmar(tituloAltaBase.parentNode === cardAltaBase, 'F-03.1: el título de alta debe ser hijo directo de la card, no del form');
 var textosCardAltaBase = textosDe(cardAltaBase).join(' ');
-afirmar(textosCardAltaBase.indexOf('Registra a tu primer cliente para empezar a capturar mediciones.') !== -1,
-  'MC-04: con 0 clientes debe aparecer el subtítulo de primer uso exacto');
 afirmar(textosCardAltaBase.indexOf('Los datos de cada cliente se guardan solo en este dispositivo.') !== -1,
   'MC-04: debe aparecer la nota fija de privacidad exacta');
 var errorAltaBase = buscarPorId(formAltaBase, 'hz-alta-error');
 afirmar(errorAltaBase.style.color === 'var(--delta-bad)', 'MC-04: #hz-alta-error debe usar var(--delta-bad) (patrón T-029)');
 afirmar(clasesDe(errorAltaBase).indexOf('hz-form-error') !== -1 && clasesDe(errorAltaBase).indexOf('hz-form-ancho') !== -1,
   'F-03.4: #hz-alta-error debe llevar hz-form-error y hz-form-ancho');
+
+// D-05: en demo (Almacen ausente equivale a demo), la vista Perfil monta
+// AL FINAL (después de labs, antes del diálogo -- D-01 lo ancla último)
+// la card #hz-card-modo-real, con el texto exacto y EXACTAMENTE 3 <li>,
+// más el botón que despacha herzon:cliente-nuevo-solicitado.
+var cardModoRealBase = buscarPorId(rootPerfil, 'hz-card-modo-real');
+afirmar(!!cardModoRealBase, 'D-05: en demo, Vista Perfil debe montar #hz-card-modo-real');
+afirmar(clasesDe(cardModoRealBase).indexOf('hz-card') !== -1 && clasesDe(cardModoRealBase).indexOf('hz-form-card') !== -1,
+  'D-05: #hz-card-modo-real debe llevar las clases hz-card y hz-form-card');
+var hijosPerfilSinDialogo = rootPerfil.children.filter(function (n) { return n !== dialogoAltaBase; });
+afirmar(hijosPerfilSinDialogo[hijosPerfilSinDialogo.length - 1] === cardModoRealBase,
+  'D-05: #hz-card-modo-real debe ser la ÚLTIMA card de contenido montada en Perfil (después de labs; el diálogo, anclado aparte, no cuenta)');
+var tituloModoReal = recolectarNodos(cardModoRealBase).filter(function (n) { return clasesDe(n).indexOf('hz-card-title') !== -1; })[0];
+afirmar(!!tituloModoReal && tituloModoReal.textContent === 'Modo real: tus clientes', 'D-05: título exacto de #hz-card-modo-real');
+afirmar(textosDe(cardModoRealBase).join(' ').indexOf('En modo real registras clientes reales y se habilitan estas funciones:') !== -1,
+  'D-05: nota introductoria exacta de #hz-card-modo-real');
+var liModoReal = recolectarNodos(cardModoRealBase).filter(function (n) { return (n.tagName || '').toLowerCase() === 'li'; });
+afirmar(liModoReal.length === 3, 'D-05: #hz-card-modo-real debe traer EXACTAMENTE 3 <li>');
+afirmar(liModoReal[0].textContent === 'Contraseña: cifra los datos de tus clientes en este dispositivo.', 'D-05: texto exacto del li 1 (contraseña)');
+afirmar(liModoReal[1].textContent === 'Laboratorios ocultos: quita la sección de labs a los clientes que no se los hacen.', 'D-05: texto exacto del li 2 (labs ocultos)');
+afirmar(liModoReal[2].textContent === 'Rutina editable: prescribe días y ejercicios e imprímela.', 'D-05: texto exacto del li 3 (rutina)');
+var botonModoReal = buscarPorId(cardModoRealBase, 'hz-btn-modo-real-perfil');
+afirmar(!!botonModoReal, 'D-05: debe existir #hz-btn-modo-real-perfil');
+afirmar(botonModoReal.textContent === 'Registrar un cliente', 'D-05: texto exacto del botón #hz-btn-modo-real-perfil');
+afirmar(clasesDe(botonModoReal).indexOf('hz-btn') !== -1 && clasesDe(botonModoReal).indexOf('hz-btn-primario') !== -1,
+  'D-05: #hz-btn-modo-real-perfil debe llevar hz-btn hz-btn-primario');
+
+// D-01/D-02 (captura para la sección 14 más abajo): el diálogo de alta es
+// un SINGLETON de módulo (D-01) -- una vez anclado aquí (al rootEl de esta
+// sección, primer montaje de Perfil del archivo), montajes POSTERIORES de
+// Perfil con OTRO rootEl (isolados vía conBusDeEventosAislado en el resto
+// de este archivo) reutilizan el MISMO diálogo sin volver a anexarlo a su
+// propio rootEl -- por eso la sección 14 reutiliza estas referencias en
+// vez de volver a buscarlas dentro de un rootEl nuevo. `listenersPorTipo`
+// (bus NO aislado, capturado desde la carga del script) trae, para
+// 'herzon:cliente-nuevo-solicitado': [0]=listener de nivel de módulo,
+// [1]=listener interno registrado por ESTE montaje de mountPerfil; para
+// 'herzon:modo-cambiado': [0]=el de mountResumen (sección 3), [1]=el de
+// este mountPerfil.
+var listenerAltaModulo = listenersPorTipo['herzon:cliente-nuevo-solicitado'][0];
+var listenerModoCambiadoPerfil = listenersPorTipo['herzon:modo-cambiado'][1];
+afirmar(typeof listenerAltaModulo === 'function', 'D-02: el listener de nivel de módulo de herzon:cliente-nuevo-solicitado debe existir');
+afirmar(typeof listenerModoCambiadoPerfil === 'function', 'Adendum R9 punto 3: el listener de herzon:modo-cambiado de este montaje de Perfil debe existir');
 
 // ---------------------------------------------------------------------
 // 5. Vista Seguimiento (baseline: Herzon.Almacen AUSENTE, con el markup
@@ -890,56 +944,69 @@ conBusDeEventosAislado(function () {
 });
 
 // ---------------------------------------------------------------------
-// 14. MC-04 (parte 2): apertura por evento, error de validación, éxito
-// cierra y limpia (remontaje vía herzon:modo-cambiado simulando lo que
-// dispara Herzon.Almacen.crearCliente en la implementación real).
+// 14a. D-02: CADA montaje de Vista Perfil registra exactamente un listener
+// interno de herzon:cliente-nuevo-solicitado y uno de herzon:modo-cambiado
+// (bus aislado -- solo cuenta lo registrado POR ESTE montaje, no acumula
+// con los de otras secciones).
 // ---------------------------------------------------------------------
 conBusDeEventosAislado(function (listeners) {
+  var rootContarListeners = contenedorNuevo();
+  Herzon.Views.perfil(rootContarListeners);
+  afirmar((listeners['herzon:cliente-nuevo-solicitado'] || []).length === 1,
+    'D-02: cada montaje de Vista Perfil debe registrar EXACTAMENTE un listener interno de herzon:cliente-nuevo-solicitado');
+  afirmar((listeners['herzon:modo-cambiado'] || []).length === 1,
+    'Adendum R9 punto 3: cada montaje de Vista Perfil debe registrar UN listener de herzon:modo-cambiado');
+});
+
+// ---------------------------------------------------------------------
+// 14b. D-01/D-02/D-03/D-06 (R11, hereda MC-04): apertura del diálogo de
+// alta por evento (SIN cambiar de pestaña), guardián de bloqueado (D-06),
+// error de validación y éxito cierra+limpia (remontaje vía
+// herzon:modo-cambiado simulando lo que dispara Herzon.Almacen.crearCliente
+// en la implementación real). Reutiliza el diálogo/rootPerfil/listeners de
+// la sección 4 -- D-01 lo construye como singleton de módulo: una vez
+// anclado a ESE rootEl, montajes posteriores con OTRO rootEl reutilizan el
+// MISMO diálogo (nunca uno nuevo, ver el comentario al final de la
+// sección 4), así que las asserciones de comportamiento deben ejercitar
+// ESE diálogo/formulario, no uno recién buscado en un rootEl distinto.
+// ---------------------------------------------------------------------
+(function () {
+  afirmar(!dialogoAltaBase.hasAttribute('open'),
+    'D-02: el diálogo de alta debe seguir cerrado antes de esta sección (estado limpio heredado de la sección 4)');
+
   var resultadoCrear = { ok: false, errores: ['Ya existe un cliente con ese nombre en este dispositivo.'] };
+  var bloqueadoMC04 = false;
   var almacenMock = crearAlmacenMock({
     modo: 'real',
     clientes: [{ id: 'c-1', nombre: 'Ana', creado: '2026-08-01' }],
+    bloqueado: function () { return bloqueadoMC04; },
     crearCliente: function () { return resultadoCrear; }
   });
   globalThis.Herzon.Almacen = almacenMock;
 
-  var rootPerfilMC04 = contenedorNuevo();
-  Herzon.Views.perfil(rootPerfilMC04);
+  // D-06: mientras Almacen.bloqueado()===true, el evento NO abre el diálogo.
+  bloqueadoMC04 = true;
+  listenerAltaModulo({ type: 'herzon:cliente-nuevo-solicitado', detail: {} });
+  afirmar(!dialogoAltaBase.hasAttribute('open'), 'D-06: con Almacen.bloqueado()===true, el diálogo de alta NO debe abrirse');
+  bloqueadoMC04 = false;
 
-  var formAlta = buscarPorId(rootPerfilMC04, 'hz-form-alta-cliente');
-  afirmar(formAlta.hasAttribute('hidden'), 'MC-04: el formulario de alta debe seguir oculto al montar (sin solicitud de alta)');
-  var cardAltaMC04 = buscarPorId(rootPerfilMC04, 'hz-card-alta-cliente');
-  afirmar(cardAltaMC04.hasAttribute('hidden') && cardAltaMC04.style.display === 'none',
-    'F-03.2: la card de alta también debe estar oculta al montar (togglea junto con el form)');
-  // El formulario de alta se construye COMPLETO (solo oculto con `hidden`)
-  // desde el primer montaje: con 1 cliente ya registrado en el mock,
-  // clientesCount>=1 y el botón Cancelar debe existir desde ya (MC-04:
-  // "Cancelar visible solo si ya existe al menos un cliente o se está en
-  // demo"), sin esperar a herzon:cliente-nuevo-solicitado.
-  afirmar(!!buscarPorId(formAlta, 'hz-btn-cancelar-alta'),
-    'MC-04: con 1+ clientes ya registrados, el botón Cancelar debe existir desde el primer montaje (aunque el formulario esté oculto)');
+  listenerAltaModulo({ type: 'herzon:cliente-nuevo-solicitado', detail: {} });
+  afirmar(dialogoAltaBase.hasAttribute('open'),
+    'D-02: tras herzon:cliente-nuevo-solicitado (desbloqueado), el diálogo debe abrirse (atributo open, fallback TestDOM de showModal)');
+  afirmar(!!buscarPorId(formAltaBase, 'hz-btn-cancelar-alta'), 'D-03: Cancelar sigue presente tras reabrir el diálogo');
 
-  afirmar((listeners['herzon:cliente-nuevo-solicitado'] || []).length === 1,
-    'MC-04: Vista Perfil debe registrar EXACTAMENTE un listener de herzon:cliente-nuevo-solicitado');
-  listeners['herzon:cliente-nuevo-solicitado'][0]({ type: 'herzon:cliente-nuevo-solicitado', detail: {} });
-
-  var formAltaAbierto = buscarPorId(rootPerfilMC04, 'hz-form-alta-cliente');
-  afirmar(!formAltaAbierto.hasAttribute('hidden'), 'MC-04: tras herzon:cliente-nuevo-solicitado, el formulario de alta debe mostrarse (sin atributo hidden)');
-  afirmar(!!buscarPorId(formAltaAbierto, 'hz-btn-cancelar-alta'), 'MC-04: con clientes existentes, Cancelar debe estar presente');
-
-  var campoNombreAlta = buscarPorId(formAltaAbierto, 'hz-alta-nombre');
-  campoNombreAlta.value = 'Ana';
-  var errorAlta = buscarPorId(formAltaAbierto, 'hz-alta-error');
-  formAltaAbierto.despachar('submit', {});
+  campoNombreAltaBase.value = 'Ana';
+  formAltaBase.despachar('submit', {});
   afirmar(almacenMock._llamadas.crearCliente.length === 1, 'MC-04: el submit debe llamar Almacen.crearCliente exactamente una vez');
   afirmar(almacenMock._llamadas.crearCliente[0].nombre === 'Ana', 'MC-04: crearCliente debe recibir el nombre capturado en #hz-alta-nombre');
-  afirmar(errorAlta.textContent === resultadoCrear.errores.join(' '), 'MC-04: en fallo, #hz-alta-error debe mostrar el mensaje EXACTO devuelto por Almacen.crearCliente');
+  afirmar(errorAltaBase.textContent === resultadoCrear.errores.join(' '), 'MC-04: en fallo, #hz-alta-error debe mostrar el mensaje EXACTO devuelto por Almacen.crearCliente');
   // C-6: validación canónica en código nuevo -- SOLO aria-invalid + la
   // regla CSS F-01.6, sin inline borderColor.
-  afirmar(campoNombreAlta.getAttribute('aria-invalid') === 'true', 'C-6: en fallo, el campo nombre debe marcarse con aria-invalid="true" (sin borderColor inline)');
-  afirmar(campoNombreAlta.style.borderColor !== 'var(--delta-bad)', 'C-6: el campo nombre NO debe usar borderColor inline en código nuevo (solo aria-invalid)');
-  afirmar(buscarPorId(rootPerfilMC04, 'hz-form-alta-cliente') === formAltaAbierto,
-    'MC-04: un fallo de validación NO debe remontar la vista (el formulario sigue siendo el mismo nodo)');
+  afirmar(campoNombreAltaBase.getAttribute('aria-invalid') === 'true', 'C-6: en fallo, el campo nombre debe marcarse con aria-invalid="true" (sin borderColor inline)');
+  afirmar(campoNombreAltaBase.style.borderColor !== 'var(--delta-bad)', 'C-6: el campo nombre NO debe usar borderColor inline en código nuevo (solo aria-invalid)');
+  afirmar(dialogoAltaBase.hasAttribute('open'), 'D-03: un fallo de validación NO debe cerrar el diálogo (permanece abierto con el mensaje)');
+  afirmar(buscarPorId(rootPerfil, 'hz-form-alta-cliente') === formAltaBase,
+    'D-01: un fallo de validación NO debe reconstruir el diálogo (el formulario sigue siendo el mismo nodo, singleton)');
 
   // Éxito: crearCliente ahora aprueba y simula el remontaje SÍNCRONO que
   // Herzon.Almacen dispara vía herzon:modo-cambiado en la implementación
@@ -947,23 +1014,25 @@ conBusDeEventosAislado(function (listeners) {
   resultadoCrear = { ok: true, id: 'c-nuevo' };
   var datosNuevoCliente = datosClienteVacio();
   globalThis.HERZON_DATA = datosNuevoCliente;
-  errorAlta.textContent = '';
-  formAltaAbierto.despachar('submit', {});
+  formAltaBase.despachar('submit', {});
   afirmar(almacenMock._llamadas.crearCliente.length === 2, 'MC-04: el segundo submit (éxito) también debe invocar Almacen.crearCliente');
+  afirmar(!dialogoAltaBase.hasAttribute('open'), 'D-03: un alta exitosa debe cerrar el diálogo de alta');
+  afirmar(campoNombreAltaBase.value === '', 'D-03: un alta exitosa debe limpiar los campos del diálogo (Cancelar/éxito limpian igual)');
+  afirmar(errorAltaBase.textContent === '', 'D-03: un alta exitosa debe limpiar #hz-alta-error');
+
   // Simula el evento síncrono que Almacen.crearCliente dispara al montar el
   // nuevo cliente: invoca el listener de herzon:modo-cambiado registrado
-  // por ESTA misma vista Perfil.
-  afirmar((listeners['herzon:modo-cambiado'] || []).length === 1, 'Adendum R9 punto 3: Vista Perfil debe registrar UN listener de herzon:modo-cambiado');
-  listeners['herzon:modo-cambiado'][0]({ type: 'herzon:modo-cambiado', detail: { modo: 'real', clienteId: 'c-nuevo' } });
-
-  var formAltaTrasExito = buscarPorId(rootPerfilMC04, 'hz-form-alta-cliente');
-  afirmar(formAltaTrasExito.hasAttribute('hidden'), 'MC-04: tras un alta exitosa, el remontaje debe volver a ocultar el formulario de alta');
-  afirmar(textosDe(rootPerfilMC04).join(' ').indexOf('Cliente Nuevo') !== -1,
+  // por la Vista Perfil de la sección 4 (remontaje de las OTRAS cards; el
+  // diálogo no participa del ciclo de render(), vive fuera como singleton).
+  listenerModoCambiadoPerfil({ type: 'herzon:modo-cambiado', detail: { modo: 'real', clienteId: 'c-nuevo' } });
+  afirmar(textosDe(rootPerfil).join(' ').indexOf('Cliente Nuevo') !== -1,
     'MC-04: tras el alta exitosa, la vista debe reflejar el perfil del nuevo cliente (releído de G.HERZON_DATA)');
+  afirmar(buscarPorId(rootPerfil, 'hz-dialogo-alta') === dialogoAltaBase,
+    'D-01: el remontaje de herzon:modo-cambiado NO debe reconstruir el diálogo de alta (sigue siendo el mismo singleton)');
 
   globalThis.Herzon.Almacen = undefined;
   globalThis.HERZON_DATA = DATA;
-});
+})();
 
 // ---------------------------------------------------------------------
 // 15. MC-06: eliminación de cliente con confirmación en dos pasos y
@@ -1291,6 +1360,7 @@ conBusDeEventosAislado(function () {
   afirmar(checkboxLabsA.getAttribute('type') === 'checkbox', 'S-05: #hz-perfil-labs-ocultos debe ser type=checkbox');
   afirmar(checkboxLabsA.checked === false, 'S-05: con config.labsOcultos=false, la casilla debe iniciar SIN marcar');
   afirmar(clasesDe(checkboxLabsA.parentNode).indexOf('hz-form-ancho') !== -1, 'S-05: la fila de la casilla debe caer en hz-form-ancho');
+  afirmar(clasesDe(checkboxLabsA.parentNode).indexOf('hz-form-check') !== -1, 'R11-fix (D-07): la fila de la casilla de labs ocultos debe llevar hz-form-check (casilla en línea con su etiqueta)');
 
   var formEditarS05a = checkboxLabsA;
   while (formEditarS05a && (formEditarS05a.tagName || '').toLowerCase() !== 'form') { formEditarS05a = formEditarS05a.parentNode; }
@@ -1559,6 +1629,8 @@ conBusDeEventosAislado(function () {
   afirmar(campoPass1.getAttribute('minlength') === '8' && campoPass1.getAttribute('autocomplete') === 'new-password',
     'S-03.2: #hz-seg-pass-1 debe llevar minlength=8 y autocomplete=new-password');
   var checkboxConfirmo = buscarPorId(cardSeg, 'hz-seg-confirmo');
+  afirmar(clasesDe(checkboxConfirmo.parentNode).indexOf('hz-form-check') !== -1 && clasesDe(checkboxConfirmo.parentNode).indexOf('hz-form-ancho') !== -1,
+    'R11-fix (D-07): la fila de la casilla de consentimiento debe llevar hz-form-check y hz-form-ancho (casilla en línea con su etiqueta, fila completa)');
   var botonActivar = buscarPorId(cardSeg, 'hz-btn-seg-activar');
   afirmar(clasesDe(botonActivar).indexOf('hz-btn') !== -1 && clasesDe(botonActivar).indexOf('hz-btn-primario') !== -1,
     'F-02: #hz-btn-seg-activar debe llevar hz-btn hz-btn-primario');
